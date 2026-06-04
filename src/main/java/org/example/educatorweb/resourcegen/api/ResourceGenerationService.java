@@ -5,8 +5,10 @@ import org.example.educatorweb.common.model.ProgressEvent;
 import org.example.educatorweb.common.model.ResourceType;
 import org.example.educatorweb.resourcegen.agents.DesignAgent;
 import org.example.educatorweb.resourcegen.agents.RequireAgent;
+import org.example.educatorweb.resourcegen.agents.ReviewAgent;
 import org.example.educatorweb.resourcegen.agents.generators.DocGenerator;
 import org.example.educatorweb.resourcegen.agents.generators.MindmapGenerator;
+import org.example.educatorweb.resourcegen.agents.generators.QuizGenerator;
 import org.example.educatorweb.resourcegen.model.GenerationState;
 import org.example.educatorweb.resourcegen.orchestration.GenerationGraph;
 import org.example.educatorweb.resourcegen.orchestration.GraphOrchestrator;
@@ -25,17 +27,23 @@ public class ResourceGenerationService {
     private final DesignAgent designAgent;
     private final DocGenerator docGenerator;
     private final MindmapGenerator mindmapGenerator;
+    private final QuizGenerator quizGenerator;
+    private final ReviewAgent reviewAgent;
 
     public ResourceGenerationService(GraphOrchestrator orchestrator,
                                      RequireAgent requireAgent,
                                      DesignAgent designAgent,
                                      DocGenerator docGenerator,
-                                     MindmapGenerator mindmapGenerator) {
+                                     MindmapGenerator mindmapGenerator,
+                                     QuizGenerator quizGenerator,
+                                     ReviewAgent reviewAgent) {
         this.orchestrator = orchestrator;
         this.requireAgent = requireAgent;
         this.designAgent = designAgent;
         this.docGenerator = docGenerator;
         this.mindmapGenerator = mindmapGenerator;
+        this.quizGenerator = quizGenerator;
+        this.reviewAgent = reviewAgent;
     }
 
     public Flux<ProgressEvent> generate(GenerateRequest req) {
@@ -48,6 +56,7 @@ public class ResourceGenerationService {
         var builder = GenerationGraph.builder()
             .node("REQUIRE", requireAgent)
             .node("DESIGN", designAgent)
+            .node("REVIEW", reviewAgent)
             .edge("REQUIRE", "DESIGN");
 
         List<String> genNodes = new ArrayList<>();
@@ -59,10 +68,27 @@ public class ResourceGenerationService {
             builder.node("GEN_MINDMAP", mindmapGenerator);
             genNodes.add("GEN_MINDMAP");
         }
+        if (types.contains(ResourceType.QUIZ) || types.isEmpty()) {
+            builder.node("GEN_QUIZ", quizGenerator);
+            genNodes.add("GEN_QUIZ");
+        }
 
         if (!genNodes.isEmpty()) {
             builder.fanOut("DESIGN", genNodes);
             for (String n : genNodes) builder.router(n, Router.ALWAYS_DONE);
+            // After all generators complete, route to REVIEW
+            builder.edge("DESIGN", "REVIEW");
+            // REVIEW can retry back to DESIGN
+            builder.retryEdge("REVIEW", "DESIGN");
+            // Router on REVIEW: check state.stage() for next destination
+            builder.router("REVIEW", state -> {
+                return switch (state.stage()) {
+                    case DESIGN -> "DESIGN";
+                    case DONE -> "DONE";
+                    case FALLBACK -> "FALLBACK";
+                    default -> "DONE";
+                };
+            });
         } else {
             builder.router("DESIGN", Router.ALWAYS_DONE);
         }

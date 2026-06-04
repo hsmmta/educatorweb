@@ -110,7 +110,8 @@ public class GenerationGraph {
             inPath.add(node);
 
             List<String> neighbors = new ArrayList<>();
-            if (graph.edges.containsKey(node)) {
+            // Skip edges from retry sources to allow retry loops
+            if (graph.edges.containsKey(node) && !graph.retrySources.contains(node)) {
                 neighbors.addAll(graph.edges.get(node));
             }
             if (graph.fanOuts.containsKey(node)) {
