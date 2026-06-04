@@ -11,6 +11,7 @@ import org.example.educatorweb.resourcegen.agents.generators.DocGenerator;
 import org.example.educatorweb.resourcegen.agents.generators.HtmlGenerator;
 import org.example.educatorweb.resourcegen.agents.generators.MindmapGenerator;
 import org.example.educatorweb.resourcegen.agents.generators.QuizGenerator;
+import org.example.educatorweb.resourcegen.agents.generators.VideoGenerator;
 import org.example.educatorweb.resourcegen.model.GenerationState;
 import org.example.educatorweb.resourcegen.orchestration.GenerationGraph;
 import org.example.educatorweb.resourcegen.orchestration.GraphOrchestrator;
@@ -32,6 +33,7 @@ public class ResourceGenerationService {
     private final QuizGenerator quizGenerator;
     private final CodeGenerator codeGenerator;
     private final HtmlGenerator htmlGenerator;
+    private final VideoGenerator videoGenerator;
     private final ReviewAgent reviewAgent;
 
     public ResourceGenerationService(GraphOrchestrator orchestrator,
@@ -42,6 +44,7 @@ public class ResourceGenerationService {
                                      QuizGenerator quizGenerator,
                                      CodeGenerator codeGenerator,
                                      HtmlGenerator htmlGenerator,
+                                     VideoGenerator videoGenerator,
                                      ReviewAgent reviewAgent) {
         this.orchestrator = orchestrator;
         this.requireAgent = requireAgent;
@@ -51,6 +54,7 @@ public class ResourceGenerationService {
         this.quizGenerator = quizGenerator;
         this.codeGenerator = codeGenerator;
         this.htmlGenerator = htmlGenerator;
+        this.videoGenerator = videoGenerator;
         this.reviewAgent = reviewAgent;
     }
 
@@ -87,6 +91,10 @@ public class ResourceGenerationService {
         if (types.contains(ResourceType.HTML) || types.isEmpty()) {
             builder.node("GEN_HTML", htmlGenerator);
             genNodes.add("GEN_HTML");
+        }
+        if (types.contains(ResourceType.VIDEO) || types.isEmpty()) {
+            builder.node("GEN_VIDEO", videoGenerator);
+            genNodes.add("GEN_VIDEO");
         }
 
         if (!genNodes.isEmpty()) {
