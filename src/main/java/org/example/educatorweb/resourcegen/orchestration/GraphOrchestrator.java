@@ -55,20 +55,8 @@ public class GraphOrchestrator {
             emit(sink, state, "Entering node '" + currentNode + "'",
                 calculateProgress(executedCount, totalNodes));
 
-            // Execute fanOut if configured for this node
-            if (graph.fanOuts.containsKey(currentNode)) {
-                try {
-                    state = executeFanOut(graph, currentNode, state, sink);
-                    executedCount += graph.fanOuts.get(currentNode).size();
-                } catch (Exception e) {
-                    String errorMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-                    state = state.withError(errorMsg);
-                    emit(sink, state, "FanOut error in '" + currentNode + "': " + errorMsg, 99);
-                    break;
-                }
-            }
-
-            // Execute the node's agent if present
+            // Execute the node's agent if present (run before fanOut so
+            // downstream generators receive the node's output, e.g. blueprint)
             AgentNode agent = graph.nodes.get(currentNode);
             if (agent != null) {
                 try {
@@ -80,6 +68,19 @@ public class GraphOrchestrator {
                     String errorMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
                     state = state.withError(errorMsg);
                     emit(sink, state, "Error in node '" + currentNode + "': " + errorMsg, 99);
+                    break;
+                }
+            }
+
+            // Execute fanOut if configured for this node
+            if (graph.fanOuts.containsKey(currentNode)) {
+                try {
+                    state = executeFanOut(graph, currentNode, state, sink);
+                    executedCount += graph.fanOuts.get(currentNode).size();
+                } catch (Exception e) {
+                    String errorMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                    state = state.withError(errorMsg);
+                    emit(sink, state, "FanOut error in '" + currentNode + "': " + errorMsg, 99);
                     break;
                 }
             }
