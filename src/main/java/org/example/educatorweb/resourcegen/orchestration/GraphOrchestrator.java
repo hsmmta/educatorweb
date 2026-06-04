@@ -144,14 +144,14 @@ public class GraphOrchestrator {
     }
 
     private GenerationState mergeResults(GenerationState base, GenerationState branch) {
-        Map<ResourceType, GenerationState.GeneratedResource> mergedResults =
+        Map<ResourceType, org.example.educatorweb.resourcegen.model.GeneratedResource> mergedResults =
             new LinkedHashMap<>(base.results());
         mergedResults.putAll(branch.results());
 
-        List<GenerationState.QualityReport> mergedReviews = new ArrayList<>(base.reviews());
+        List<org.example.educatorweb.resourcegen.model.QualityReport> mergedReviews = new ArrayList<>(base.reviews());
         mergedReviews.addAll(branch.reviews());
 
-        GenerationState.ResourceBlueprint mergedBlueprint =
+        org.example.educatorweb.resourcegen.model.ResourceBlueprint mergedBlueprint =
             base.blueprint() != null ? base.blueprint() : branch.blueprint();
 
         return new GenerationState(

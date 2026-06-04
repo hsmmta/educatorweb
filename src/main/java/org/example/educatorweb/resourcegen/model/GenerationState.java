@@ -20,11 +20,6 @@ public record GenerationState(
     ProgressStage stage,
     String error
 ) {
-    // Placeholder types (replaced in Task 4)
-    public record ResourceBlueprint(String placeholder) {}
-    public record GeneratedResource(String placeholder) {}
-    public record QualityReport(String placeholder) {}
-
     public static GenerationState initial(GenerateRequest req) {
         return new GenerationState(
             UUID.randomUUID().toString(), req.studentId(), req.knowledgePoint(),
@@ -76,5 +71,19 @@ public record GenerationState(
         return new GenerationState(requestId, studentId, knowledgePoint, types,
             profile, knowledgeContext, ragContext, blueprint,
             results, reviews, reviewRetries, ProgressStage.FALLBACK, err);
+    }
+
+    public GenerationState withResult(ResourceType type, GeneratedResource resource) {
+        Map<ResourceType, GeneratedResource> newResults = new LinkedHashMap<>(results);
+        newResults.put(type, resource);
+        return new GenerationState(requestId, studentId, knowledgePoint, types,
+            profile, knowledgeContext, ragContext, blueprint,
+            Collections.unmodifiableMap(newResults), reviews, reviewRetries, stage, error);
+    }
+
+    public GenerationState withReviews(List<QualityReport> reviews, int retries) {
+        return new GenerationState(requestId, studentId, knowledgePoint, types,
+            profile, knowledgeContext, ragContext, blueprint,
+            results, List.copyOf(reviews), retries, stage, error);
     }
 }
