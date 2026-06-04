@@ -2,8 +2,11 @@ package org.example.educatorweb.resourcegen.orchestration;
 
 import org.example.educatorweb.common.model.ProgressEvent;
 import org.example.educatorweb.common.model.ResourceType;
+import org.example.educatorweb.resourcegen.infrastructure.CheckpointService;
 import org.example.educatorweb.resourcegen.model.GenerationState;
 import org.example.educatorweb.resourcegen.model.ProgressStage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
@@ -12,10 +15,23 @@ import java.util.concurrent.*;
 
 public class GraphOrchestrator {
 
+    private static final Logger log = LoggerFactory.getLogger(GraphOrchestrator.class);
+
     private final ExecutorService threadPool;
+    private CheckpointService checkpointService; // nullable — set by Spring if Redis is available
 
     public GraphOrchestrator(int threadPoolSize) {
         this.threadPool = Executors.newFixedThreadPool(threadPoolSize);
+    }
+
+    /**
+     * Set the optional checkpoint service. When non-null, the orchestrator saves
+     * state snapshots after each node execution and attempts resume on restart.
+     * Called by {@code ResourceGenConfig} when a Redis-backed
+     * {@link CheckpointService} bean is available in the context.
+     */
+    public void setCheckpointService(CheckpointService checkpointService) {
+        this.checkpointService = checkpointService;
     }
 
     public Flux<ProgressEvent> run(GenerationGraph graph, GenerationState initialState) {
@@ -36,6 +52,17 @@ public class GraphOrchestrator {
 
     private void executePipeline(GenerationGraph graph, GenerationState state,
                                   Sinks.Many<ProgressEvent> sink) {
+        // Attempt resume from checkpoint
+        if (checkpointService != null) {
+            Optional<GenerationState> checkpoint = checkpointService.load(state.requestId());
+            if (checkpoint.isPresent()) {
+                state = checkpoint.get();
+                log.info("Resumed from checkpoint for requestId={}, stage={}",
+                    state.requestId(), state.stage());
+                emit(sink, state, "Resumed from checkpoint at stage " + state.stage(), 0);
+            }
+        }
+
         String startNode = GenerationGraph.findStartNode(graph);
         if (startNode == null) {
             String msg = "Graph has no start node";
@@ -62,11 +89,13 @@ public class GraphOrchestrator {
                 try {
                     state = agent.execute(state);
                     executedCount++;
+                    saveCheckpoint(state);
                     emit(sink, state, "Node '" + currentNode + "' completed",
                         calculateProgress(executedCount, totalNodes));
                 } catch (Exception e) {
                     String errorMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
                     state = state.withError(errorMsg);
+                    saveCheckpoint(state);
                     emit(sink, state, "Error in node '" + currentNode + "': " + errorMsg, 99);
                     break;
                 }
@@ -77,9 +106,11 @@ public class GraphOrchestrator {
                 try {
                     state = executeFanOut(graph, currentNode, state, sink);
                     executedCount += graph.fanOuts.get(currentNode).size();
+                    saveCheckpoint(state);
                 } catch (Exception e) {
                     String errorMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
                     state = state.withError(errorMsg);
+                    saveCheckpoint(state);
                     emit(sink, state, "FanOut error in '" + currentNode + "': " + errorMsg, 99);
                     break;
                 }
@@ -101,10 +132,32 @@ public class GraphOrchestrator {
             if (!ProgressStage.FALLBACK.equals(state.stage())) {
                 state = state.withStage(ProgressStage.FALLBACK);
             }
+            saveCheckpoint(state);
             emit(sink, state, "Pipeline failed: " + state.error(), 100);
         } else {
             state = state.withStage(ProgressStage.DONE);
+            deleteCheckpoint(state); // clean up on successful completion
             emit(sink, state, "Pipeline completed successfully", 100);
+        }
+    }
+
+    private void saveCheckpoint(GenerationState state) {
+        if (checkpointService != null) {
+            try {
+                checkpointService.save(state.requestId(), state);
+            } catch (Exception e) {
+                log.debug("Checkpoint save skipped (non-critical): {}", e.getMessage());
+            }
+        }
+    }
+
+    private void deleteCheckpoint(GenerationState state) {
+        if (checkpointService != null) {
+            try {
+                checkpointService.delete(state.requestId());
+            } catch (Exception e) {
+                log.debug("Checkpoint delete skipped (non-critical): {}", e.getMessage());
+            }
         }
     }
 

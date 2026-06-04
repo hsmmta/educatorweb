@@ -1,0 +1,8 @@
+spring:
+  ai:
+    openai:
+      api-key: ${XUNFEI_API_KEY}
+      base-url: https://spark-api-open.xf-yun.com/v1
+      chat:
+        options:
+          model: spark-lite
