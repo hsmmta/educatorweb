@@ -76,14 +76,21 @@ public class VideoGenerator extends AbstractGenerator {
      * Seedream is good at generating clean diagrams, text layouts, and illustrations.
      */
     private String buildEducationalImagePrompt(VideoScene scene, String topic) {
+        // Use the visualPrompt directly if DeepSeek provided a good one,
+        // otherwise fall back to constructing from scene data.
+        String visual = scene.visualPrompt();
+        if (visual == null || visual.isBlank() || visual.startsWith("unused")) {
+            visual = scene.description();
+        }
+
         return String.format(
-            "Educational lecture slide image for topic: %s. Scene: %s. " +
-            "Narration text to visualize: %s. " +
-            "Style: Clean professional presentation slide with clear text, " +
-            "dark background, blue accent colors, Chinese text, " +
-            "suitable for a university Machine Learning lecture. " +
-            "No abstract art — should look like a well-designed presentation slide.",
-            topic, scene.description(), scene.narration());
+            "%s. " +
+            "CRITICAL: This is a university lecture slide. " +
+            "All text must be CLEAR, LEGIBLE Chinese text with NO garbled characters. " +
+            "Mathematical formulas must be rendered correctly. " +
+            "Use clean professional layout, dark blue background, white text. " +
+            "No abstract patterns or meaningless scribbles.",
+            visual);
     }
 
     private VideoScript generateVideoScript(GenerationState state) {
@@ -104,19 +111,21 @@ public class VideoGenerator extends AbstractGenerator {
         return """
             You are a professional educator creating an educational video script.
             Topic: %s
-            For each slide (4-6 slides), provide educational content:
-            - title: slide title (Chinese)
-            - description: what this slide explains
-            - narration: teacher's spoken words (Chinese)
-            - bulletPoints: 3-5 key points shown on this slide (Chinese)
-            - visualPrompt: unused (we generate slides differently)
-            - durationSeconds: how long to show this slide (15-30 seconds)
 
-            Output JSON:
-            {"title":"...","style":"Realistic","totalDurationSeconds":N,
-             "scenes":[{...}]}
-            Output ONLY the JSON.
-            """.formatted(state.knowledgePoint());
+            For each slide (4-6 slides), provide:
+            - description: what this slide explains (Chinese)
+            - narration: teacher's spoken words (Chinese)
+            - visualPrompt: DETAILED visual description in ENGLISH for AI image generation.
+              Describe exactly what should appear: layout, colors, text content,
+              formulas, diagrams specific to %s. Be specific — "A slide titled 'Lagrangian Duality'
+              showing the primal optimization problem on the left with constraint equations,
+              and the Lagrangian function on the right with Lagrange multipliers α.
+              Dark blue background, white text, clean academic style."
+            - durationSeconds: 20-30 seconds
+
+            Output JSON: {"title":"...","scenes":[{...}]}
+            Output ONLY the JSON, no markdown.
+            """.formatted(state.knowledgePoint(), state.knowledgePoint());
     }
 
     private VideoScript buildFallbackScript(GenerationState state) {
