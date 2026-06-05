@@ -18,6 +18,8 @@ public class DotenvConfig implements ApplicationContextInitializer<ConfigurableA
     private static final String[] KEYS = {
         "DEEPSEEK_API_KEY",
         "MYSQL_PASSWORD",
+        "NEO4J_URI",
+        "NEO4J_USERNAME",
         "NEO4J_PASSWORD",
         "REDIS_PASSWORD",
         "XUNFEI_API_KEY",
