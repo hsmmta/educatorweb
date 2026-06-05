@@ -4,7 +4,8 @@ public enum ResourceType {
     DOC,
     MINDMAP,
     QUIZ,
-    VIDEO,
+    PPT,
     CODE,
-    HTML
+    HTML,
+    VIDEO
 }

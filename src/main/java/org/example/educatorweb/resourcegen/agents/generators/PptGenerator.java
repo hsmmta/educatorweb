@@ -20,15 +20,15 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Component
-public class VideoGenerator extends AbstractGenerator {
+public class PptGenerator extends AbstractGenerator {
 
     private final PptxBuilder pptxBuilder;
     private final FileStorageService fileStorageService;
     private final ObjectMapper objectMapper;
 
-    public VideoGenerator(ModelRegistry registry, PptxBuilder pptxBuilder,
+    public PptGenerator(ModelRegistry registry, PptxBuilder pptxBuilder,
                           FileStorageService fileStorageService) {
-        super(registry, ResourceType.VIDEO);
+        super(registry, ResourceType.PPT);
         this.pptxBuilder = pptxBuilder;
         this.fileStorageService = fileStorageService;
         this.objectMapper = new ObjectMapper();
@@ -41,7 +41,7 @@ public class VideoGenerator extends AbstractGenerator {
         LectureScript script = generateLectureScript(textProvider, state);
 
         // Phase 2: Visual model generates PPTX (or fallback to Apache POI)
-        ModelProvider visualProvider = registry.resolve(supportedType()); // VIDEO -> visual
+        ModelProvider visualProvider = registry.resolve(supportedType()); // PPT -> visual
         byte[] pptxBytes;
         if (visualProvider.isEnabled() && !"deepseek".equals(visualProvider.providerName())) {
             try {
@@ -72,15 +72,15 @@ public class VideoGenerator extends AbstractGenerator {
 
     private LectureScript generateLectureScript(ModelProvider provider, GenerationState state) {
         String prompt = buildLectureScriptPrompt(state);
-        log.info("VideoGenerator: sending LectureScript prompt to text model (prompt length={})",
+        log.info("PptGenerator: sending LectureScript prompt to text model (prompt length={})",
             prompt.length());
 
         String response = provider.chat(prompt);
-        log.info("VideoGenerator: received LectureScript response (length={})",
+        log.info("PptGenerator: received LectureScript response (length={})",
             response != null ? response.length() : 0);
 
         if (response == null || response.isBlank()) {
-            log.warn("VideoGenerator: empty response, using fallback script");
+            log.warn("PptGenerator: empty response, using fallback script");
             return buildFallbackScript(state);
         }
 

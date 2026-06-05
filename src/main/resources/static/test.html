@@ -42,7 +42,8 @@
   .type-badge.QUIZ { background: #9e6a0333; color: #d29922; }
   .type-badge.CODE { background: #7c3aed33; color: #a371f7; }
   .type-badge.HTML { background: #bf4b8a33; color: #f778ba; }
-  .type-badge.VIDEO { background: #da363333; color: #f85149; }
+  .type-badge.PPT { background: #da363333; color: #f85149; }
+  .type-badge.VIDEO { background: #9e6a0333; color: #d29922; }
   pre { background: #0d1117; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 12px; max-height: 400px; overflow-y: auto; margin-top: 8px; }
   .stats { display: flex; gap: 12px; margin-bottom: 16px; }
   .stat { background: #161b22; padding: 10px 16px; border-radius: 6px; border: 1px solid #30363d; }
@@ -70,6 +71,7 @@
       <label><input type="checkbox" value="QUIZ"> 📝 习题</label>
       <label><input type="checkbox" value="CODE"> 💻 代码</label>
       <label><input type="checkbox" value="HTML"> 🧪 HTML</label>
+      <label><input type="checkbox" value="PPT"> 📊 PPT</label>
       <label><input type="checkbox" value="VIDEO"> 🎬 视频</label>
     </div>
   </div>
@@ -199,7 +201,7 @@ function addEvent(event) {
       let formatLabel = '';
       if (type === 'MINDMAP') formatLabel = '<span style="color:#8b949e;font-size:11px;margin-left:8px">Mermaid 语法 — 复制到 <a href="https://mermaid.live" target="_blank">mermaid.live</a> 查看</span>';
       if (type === 'HTML') formatLabel = '<span style="color:#8b949e;font-size:11px;margin-left:8px">可独立保存为 .html 打开</span>';
-      if (type === 'VIDEO') formatLabel = '<span style="color:#8b949e;font-size:11px;margin-left:8px">PPTX 文件路径</span>';
+      if (type === 'PPT') formatLabel = '<span style="color:#8b949e;font-size:11px;margin-left:8px">PPTX 文件路径</span>';
 
       card.innerHTML = `
         <h3><span class="type-badge ${typeClass}">${type}</span> ${resource.title || ''}${formatLabel}</h3>

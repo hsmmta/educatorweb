@@ -20,7 +20,7 @@ public class ModelRegistry {
 
     public ModelProvider resolve(ResourceType type) {
         return switch (type) {
-            case VIDEO -> visualProvider.isEnabled() ? visualProvider : textProvider;
+            case PPT -> visualProvider.isEnabled() ? visualProvider : textProvider;
             default -> textProvider;
         };
     }
