@@ -6,7 +6,10 @@ spring:
     name: educatorweb
   ai:
     openai:
-      api-key: ${DEEPSEEK_API_KEY:sk-placeholder}  # required by auto-config; actual routing via model-routing
+      api-key: ${DEEPSEEK_API_KEY:sk-placeholder}
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.autoconfigure.openai.OpenAiAutoConfiguration
   datasource:
     url: jdbc:mysql://localhost:3306/educatorweb?createDatabaseIfNotExist=true
     username: root
