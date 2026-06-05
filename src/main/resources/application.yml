@@ -40,8 +40,8 @@ model-routing:
   video:
     provider: seedance                          # seedance | veo | cogvideox
     model: doubao-seedance-1-5-pro-251215       # video generation model
-    image-model: doubao-seedream-4-5-251128     # image generation model (fallback)
     temperature: 0.7
+  video-image-model: doubao-seedream-4-5-251128 # image generation model (Seedream)
   providers:
     deepseek:
       enabled: true

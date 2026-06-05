@@ -8,22 +8,21 @@ public record ModelRoutingProperties(
     ModelConfig text,
     ModelConfig visual,
     Map<String, ProviderConfig> providers,
-    ModelConfig video
+    ModelConfig video,
+    String videoImageModel
 ) {
     public ModelRoutingProperties {
         if (video == null) {
             video = new ModelConfig("seedance", "seedance-v1", 0.7);
         }
+        if (videoImageModel == null) {
+            videoImageModel = "doubao-seedream-4-5-251128";
+        }
     }
 
-    public record ModelConfig(String provider, String model, double temperature, String imageModel) {
+    public record ModelConfig(String provider, String model, double temperature) {
         public ModelConfig {
             if (temperature == 0) temperature = 0.7;
-            if (imageModel == null) imageModel = model;
-        }
-        // Backward-compatible constructor without imageModel
-        public ModelConfig(String provider, String model, double temperature) {
-            this(provider, model, temperature, model);
         }
     }
 

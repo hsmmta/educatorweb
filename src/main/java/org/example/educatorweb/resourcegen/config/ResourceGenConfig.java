@@ -92,7 +92,7 @@ public class ResourceGenConfig {
                 providerCfg.baseUrl(),
                 resolveEnvKey(providerCfg.apiKey(), "SEEDANCE_API_KEY"),
                 videoCfg.model(),
-                videoCfg.imageModel(),
+                props.videoImageModel(),
                 true);
             default -> {
                 log.warn("Unknown video provider '{}', falling back to StaticImageFallbackProvider",
