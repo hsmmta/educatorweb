@@ -52,7 +52,7 @@ public class SeedanceVideoProvider implements VideoProvider {
                 "generate_audio":false,"return_last_frame":false}
                 """, videoModel, escape(visualPrompt), duration);
 
-            String taskJson = post("/video/generations", body);
+            String taskJson = post("/contents/generations/tasks", body);
             JsonNode task = objectMapper.readTree(taskJson);
             String taskId = task.get("id").asText();
             log.info("Seedance: task submitted, id={}", taskId);
@@ -60,7 +60,7 @@ public class SeedanceVideoProvider implements VideoProvider {
             // Step 2: Poll until complete
             for (int i = 0; i < MAX_POLL_ATTEMPTS; i++) {
                 Thread.sleep(POLL_INTERVAL.toMillis());
-                String statusJson = get("/video/generations/" + taskId);
+                String statusJson = get("/contents/generations/tasks/" + taskId);
                 JsonNode status = objectMapper.readTree(statusJson);
                 String state = status.get("status").asText();
 
