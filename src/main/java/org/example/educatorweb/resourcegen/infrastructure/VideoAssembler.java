@@ -130,11 +130,28 @@ public class VideoAssembler {
             );
             pb.directory(tmpDir.toFile());
             Process process = pb.start();
+
+            // Consume stderr in background to prevent pipe buffer deadlock
+            StringBuilder stderrBuf = new StringBuilder();
+            Thread stderrThread = new Thread(() -> {
+                try (var reader = new java.io.BufferedReader(
+                        new java.io.InputStreamReader(process.getErrorStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        stderrBuf.append(line).append("\n");
+                    }
+                } catch (IOException ignored) {}
+            });
+            stderrThread.start();
+
+            // Also consume stdout
+            process.getInputStream().transferTo(java.io.OutputStream.nullOutputStream());
+
             int exitCode = process.waitFor();
+            stderrThread.join(5000);
 
             if (exitCode != 0) {
-                String stderr = new String(process.getErrorStream().readAllBytes());
-                throw new RuntimeException("FFmpeg image-to-video failed: " + stderr);
+                throw new RuntimeException("FFmpeg failed (exit " + exitCode + "): " + stderrBuf);
             }
 
             byte[] result = Files.readAllBytes(output);
