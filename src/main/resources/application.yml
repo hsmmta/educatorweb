@@ -4,6 +4,9 @@ server:
 spring:
   application:
     name: educatorweb
+  ai:
+    openai:
+      api-key: ${DEEPSEEK_API_KEY:sk-placeholder}  # required by auto-config; actual routing via model-routing
   datasource:
     url: jdbc:mysql://localhost:3306/educatorweb?createDatabaseIfNotExist=true
     username: root
