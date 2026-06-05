@@ -86,6 +86,7 @@
   <h2>📡 SSE 事件流</h2>
   <div id="progress-bar"><div id="progress-fill"></div></div>
   <div id="events"></div>
+  <div id="results" style="margin-top:16px"></div>
 </div>
 
 <script>
@@ -183,10 +184,39 @@ function addEvent(event) {
   div.innerHTML = `${icon} <strong>${stage}</strong> <span style="color:#8b949e">${time}</span><br>${event.message || event.data || ''}`;
   container.prepend(div);
 
-  // Count resources from DONE event
-  if (stage === 'DONE') {
+  // Render resource cards from payload
+  if (event.payload && typeof event.payload === 'object') {
+    const resultsDiv = document.getElementById('results');
+    resultsDiv.innerHTML = '<h2 style="margin-bottom:12px">📦 生成的资源</h2>';
+
+    let count = 0;
+    for (const [type, resource] of Object.entries(event.payload)) {
+      count++;
+      const card = document.createElement('div');
+      card.className = 'result-card';
+
+      const typeClass = (resource.type || type).replace(/[^A-Z]/g, '');
+      let formatLabel = '';
+      if (type === 'MINDMAP') formatLabel = '<span style="color:#8b949e;font-size:11px;margin-left:8px">Mermaid 语法 — 复制到 <a href="https://mermaid.live" target="_blank">mermaid.live</a> 查看</span>';
+      if (type === 'HTML') formatLabel = '<span style="color:#8b949e;font-size:11px;margin-left:8px">可独立保存为 .html 打开</span>';
+      if (type === 'VIDEO') formatLabel = '<span style="color:#8b949e;font-size:11px;margin-left:8px">PPTX 文件路径</span>';
+
+      card.innerHTML = `
+        <h3><span class="type-badge ${typeClass}">${type}</span> ${resource.title || ''}${formatLabel}</h3>
+        <pre>${escapeHtml(resource.content || '')}</pre>
+      `;
+      resultsDiv.appendChild(card);
+    }
+
+    document.getElementById('resourceCount').textContent = count;
     document.getElementById('totalTime').textContent = ((Date.now() - startTime) / 1000).toFixed(1) + 's';
   }
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 </script>
 </body>

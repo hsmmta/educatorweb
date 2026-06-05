@@ -137,7 +137,20 @@ public class GraphOrchestrator {
         } else {
             state = state.withStage(ProgressStage.DONE);
             deleteCheckpoint(state); // clean up on successful completion
-            emit(sink, state, "Pipeline completed successfully", 100);
+
+            // Build payload with all generated resources
+            Map<String, Object> payload = new LinkedHashMap<>();
+            for (var entry : state.results().entrySet()) {
+                var resource = entry.getValue();
+                Map<String, Object> resourceData = new LinkedHashMap<>();
+                resourceData.put("resourceId", resource.resourceId());
+                resourceData.put("type", resource.type().name());
+                resourceData.put("title", resource.title());
+                resourceData.put("content", resource.content());
+                resourceData.put("metadata", resource.metadata());
+                payload.put(entry.getKey().name(), resourceData);
+            }
+            emit(sink, state, "Pipeline completed — " + state.results().size() + " resources generated", 100, payload);
         }
     }
 
@@ -225,11 +238,17 @@ public class GraphOrchestrator {
 
     private void emit(Sinks.Many<ProgressEvent> sink, GenerationState state,
                       String message, int progressPercent) {
+        emit(sink, state, message, progressPercent, null);
+    }
+
+    private void emit(Sinks.Many<ProgressEvent> sink, GenerationState state,
+                      String message, int progressPercent, Map<String, Object> payload) {
         sink.tryEmitNext(new ProgressEvent(
             state.requestId(),
             state.stage() != null ? state.stage().name() : "INIT",
             message,
-            progressPercent
+            progressPercent,
+            payload
         ));
     }
 
