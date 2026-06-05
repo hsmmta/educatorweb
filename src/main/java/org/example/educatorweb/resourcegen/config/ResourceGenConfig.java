@@ -4,6 +4,9 @@ import org.example.educatorweb.resourcegen.infrastructure.CheckpointService;
 import org.example.educatorweb.resourcegen.infrastructure.DeepSeekProvider;
 import org.example.educatorweb.resourcegen.infrastructure.ModelProvider;
 import org.example.educatorweb.resourcegen.infrastructure.OpenAiCompatibleProvider;
+import org.example.educatorweb.resourcegen.infrastructure.SeedanceVideoProvider;
+import org.example.educatorweb.resourcegen.infrastructure.StaticImageFallbackProvider;
+import org.example.educatorweb.resourcegen.infrastructure.VideoProvider;
 import org.example.educatorweb.resourcegen.infrastructure.XunfeiProvider;
 import org.example.educatorweb.resourcegen.orchestration.GraphOrchestrator;
 import org.slf4j.Logger;
@@ -60,6 +63,41 @@ public class ResourceGenConfig {
         };
 
         return new ModelRegistry(textProvider, visualProvider);
+    }
+
+    // ---- VideoProvider bean ----
+
+    @Bean
+    public VideoProvider videoProvider(ModelRoutingProperties props,
+                                        OpenAiCompatibleProvider openAiProvider,
+                                        OpenAiCompatibleProvider openRouterProvider,
+                                        OpenAiCompatibleProvider siliconFlowProvider) {
+        // Check if video provider is configured and enabled
+        var videoCfg = props.video();
+        if (videoCfg == null || videoCfg.provider() == null) {
+            log.info("No video provider configured, using StaticImageFallbackProvider");
+            return new StaticImageFallbackProvider(openAiProvider);
+        }
+
+        var providerCfg = props.providers().get(videoCfg.provider());
+        if (providerCfg == null || !providerCfg.enabled()) {
+            log.info("Video provider '{}' not enabled, using StaticImageFallbackProvider",
+                videoCfg.provider());
+            return new StaticImageFallbackProvider(openAiProvider);
+        }
+
+        log.info("Creating VideoProvider: {}", videoCfg.provider());
+        return switch (videoCfg.provider()) {
+            case "seedance" -> new SeedanceVideoProvider(
+                providerCfg.baseUrl(),
+                resolveEnvKey(providerCfg.apiKey(), "SEEDANCE_API_KEY"),
+                true);
+            default -> {
+                log.warn("Unknown video provider '{}', falling back to StaticImageFallbackProvider",
+                    videoCfg.provider());
+                yield new StaticImageFallbackProvider(openAiProvider);
+            }
+        };
     }
 
     // ---- Provider beans ----

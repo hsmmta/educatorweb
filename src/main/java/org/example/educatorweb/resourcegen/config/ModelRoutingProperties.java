@@ -7,8 +7,15 @@ import java.util.Map;
 public record ModelRoutingProperties(
     ModelConfig text,
     ModelConfig visual,
-    Map<String, ProviderConfig> providers
+    Map<String, ProviderConfig> providers,
+    ModelConfig video
 ) {
+    public ModelRoutingProperties {
+        if (video == null) {
+            video = new ModelConfig("seedance", "seedance-v1", 0.7);
+        }
+    }
+
     public record ModelConfig(String provider, String model, double temperature) {
         public ModelConfig {
             if (temperature == 0) temperature = 0.7;

@@ -37,6 +37,10 @@ model-routing:
     provider: deepseek              # default to deepseek (V1 fallback); change to siliconflow/openai/openrouter when ready
     model: deepseek-chat
     temperature: 0.7
+  video:
+    provider: seedance            # seedance | veo | cogvideox
+    model: seedance-v1
+    temperature: 0.7
   providers:
     deepseek:
       enabled: true
