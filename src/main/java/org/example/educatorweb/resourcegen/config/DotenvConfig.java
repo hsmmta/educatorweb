@@ -25,6 +25,11 @@ public class DotenvConfig implements ApplicationContextInitializer<ConfigurableA
         "XUNFEI_API_KEY",
         "XUNFEI_API_SECRET",
         "XUNFEI_APP_ID",
+        "SILICONFLOW_API_KEY",
+        "OPENAI_API_KEY",
+        "OPENROUTER_API_KEY",
+        "SEEDANCE_API_KEY",
+        "HUGGINGFACE_API_KEY",
         "QDRANT_HOST",
         "QDRANT_API_KEY",
         "MEM0_API_KEY"

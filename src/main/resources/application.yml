@@ -4,14 +4,6 @@ server:
 spring:
   application:
     name: educatorweb
-  ai:
-    openai:
-      api-key: ${DEEPSEEK_API_KEY:sk-placeholder}
-      base-url: https://api.deepseek.com
-      chat:
-        options:
-          model: deepseek-chat
-          temperature: 0.7
   datasource:
     url: jdbc:mysql://localhost:3306/educatorweb?createDatabaseIfNotExist=true
     username: root
@@ -32,6 +24,50 @@ spring:
       host: localhost
       port: 6379
       password: ${REDIS_PASSWORD:}
+
+# ═══════════════════════════════════════════
+# Multi-Model Provider Routing (v2)
+# ═══════════════════════════════════════════
+model-routing:
+  text:
+    provider: deepseek
+    model: deepseek-chat
+    temperature: 0.7
+  visual:
+    provider: deepseek              # default to deepseek (V1 fallback); change to siliconflow/openai/openrouter when ready
+    model: deepseek-chat
+    temperature: 0.7
+  providers:
+    deepseek:
+      enabled: true
+      base-url: https://api.deepseek.com
+      api-key: ${DEEPSEEK_API_KEY}
+    siliconflow:
+      enabled: false
+      base-url: https://api.siliconflow.cn/v1
+      api-key: ${SILICONFLOW_API_KEY:}
+    openai:
+      enabled: false
+      base-url: https://api.openai.com
+      api-key: ${OPENAI_API_KEY:}
+    openrouter:
+      enabled: false
+      base-url: https://openrouter.ai/api
+      api-key: ${OPENROUTER_API_KEY:}
+    xunfei:
+      enabled: false
+      base-url: https://spark-api-open.xf-yun.com
+      api-key: ${XUNFEI_API_KEY:}
+      api-secret: ${XUNFEI_API_SECRET:}
+      app-id: ${XUNFEI_APP_ID:}
+    seedance:
+      enabled: false
+      base-url: https://api.seedance.io
+      api-key: ${SEEDANCE_API_KEY:}
+    huggingface:
+      enabled: false
+      base-url: https://api-inference.huggingface.co
+      api-key: ${HUGGINGFACE_API_KEY:}
 
 logging:
   level:
