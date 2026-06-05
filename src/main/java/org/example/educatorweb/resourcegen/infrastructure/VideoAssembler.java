@@ -1,5 +1,6 @@
 package org.example.educatorweb.resourcegen.infrastructure;
 
+import org.example.educatorweb.resourcegen.model.VideoScene;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -74,6 +75,73 @@ public class VideoAssembler {
             return result;
         } catch (Exception e) {
             log.error("VideoAssembler failed: {}", e.getMessage());
+            return new byte[0];
+        } finally {
+            if (tmpDir != null) {
+                try { deleteRecursively(tmpDir); } catch (IOException ignored) {}
+            }
+        }
+    }
+
+    /**
+     * Convert a list of images to an MP4 video.
+     * Each image is shown for its scene's durationSeconds.
+     */
+    public byte[] imagesToVideo(List<byte[]> images, List<VideoScene> scenes) {
+        if (images.isEmpty()) {
+            log.warn("No images to assemble");
+            return new byte[0];
+        }
+
+        Path tmpDir = null;
+        try {
+            tmpDir = Files.createTempDirectory("video-images-");
+            log.info("VideoAssembler: creating video from {} images in {}", images.size(), tmpDir);
+
+            // Write each image to temp file
+            for (int i = 0; i < images.size(); i++) {
+                Path imgPath = tmpDir.resolve(String.format("slide_%03d.png", i));
+                byte[] imgBytes = images.get(i);
+                Files.write(imgPath, imgBytes);
+            }
+
+            // Build FFmpeg command: concat images with duration per slide
+            Path concatFile = tmpDir.resolve("concat.txt");
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < images.size(); i++) {
+                int duration = (i < scenes.size()) ? scenes.get(i).durationSeconds() : 10;
+                sb.append(String.format("file 'slide_%03d.png'\n", i));
+                sb.append(String.format("duration %d\n", duration));
+            }
+            // Last image needs a final entry for FFmpeg concat
+            int lastIdx = images.size() - 1;
+            sb.append(String.format("file 'slide_%03d.png'\n", lastIdx));
+            Files.writeString(concatFile, sb.toString());
+
+            Path output = tmpDir.resolve("output.mp4");
+            ProcessBuilder pb = new ProcessBuilder(
+                "ffmpeg", "-y",
+                "-f", "concat", "-safe", "0",
+                "-i", concatFile.toAbsolutePath().toString(),
+                "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2",
+                "-pix_fmt", "yuv420p",
+                "-c:v", "libx264",
+                output.toAbsolutePath().toString()
+            );
+            pb.directory(tmpDir.toFile());
+            Process process = pb.start();
+            int exitCode = process.waitFor();
+
+            if (exitCode != 0) {
+                String stderr = new String(process.getErrorStream().readAllBytes());
+                throw new RuntimeException("FFmpeg image-to-video failed: " + stderr);
+            }
+
+            byte[] result = Files.readAllBytes(output);
+            log.info("VideoAssembler: produced {} bytes from {} slides", result.length, images.size());
+            return result;
+        } catch (Exception e) {
+            log.error("VideoAssembler imagesToVideo failed: {}", e.getMessage());
             return new byte[0];
         } finally {
             if (tmpDir != null) {

@@ -73,11 +73,19 @@ public class ReviewAgent implements AgentNode {
         List<QualityReport> allReports = new ArrayList<>(state.reviews());
         allReports.addAll(reports);
 
-        // Determine next stage based on review outcome
+        // Determine next stage. VIDEO is never retried — it's too expensive and visual content
+        // cannot be meaningfully reviewed by a text LLM.
+        boolean hasVideoOnlyFailure = state.results().keySet().stream()
+            .allMatch(t -> t == ResourceType.VIDEO)
+            && !allPassed;
+
         ProgressStage nextStage;
         if (allPassed) {
             nextStage = ProgressStage.DONE;
             log.info("ReviewAgent: all resources passed review, routing to DONE");
+        } else if (hasVideoOnlyFailure) {
+            nextStage = ProgressStage.DONE; // don't retry video — too expensive
+            log.warn("ReviewAgent: VIDEO failed review but skipping retry (video generation is expensive)");
         } else if (newRetries <= MAX_RETRIES) {
             nextStage = ProgressStage.DESIGN;
             log.info("ReviewAgent: some resources failed, retry {}/{} → routing to DESIGN",

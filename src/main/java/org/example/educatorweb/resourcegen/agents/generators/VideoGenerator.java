@@ -8,6 +8,8 @@ import org.example.educatorweb.resourcegen.model.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import java.io.*;
+import java.nio.file.*;
 import java.util.*;
 
 @Component
@@ -30,35 +32,58 @@ public class VideoGenerator extends AbstractGenerator {
 
     @Override
     protected String doGenerate(GenerationState state) {
-        // Phase 2: Storyboard — DeepSeek generates VideoScript
+        // Phase 1: DeepSeek generates VideoScript (slide content + narration)
         VideoScript script = generateVideoScript(state);
 
-        // Phase 3: Producer — generate clips for each scene
-        List<byte[]> clips = new ArrayList<>();
-        List<String> transitions = new ArrayList<>();
+        // Phase 2: Seedream generates one image per slide (NOT Seedance video — too expensive and poor quality for education)
+        List<byte[]> slideImages = new ArrayList<>();
         for (VideoScene scene : script.scenes()) {
             try {
-                byte[] clip = videoProvider.generateVideo(
-                    scene.visualPrompt(), scene.durationSeconds());
-                clips.add(clip);
+                // Use image generation with an educational-diagram focused prompt
+                String imagePrompt = buildEducationalImagePrompt(scene, state.knowledgePoint());
+                byte[] image = videoProvider.generateImage(imagePrompt);
+                slideImages.add(image);
+                log.info("Slide {}: generated image ({} bytes)", scene.index(), image.length);
             } catch (Exception e) {
-                log.warn("Scene {} video generation failed: {}. "
-                    + "Using empty fallback (VideoAssembler will skip).",
-                    scene.index(), e.getMessage());
-                clips.add(new byte[0]); // empty → VideoAssembler skips
+                log.warn("Slide {} image generation failed: {}", scene.index(), e.getMessage());
+                slideImages.add(new byte[0]);
             }
-            transitions.add(scene.transition());
         }
 
-        // Phase 4: Assembly — FFmpeg concat
-        byte[] mp4Bytes = assembler.assemble(clips, transitions);
+        // Filter out empty images
+        List<byte[]> validImages = slideImages.stream()
+            .filter(img -> img.length > 0)
+            .toList();
 
-        String filename = sanitizeFilename(state.knowledgePoint());
-        if (mp4Bytes.length == 0) {
-            log.warn("VideoGenerator: all scenes fell back, returning placeholder path");
+        if (validImages.isEmpty()) {
+            log.warn("No valid slide images generated — returning placeholder");
+            String path = fileStorage.store(state.requestId(), new byte[0],
+                sanitizeFilename(state.knowledgePoint()) + ".mp4");
+            return path;
         }
-        String path = fileStorage.store(state.requestId(), mp4Bytes, filename + ".mp4");
+
+        // Phase 3: FFmpeg images → video (each image shown for its durationSeconds)
+        byte[] mp4Bytes = assembler.imagesToVideo(validImages, script.scenes());
+
+        String path = fileStorage.store(state.requestId(), mp4Bytes,
+            sanitizeFilename(state.knowledgePoint()) + ".mp4");
+        log.info("VideoGenerator: produced {} bytes for {}", mp4Bytes.length, path);
         return path;
+    }
+
+    /**
+     * Build a prompt optimized for educational slide images.
+     * Seedream is good at generating clean diagrams, text layouts, and illustrations.
+     */
+    private String buildEducationalImagePrompt(VideoScene scene, String topic) {
+        return String.format(
+            "Educational lecture slide image for topic: %s. Scene: %s. " +
+            "Narration text to visualize: %s. " +
+            "Style: Clean professional presentation slide with clear text, " +
+            "dark background, blue accent colors, Chinese text, " +
+            "suitable for a university Machine Learning lecture. " +
+            "No abstract art — should look like a well-designed presentation slide.",
+            topic, scene.description(), scene.narration());
     }
 
     private VideoScript generateVideoScript(GenerationState state) {
@@ -77,28 +102,20 @@ public class VideoGenerator extends AbstractGenerator {
 
     private String buildPrompt(GenerationState state) {
         return """
-            You are a professional video director creating an educational video.
+            You are a professional educator creating an educational video script.
             Topic: %s
-            Style: Realistic educational video with clear visual explanations
+            For each slide (4-6 slides), provide educational content:
+            - title: slide title (Chinese)
+            - description: what this slide explains
+            - narration: teacher's spoken words (Chinese)
+            - bulletPoints: 3-5 key points shown on this slide (Chinese)
+            - visualPrompt: unused (we generate slides differently)
+            - durationSeconds: how long to show this slide (15-30 seconds)
 
-            Produce a JSON VideoScript with 3-5 scenes:
-            {
-              "title": "lesson title",
-              "style": "Realistic",
-              "totalDurationSeconds": 90,
-              "scenes": [
-                {
-                  "index": 1,
-                  "description": "what happens in this scene",
-                  "narration": "teacher's spoken words for this scene",
-                  "visualPrompt": "detailed English visual description for AI video generation",
-                  "cameraAngle": "wide",
-                  "durationSeconds": 30,
-                  "transition": "fade"
-                }
-              ]
-            }
-            Output ONLY the JSON, no markdown fences.
+            Output JSON:
+            {"title":"...","style":"Realistic","totalDurationSeconds":N,
+             "scenes":[{...}]}
+            Output ONLY the JSON.
             """.formatted(state.knowledgePoint());
     }
 
@@ -108,19 +125,15 @@ public class VideoGenerator extends AbstractGenerator {
             List.of(
                 new VideoScene(1, "课程介绍",
                     "欢迎来到本节课程，我们将学习" + state.knowledgePoint(),
-                    "Educational intro scene with course title card",
-                    "wide", 15, "fade"),
-                new VideoScene(2, "核心内容",
-                    "让我们深入学习核心知识",
-                    "Educational content scene with animated diagrams",
-                    "close-up", 60, "cut"),
-                new VideoScene(3, "课程总结",
-                    "本节课到此结束，请回顾今天的要点",
-                    "Summary scene with key takeaways text overlay",
-                    "wide", 15, "fade")
+                    "Educational title card", "wide", 10, "fade"),
+                new VideoScene(2, "核心概念",
+                    "让我们理解核心概念", "Key concepts diagram", "wide", 30, "cut"),
+                new VideoScene(3, "数学推导",
+                    "推导过程如下", "Mathematical derivation", "wide", 30, "cut"),
+                new VideoScene(4, "总结",
+                    "本节课要点回顾", "Summary with key takeaways", "wide", 10, "fade")
             ),
-            "Realistic",
-            90
+            "Realistic", 80
         );
     }
 
@@ -130,5 +143,5 @@ public class VideoGenerator extends AbstractGenerator {
     }
 
     @Override
-    protected String getFormatHint() { return "MP4 (ViMax 4-phase pipeline)"; }
+    protected String getFormatHint() { return "MP4 (slide images + narration script)"; }
 }
