@@ -2,7 +2,9 @@ package org.example.educatorweb.resourcegen.agents;
 
 import org.example.educatorweb.common.model.GenerateRequest;
 import org.example.educatorweb.common.model.ResourceType;
+import org.example.educatorweb.resourcegen.config.ModelRegistry;
 import org.example.educatorweb.resourcegen.config.ReviewKeywordsConfig;
+import org.example.educatorweb.resourcegen.infrastructure.ModelProvider;
 import org.example.educatorweb.resourcegen.model.GeneratedResource;
 import org.example.educatorweb.resourcegen.model.GenerationState;
 import org.example.educatorweb.resourcegen.model.ProgressStage;
@@ -12,7 +14,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.ai.chat.client.ChatClient;
 
 import java.util.List;
 import java.util.Map;
@@ -25,13 +26,7 @@ import static org.mockito.Mockito.when;
 class ReviewAgentTest {
 
     @Mock
-    private ChatClient chatClient;
-
-    @Mock
-    private ChatClient.ChatClientRequestSpec requestSpec;
-
-    @Mock
-    private ChatClient.CallResponseSpec responseSpec;
+    private ModelProvider provider;
 
     private ReviewKeywordsConfig reviewKeywordsConfig;
 
@@ -40,7 +35,10 @@ class ReviewAgentTest {
     @BeforeEach
     void setUp() {
         reviewKeywordsConfig = new ReviewKeywordsConfig();
-        reviewAgent = new ReviewAgent(chatClient, reviewKeywordsConfig);
+        // Use a real ModelRegistry backed by a mock ModelProvider
+        // (avoid Mockito inline-mock issue with concrete class on JDK 25)
+        var registry = new ModelRegistry(provider, provider);
+        reviewAgent = new ReviewAgent(registry, reviewKeywordsConfig);
     }
 
     // ---- Test 1: L1 keyword block — content with "violence" → passed=false ----
@@ -51,10 +49,7 @@ class ReviewAgentTest {
         reviewKeywordsConfig.setKeywords(List.of("violence", "hate speech"));
 
         // L2: LLM review passes (so only L1 matters)
-        when(chatClient.prompt()).thenReturn(requestSpec);
-        when(requestSpec.user(anyString())).thenReturn(requestSpec);
-        when(requestSpec.call()).thenReturn(responseSpec);
-        when(responseSpec.content()).thenReturn("passed");
+        when(provider.chat(anyString())).thenReturn("passed");
 
         // Build state with content containing the blocked keyword
         GenerateRequest req = new GenerateRequest("student-1", "SVM", List.of(ResourceType.DOC));
@@ -85,10 +80,7 @@ class ReviewAgentTest {
         reviewKeywordsConfig.setKeywords(List.of("blocked"));
 
         // L2: LLM review passes
-        when(chatClient.prompt()).thenReturn(requestSpec);
-        when(requestSpec.user(anyString())).thenReturn(requestSpec);
-        when(requestSpec.call()).thenReturn(responseSpec);
-        when(responseSpec.content()).thenReturn("passed");
+        when(provider.chat(anyString())).thenReturn("passed");
 
         // Build state with reviewRetries = 0 (first attempt)
         GenerateRequest req = new GenerateRequest("student-1", "Math", List.of(ResourceType.DOC));
@@ -116,10 +108,7 @@ class ReviewAgentTest {
         reviewKeywordsConfig.setKeywords(List.of("blocked"));
 
         // L2: LLM review passes
-        when(chatClient.prompt()).thenReturn(requestSpec);
-        when(requestSpec.user(anyString())).thenReturn(requestSpec);
-        when(requestSpec.call()).thenReturn(responseSpec);
-        when(responseSpec.content()).thenReturn("passed");
+        when(provider.chat(anyString())).thenReturn("passed");
 
         // Build state with reviewRetries = 3 (already at max)
         GenerateRequest req = new GenerateRequest("student-1", "Math", List.of(ResourceType.DOC));
@@ -158,10 +147,7 @@ class ReviewAgentTest {
         reviewKeywordsConfig.setKeywords(List.of());
 
         // L2: LLM review passes
-        when(chatClient.prompt()).thenReturn(requestSpec);
-        when(requestSpec.user(anyString())).thenReturn(requestSpec);
-        when(requestSpec.call()).thenReturn(responseSpec);
-        when(responseSpec.content()).thenReturn("passed");
+        when(provider.chat(anyString())).thenReturn("passed");
 
         // Build state with clean content
         GenerateRequest req = new GenerateRequest("student-1", "Math", List.of(ResourceType.DOC));
@@ -189,10 +175,7 @@ class ReviewAgentTest {
         reviewKeywordsConfig.setKeywords(List.of("violence"));
 
         // L2: LLM review passes for all
-        when(chatClient.prompt()).thenReturn(requestSpec);
-        when(requestSpec.user(anyString())).thenReturn(requestSpec);
-        when(requestSpec.call()).thenReturn(responseSpec);
-        when(responseSpec.content()).thenReturn("passed");
+        when(provider.chat(anyString())).thenReturn("passed");
 
         GenerateRequest req = new GenerateRequest("student-1", "SVM",
             List.of(ResourceType.DOC, ResourceType.MINDMAP));

@@ -1,20 +1,21 @@
 package org.example.educatorweb.resourcegen.agents.generators;
 
 import org.example.educatorweb.common.model.ResourceType;
+import org.example.educatorweb.resourcegen.config.ModelRegistry;
+import org.example.educatorweb.resourcegen.infrastructure.ModelProvider;
 import org.example.educatorweb.resourcegen.model.GeneratedResource;
 import org.example.educatorweb.resourcegen.model.GenerationState;
 import org.example.educatorweb.resourcegen.model.ProgressStage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.client.ChatClient;
 
 public abstract class AbstractGenerator implements Generator {
     protected final Logger log = LoggerFactory.getLogger(getClass());
-    protected final ChatClient chatClient;
+    protected final ModelRegistry registry;
     private final ResourceType type;
 
-    protected AbstractGenerator(ChatClient chatClient, ResourceType type) {
-        this.chatClient = chatClient;
+    protected AbstractGenerator(ModelRegistry registry, ResourceType type) {
+        this.registry = registry;
         this.type = type;
     }
 

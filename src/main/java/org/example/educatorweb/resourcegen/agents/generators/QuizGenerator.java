@@ -3,16 +3,17 @@ package org.example.educatorweb.resourcegen.agents.generators;
 import org.example.educatorweb.common.model.ResourceType;
 import org.example.educatorweb.knowledgegraph.model.KnowledgeContext;
 import org.example.educatorweb.profile.model.StudentProfile;
+import org.example.educatorweb.resourcegen.config.ModelRegistry;
+import org.example.educatorweb.resourcegen.infrastructure.ModelProvider;
 import org.example.educatorweb.resourcegen.model.GenerationState;
 import org.example.educatorweb.resourcegen.model.ResourceBlueprint;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Component;
 
 @Component
 public class QuizGenerator extends AbstractGenerator {
 
-    public QuizGenerator(ChatClient chatClient) {
-        super(chatClient, ResourceType.QUIZ);
+    public QuizGenerator(ModelRegistry registry) {
+        super(registry, ResourceType.QUIZ);
     }
 
     @Override
@@ -21,7 +22,8 @@ public class QuizGenerator extends AbstractGenerator {
         log.info("QuizGenerator: sending prompt to LLM for topic={} (prompt length={})",
             state.knowledgePoint(), prompt.length());
 
-        String response = chatClient.prompt().user(prompt).call().content();
+        ModelProvider provider = registry.resolve(supportedType());
+        String response = provider.chat(prompt);
         log.info("QuizGenerator: received LLM response (length={})",
             response != null ? response.length() : 0);
 

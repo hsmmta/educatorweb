@@ -6,11 +6,14 @@ import org.example.educatorweb.common.model.ResourceType;
 import org.example.educatorweb.knowledgegraph.model.KnowledgeContext;
 import org.example.educatorweb.profile.model.StudentProfile;
 import org.example.educatorweb.rag.model.DocumentSnippet;
+import org.example.educatorweb.resourcegen.config.ModelRegistry;
 import org.example.educatorweb.resourcegen.infrastructure.FileStorageService;
+import org.example.educatorweb.resourcegen.infrastructure.ModelProvider;
 import org.example.educatorweb.resourcegen.infrastructure.PptxBuilder;
 import org.example.educatorweb.resourcegen.model.GenerationState;
+import org.example.educatorweb.resourcegen.model.LectureScript;
 import org.example.educatorweb.resourcegen.model.ResourceBlueprint;
-import org.springframework.ai.chat.client.ChatClient;
+import org.example.educatorweb.resourcegen.model.SlideScript;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -23,9 +26,9 @@ public class VideoGenerator extends AbstractGenerator {
     private final FileStorageService fileStorageService;
     private final ObjectMapper objectMapper;
 
-    public VideoGenerator(ChatClient chatClient, PptxBuilder pptxBuilder,
+    public VideoGenerator(ModelRegistry registry, PptxBuilder pptxBuilder,
                           FileStorageService fileStorageService) {
-        super(chatClient, ResourceType.VIDEO);
+        super(registry, ResourceType.VIDEO);
         this.pptxBuilder = pptxBuilder;
         this.fileStorageService = fileStorageService;
         this.objectMapper = new ObjectMapper();
@@ -33,94 +36,129 @@ public class VideoGenerator extends AbstractGenerator {
 
     @Override
     protected String doGenerate(GenerationState state) {
-        // Step 1: LLM generates slide outline as JSON array
-        String jsonStr = generateSlideOutline(state);
-        log.info("VideoGenerator: received LLM response (length={})",
-            jsonStr != null ? jsonStr.length() : 0);
+        // Phase 1: Text model generates LectureScript
+        ModelProvider textProvider = registry.resolve(ResourceType.DOC); // text model
+        LectureScript script = generateLectureScript(textProvider, state);
 
-        // Step 2: Parse slides, build PPTX via PptxBuilder
-        List<PptxBuilder.SlideData> slides;
-        try {
-            slides = parseSlides(jsonStr);
-        } catch (Exception e) {
-            log.warn("VideoGenerator: JSON parse failed, using fallback slides", e);
-            slides = buildFallbackSlides(state);
+        // Phase 2: Visual model generates PPTX (or fallback to Apache POI)
+        ModelProvider visualProvider = registry.resolve(supportedType()); // VIDEO -> visual
+        byte[] pptxBytes;
+        if (visualProvider.isEnabled() && !"deepseek".equals(visualProvider.providerName())) {
+            try {
+                pptxBytes = generateVisualPptx(visualProvider, script);
+            } catch (Exception e) {
+                log.warn("Visual PPTX generation failed, falling back to Apache POI: {}", e.getMessage());
+                pptxBytes = buildFallbackPptx(script);
+            }
+        } else {
+            log.info("Visual provider not enabled or is deepseek — using Apache POI fallback");
+            pptxBytes = buildFallbackPptx(script);
         }
 
-        // Step 3: Build PPTX
         String topicTitle = state.blueprint() != null && state.blueprint().title() != null
             ? state.blueprint().title()
             : state.knowledgePoint();
-        byte[] pptxBytes = pptxBuilder.buildPresentation(topicTitle, slides);
-
-        // Step 4: Store file via FileStorageService
-        String filename = sanitizeFilename(topicTitle) + ".pptx";
-        String filePath = fileStorageService.store(state.requestId(), pptxBytes, filename);
-
-        log.info("VideoGenerator: PPTX stored at {}", filePath);
-        return filePath;
+        String path = fileStorageService.store(state.requestId(), pptxBytes,
+            sanitizeFilename(topicTitle) + ".pptx");
+        return path;
     }
 
     @Override
     protected String getFormatHint() {
-        return "PPTX (slide outline JSON)";
+        return "PPTX (two-phase: LectureScript + Apache POI)";
     }
 
-    private String generateSlideOutline(GenerationState state) {
-        String prompt = buildPrompt(state);
-        log.info("VideoGenerator: sending prompt to LLM for topic={} (prompt length={})",
-            state.knowledgePoint(), prompt.length());
+    // ---- Phase 1: Text model generates LectureScript ----
 
-        String response = chatClient.prompt().user(prompt).call().content();
-        return response != null ? response : "[]";
-    }
+    private LectureScript generateLectureScript(ModelProvider provider, GenerationState state) {
+        String prompt = buildLectureScriptPrompt(state);
+        log.info("VideoGenerator: sending LectureScript prompt to text model (prompt length={})",
+            prompt.length());
 
-    private List<PptxBuilder.SlideData> parseSlides(String jsonStr) throws Exception {
-        // Strip code fences if present
-        String cleaned = jsonStr.trim();
-        if (cleaned.startsWith("```json")) {
-            cleaned = cleaned.substring(7);
-        } else if (cleaned.startsWith("```")) {
-            cleaned = cleaned.substring(3);
+        String response = provider.chat(prompt);
+        log.info("VideoGenerator: received LectureScript response (length={})",
+            response != null ? response.length() : 0);
+
+        if (response == null || response.isBlank()) {
+            log.warn("VideoGenerator: empty response, using fallback script");
+            return buildFallbackScript(state);
         }
-        if (cleaned.endsWith("```")) {
-            cleaned = cleaned.substring(0, cleaned.length() - 3);
-        }
-        cleaned = cleaned.trim();
 
-        List<PptxBuilder.SlideData> slides = objectMapper.readValue(cleaned,
-            new TypeReference<List<PptxBuilder.SlideData>>() {});
-
-        if (slides == null || slides.isEmpty()) {
-            throw new IllegalStateException("Parsed slide list is empty");
+        try {
+            // Strip code fences
+            response = response.replaceAll("```json\\s*", "").replaceAll("```\\s*$", "").trim();
+            return objectMapper.readValue(response, LectureScript.class);
+        } catch (Exception e) {
+            log.warn("Failed to parse LectureScript, using fallback: {}", e.getMessage());
+            return buildFallbackScript(state);
         }
-        return slides;
     }
 
-    private List<PptxBuilder.SlideData> buildFallbackSlides(GenerationState state) {
-        String topic = state.knowledgePoint();
-        List<PptxBuilder.SlideData> fallback = new ArrayList<>();
-        fallback.add(new PptxBuilder.SlideData("概述",
-            List.of(topic + " 的基本概念与背景介绍",
-                "本课程的学习目标与预期成果",
-                "内容结构与学习路径说明"),
-            "开场引入，建立学习框架"));
-        fallback.add(new PptxBuilder.SlideData("核心原理",
-            List.of(topic + " 的核心机制与工作原理",
-                "关键概念与术语解析",
-                "典型应用场景与实践案例"),
-            "深入讲解核心知识点"));
-        fallback.add(new PptxBuilder.SlideData("总结",
-            List.of("本章知识要点回顾",
-                "与其他知识点的关联与拓展",
-                "课后思考与练习建议"),
-            "总结回顾，引导后续学习"));
-        return fallback;
-    }
+    // ---- Phase 2: Visual model generates PPTX ----
 
-    private String buildPrompt(GenerationState state) {
+    private byte[] generateVisualPptx(ModelProvider provider, LectureScript script) {
+        // Build a prompt describing the full PPT layout based on script
         StringBuilder sb = new StringBuilder();
-        sb.append("你是一位资深的教学设计师，擅长为知识点设计结构清晰的PPT演示文稿大纲。\n\n");
+        sb.append("Create a presentation with the following slides:\n\n");
+        for (SlideScript s : script.slides()) {
+            sb.append("Slide ").append(s.index()).append(": ").append(s.title()).append("\n");
+            sb.append("Visual: ").append(s.visualPrompt()).append("\n");
+            sb.append("Bullets: ").append(String.join(", ", s.bulletPoints())).append("\n\n");
+        }
+        String response = provider.chat(sb.toString());
+        // For now, visual provider output is text — fallback to POI
+        // Future: parse provider-specific PPTX/HTML format
+        throw new UnsupportedOperationException(
+            "Visual provider PPTX parsing not yet implemented — will fallback to Apache POI");
+    }
+
+    // ---- Fallback: Apache POI-based PPTX from LectureScript ----
+
+    private byte[] buildFallbackPptx(LectureScript script) {
+        List<PptxBuilder.SlideData> slides = script.slides().stream()
+            .map(s -> new PptxBuilder.SlideData(s.title(), s.bulletPoints(), s.narration()))
+            .toList();
+        return pptxBuilder.buildPresentation(script.title(), slides);
+    }
+
+    // ---- Fallback: hardcoded LectureScript when LLM fails ----
+
+    private LectureScript buildFallbackScript(GenerationState state) {
+        String topic = state.knowledgePoint();
+        return new LectureScript(
+            topic + " — 课程讲解",
+            List.of(
+                new SlideScript(1, "概述",
+                    List.of(topic, "学习目标", "内容结构"),
+                    "欢迎来到本节课程",
+                    "Title slide with course overview illustration",
+                    30),
+                new SlideScript(2, "核心概念",
+                    List.of("关键概念", "基本原理", "数学推导"),
+                    "让我们深入理解核心原理",
+                    "Diagram showing concept relationships and key formula",
+                    60),
+                new SlideScript(3, "实践应用",
+                    List.of("典型案例", "常见问题", "解决方案"),
+                    "通过实例加深理解",
+                    "Example scenarios with step-by-step visualization",
+                    60),
+                new SlideScript(4, "总结",
+                    List.of("要点回顾", "知识关联", "下一步学习"),
+                    "本节课到此结束",
+                    "Summary mindmap connecting all key points",
+                    30)
+            ),
+            "李老师",
+            180
+        );
+    }
+
+    // ---- Prompt builder: asks for LectureScript JSON format ----
+
+    private String buildLectureScriptPrompt(GenerationState state) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("你是一位资深的教学设计师，擅长为知识点设计结构清晰的课程讲稿。\n\n");
 
         // --- Student profile ---
         sb.append("## 学生画像\n");
@@ -187,28 +225,39 @@ public class VideoGenerator extends AbstractGenerator {
         sb.append("\n## 目标知识点\n");
         sb.append(state.knowledgePoint()).append("\n");
 
-        // --- Output requirements ---
+        // --- Output requirements: LectureScript JSON format ---
         sb.append("\n## 输出要求\n\n");
-        sb.append("请设计一套完整的PPT演示文稿大纲，输出为 JSON 数组格式。\n\n");
+        sb.append("请设计一套完整的课程讲稿（LectureScript），输出为 JSON 格式。\n\n");
         sb.append("要求：\n");
         sb.append("1. 共设计 5-10 张幻灯片（根据知识点复杂度调整）\n");
-        sb.append("2. 每张幻灯片包含标题（title）、要点列表（bullets）和讲师备注（notes）\n");
+        sb.append("2. 每张幻灯片包含：\n");
+        sb.append("   - index: 幻灯片序号（从1开始）\n");
+        sb.append("   - title: 幻灯片标题\n");
+        sb.append("   - bulletPoints: 要点列表（每条不超过30字）\n");
+        sb.append("   - narration: 讲师讲解词（口语化，便于讲授）\n");
+        sb.append("   - visualPrompt: 视觉设计描述（用于AI生成幻灯片配图）\n");
+        sb.append("   - durationSeconds: 本页建议讲解时长（秒）\n");
         sb.append("3. 幻灯片结构应逻辑递进：引入 → 概念讲解 → 原理分析 → 案例演示 → 总结\n");
-        sb.append("4. 要点简洁明了，每条不超过30字\n");
-        sb.append("5. 备注中包含讲师讲课提示、补充说明或互动建议\n\n");
+        sb.append("4. 包含课程标题（title）、讲师姓名（teacherName）和总时长（estimatedDurationSeconds）\n\n");
 
         sb.append("输出 JSON 格式：\n");
-        sb.append("```json\n");
-        sb.append("[\n");
-        sb.append("  {\n");
-        sb.append("    \"title\": \"幻灯片标题\",\n");
-        sb.append("    \"bullets\": [\"要点1\", \"要点2\", \"要点3\"],\n");
-        sb.append("    \"notes\": \"讲师备注（讲课提示、补充说明等）\"\n");
-        sb.append("  }\n");
-        sb.append("]\n");
-        sb.append("```\n\n");
+        sb.append("{\n");
+        sb.append("  \"title\": \"课程标题\",\n");
+        sb.append("  \"teacherName\": \"讲师姓名\",\n");
+        sb.append("  \"estimatedDurationSeconds\": 600,\n");
+        sb.append("  \"slides\": [\n");
+        sb.append("    {\n");
+        sb.append("      \"index\": 1,\n");
+        sb.append("      \"title\": \"幻灯片标题\",\n");
+        sb.append("      \"bulletPoints\": [\"要点1\", \"要点2\", \"要点3\"],\n");
+        sb.append("      \"narration\": \"讲师的讲解词...\",\n");
+        sb.append("      \"visualPrompt\": \"视觉设计描述...\",\n");
+        sb.append("      \"durationSeconds\": 60\n");
+        sb.append("    }\n");
+        sb.append("  ]\n");
+        sb.append("}\n\n");
 
-        sb.append("请直接输出 JSON 数组，不要包含解释性文字。");
+        sb.append("请直接输出 JSON，不要包含解释性文字和代码块标记。");
 
         return sb.toString();
     }

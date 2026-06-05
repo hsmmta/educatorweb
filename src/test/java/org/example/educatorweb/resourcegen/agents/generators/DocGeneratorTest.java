@@ -5,15 +5,16 @@ import org.example.educatorweb.common.model.ResourceType;
 import org.example.educatorweb.knowledgegraph.model.KnowledgeContext;
 import org.example.educatorweb.profile.model.StudentProfile;
 import org.example.educatorweb.rag.model.DocumentSnippet;
+import org.example.educatorweb.resourcegen.config.ModelRegistry;
+import org.example.educatorweb.resourcegen.infrastructure.ModelProvider;
 import org.example.educatorweb.resourcegen.model.GeneratedResource;
 import org.example.educatorweb.resourcegen.model.GenerationState;
 import org.example.educatorweb.resourcegen.model.ResourceBlueprint;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.ai.chat.client.ChatClient;
 
 import java.time.Instant;
 import java.util.List;
@@ -27,16 +28,17 @@ import static org.mockito.Mockito.when;
 class DocGeneratorTest {
 
     @Mock
-    private ChatClient chatClient;
+    private ModelProvider provider;
 
-    @Mock
-    private ChatClient.ChatClientRequestSpec requestSpec;
-
-    @Mock
-    private ChatClient.CallResponseSpec responseSpec;
-
-    @InjectMocks
     private DocGenerator docGenerator;
+
+    @BeforeEach
+    void setUp() {
+        // Use a real ModelRegistry backed by a mock ModelProvider
+        // (avoid Mockito inline-mock issue with concrete class on JDK 25)
+        var registry = new ModelRegistry(provider, provider);
+        docGenerator = new DocGenerator(registry);
+    }
 
     private static final String MOCK_MARKDOWN = """
         # 支持向量机(SVM) 教学文档
@@ -97,11 +99,7 @@ class DocGeneratorTest {
 
     @Test
     void shouldGenerateMarkdownDocument() {
-        // Setup mock chain
-        when(chatClient.prompt()).thenReturn(requestSpec);
-        when(requestSpec.user(anyString())).thenReturn(requestSpec);
-        when(requestSpec.call()).thenReturn(responseSpec);
-        when(responseSpec.content()).thenReturn(MOCK_MARKDOWN);
+        when(provider.chat(anyString())).thenReturn(MOCK_MARKDOWN);
 
         // Create a GenerationState with blueprint, profile, and context
         var profile = new StudentProfile(
@@ -172,10 +170,7 @@ class DocGeneratorTest {
 
     @Test
     void shouldHandleEmptyLlmResponse() {
-        when(chatClient.prompt()).thenReturn(requestSpec);
-        when(requestSpec.user(anyString())).thenReturn(requestSpec);
-        when(requestSpec.call()).thenReturn(responseSpec);
-        when(responseSpec.content()).thenReturn("");
+        when(provider.chat(anyString())).thenReturn("");
 
         GenerateRequest req = new GenerateRequest("student-1", "SVM", List.of(ResourceType.DOC));
         GenerationState state = GenerationState.initial(req);
@@ -190,10 +185,7 @@ class DocGeneratorTest {
 
     @Test
     void shouldHandleMissingBlueprintProfileAndContext() {
-        when(chatClient.prompt()).thenReturn(requestSpec);
-        when(requestSpec.user(anyString())).thenReturn(requestSpec);
-        when(requestSpec.call()).thenReturn(responseSpec);
-        when(responseSpec.content()).thenReturn("# Basic Topic\n\nSimple content here.");
+        when(provider.chat(anyString())).thenReturn("# Basic Topic\n\nSimple content here.");
 
         GenerateRequest req = new GenerateRequest("student-1", "Linear Algebra",
             List.of(ResourceType.DOC));

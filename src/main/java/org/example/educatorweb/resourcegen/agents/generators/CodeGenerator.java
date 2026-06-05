@@ -3,12 +3,13 @@ package org.example.educatorweb.resourcegen.agents.generators;
 import org.example.educatorweb.common.model.ResourceType;
 import org.example.educatorweb.knowledgegraph.model.KnowledgeContext;
 import org.example.educatorweb.profile.model.StudentProfile;
+import org.example.educatorweb.resourcegen.config.ModelRegistry;
 import org.example.educatorweb.resourcegen.infrastructure.CodeSandboxService;
 import org.example.educatorweb.resourcegen.infrastructure.CodeSandboxService.ExecutionResult;
+import org.example.educatorweb.resourcegen.infrastructure.ModelProvider;
 import org.example.educatorweb.resourcegen.infrastructure.SandboxTemplate;
 import org.example.educatorweb.resourcegen.model.GenerationState;
 import org.example.educatorweb.resourcegen.model.ResourceBlueprint;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Component;
 
 /**
@@ -21,8 +22,8 @@ public class CodeGenerator extends AbstractGenerator {
 
     private final CodeSandboxService sandbox;
 
-    public CodeGenerator(ChatClient chatClient, CodeSandboxService sandbox) {
-        super(chatClient, ResourceType.CODE);
+    public CodeGenerator(ModelRegistry registry, CodeSandboxService sandbox) {
+        super(registry, ResourceType.CODE);
         this.sandbox = sandbox;
     }
 
@@ -32,7 +33,8 @@ public class CodeGenerator extends AbstractGenerator {
         log.info("CodeGenerator: sending prompt to LLM for topic={} (prompt length={})",
             state.knowledgePoint(), prompt.length());
 
-        String response = chatClient.prompt().user(prompt).call().content();
+        ModelProvider provider = registry.resolve(supportedType());
+        String response = provider.chat(prompt);
         log.info("CodeGenerator: received LLM response (length={})",
             response != null ? response.length() : 0);
 

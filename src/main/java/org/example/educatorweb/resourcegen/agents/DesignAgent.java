@@ -6,13 +6,14 @@ import org.example.educatorweb.common.model.ResourceType;
 import org.example.educatorweb.knowledgegraph.model.KnowledgeContext;
 import org.example.educatorweb.profile.model.StudentProfile;
 import org.example.educatorweb.rag.model.DocumentSnippet;
+import org.example.educatorweb.resourcegen.config.ModelRegistry;
+import org.example.educatorweb.resourcegen.infrastructure.ModelProvider;
 import org.example.educatorweb.resourcegen.model.GenerationState;
 import org.example.educatorweb.resourcegen.model.ProgressStage;
 import org.example.educatorweb.resourcegen.model.ResourceBlueprint;
 import org.example.educatorweb.resourcegen.orchestration.AgentNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -25,11 +26,11 @@ import java.util.stream.Collectors;
 public class DesignAgent implements AgentNode {
     private static final Logger log = LoggerFactory.getLogger(DesignAgent.class);
 
-    private final ChatClient chatClient;
+    private final ModelRegistry registry;
     private final ObjectMapper objectMapper;
 
-    public DesignAgent(ChatClient chatClient, ObjectMapper objectMapper) {
-        this.chatClient = chatClient;
+    public DesignAgent(ModelRegistry registry, ObjectMapper objectMapper) {
+        this.registry = registry;
         this.objectMapper = objectMapper;
     }
 
@@ -40,7 +41,8 @@ public class DesignAgent implements AgentNode {
             state.knowledgePoint(), prompt.length());
 
         try {
-            String response = chatClient.prompt().user(prompt).call().content();
+            ModelProvider provider = registry.resolve(ResourceType.DOC); // use text model for blueprint design
+            String response = provider.chat(prompt);
             log.info("DesignAgent: received LLM response (length={})", response != null ? response.length() : 0);
 
             ResourceBlueprint blueprint = parseBlueprint(response);

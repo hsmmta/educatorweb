@@ -1,13 +1,17 @@
 package org.example.educatorweb.resourcegen.config;
 
 import org.example.educatorweb.resourcegen.infrastructure.CheckpointService;
+import org.example.educatorweb.resourcegen.infrastructure.DeepSeekProvider;
+import org.example.educatorweb.resourcegen.infrastructure.ModelProvider;
+import org.example.educatorweb.resourcegen.infrastructure.OpenAiCompatibleProvider;
+import org.example.educatorweb.resourcegen.infrastructure.XunfeiProvider;
 import org.example.educatorweb.resourcegen.orchestration.GraphOrchestrator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -28,55 +32,82 @@ public class ResourceGenConfig {
     @Value("${generation.fanout.thread-pool-size:6}")
     private int threadPoolSize;
 
-    @Value("${spring.ai.openai.base-url:https://api.deepseek.com}")
-    private String baseUrl;
-
-    @Value("${spring.ai.openai.chat.options.model:deepseek-chat}")
-    private String model;
-
     @Autowired(required = false)
     private CheckpointService checkpointService;
 
+    // ---- ModelRegistry bean: wires text and visual providers ----
+
     @Bean
-    public OpenAiApi openAiApi() {
-        // Read API key from .env directly — more reliable than @Value resolution ordering
-        String apiKey = System.getProperty("DEEPSEEK_API_KEY",
-            System.getenv("DEEPSEEK_API_KEY"));
-        if (apiKey == null || apiKey.isBlank() || apiKey.startsWith("sk-your")) {
-            log.warn("DEEPSEEK_API_KEY not set or is placeholder — LLM calls will fail");
-        }
-        log.info("OpenAiApi: baseUrl={}, apiKey={}...", baseUrl,
-            apiKey != null ? apiKey.substring(0, Math.min(8, apiKey.length())) : "null");
+    public ModelRegistry modelRegistry(
+            ModelRoutingProperties routingProps,
+            DeepSeekProvider deepSeekProvider,
+            OpenAiCompatibleProvider openAiProvider,
+            OpenAiCompatibleProvider openRouterProvider,
+            OpenAiCompatibleProvider siliconFlowProvider,
+            XunfeiProvider xunfeiProvider) {
 
-        // Configure RestClient with long timeouts (DeepSeek needs >10s for long prompts)
-        var httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(30))
-            .build();
-        var requestFactory = new JdkClientHttpRequestFactory(httpClient);
-        requestFactory.setReadTimeout(Duration.ofMinutes(3));
+        ModelProvider textProvider = switch (routingProps.text().provider()) {
+            case "xunfei" -> xunfeiProvider;
+            default -> deepSeekProvider;
+        };
 
-        var restClientBuilder = RestClient.builder()
-            .requestFactory(requestFactory);
+        ModelProvider visualProvider = switch (routingProps.visual().provider()) {
+            case "openai" -> openAiProvider;
+            case "openrouter" -> openRouterProvider;
+            case "siliconflow" -> siliconFlowProvider;
+            case "xunfei" -> xunfeiProvider;
+            default -> deepSeekProvider;
+        };
 
-        return OpenAiApi.builder()
-            .baseUrl(baseUrl)
-            .apiKey(apiKey)
-            .restClientBuilder(restClientBuilder)
-            .build();
+        return new ModelRegistry(textProvider, visualProvider);
+    }
+
+    // ---- Provider beans ----
+
+    @Bean
+    public DeepSeekProvider deepSeekProvider(ModelRoutingProperties props) {
+        var cfg = props.providers().get("deepseek");
+        String apiKey = System.getProperty("DEEPSEEK_API_KEY", System.getenv("DEEPSEEK_API_KEY"));
+        var restClientBuilder = longTimeoutRestClient();
+        var api = OpenAiApi.builder().baseUrl(cfg.baseUrl()).apiKey(apiKey)
+            .restClientBuilder(restClientBuilder).build();
+        var chatModel = new OpenAiChatModel(api,
+            OpenAiChatOptions.builder().model(props.text().model()).temperature(props.text().temperature()).build());
+        var chatClient = ChatClient.builder(chatModel).build();
+        return new DeepSeekProvider(chatClient, cfg.enabled());
     }
 
     @Bean
-    public OpenAiChatModel openAiChatModel(OpenAiApi openAiApi) {
-        return new OpenAiChatModel(openAiApi, OpenAiChatOptions.builder()
-            .model(model)
-            .temperature(0.7)
-            .build());
+    public OpenAiCompatibleProvider openAiProvider(ModelRoutingProperties props) {
+        var cfg = props.providers().get("openai");
+        return new OpenAiCompatibleProvider("openai", cfg.baseUrl(),
+            resolveEnvKey(cfg.apiKey(), "OPENAI_API_KEY"),
+            props.visual().model(), cfg.enabled());
     }
 
     @Bean
-    public ChatClient chatClient(OpenAiChatModel chatModel) {
-        return ChatClient.builder(chatModel).build();
+    public OpenAiCompatibleProvider openRouterProvider(ModelRoutingProperties props) {
+        var cfg = props.providers().get("openrouter");
+        return new OpenAiCompatibleProvider("openrouter", cfg.baseUrl(),
+            resolveEnvKey(cfg.apiKey(), "OPENROUTER_API_KEY"),
+            props.visual().model(), cfg.enabled());
     }
+
+    @Bean
+    public OpenAiCompatibleProvider siliconFlowProvider(ModelRoutingProperties props) {
+        var cfg = props.providers().get("siliconflow");
+        return new OpenAiCompatibleProvider("siliconflow", cfg.baseUrl(),
+            resolveEnvKey(cfg.apiKey(), "SILICONFLOW_API_KEY"),
+            props.visual().model(), cfg.enabled());
+    }
+
+    @Bean
+    public XunfeiProvider xunfeiProvider(ModelRoutingProperties props) {
+        var cfg = props.providers().get("xunfei");
+        return new XunfeiProvider(cfg.enabled(), cfg.appId(), cfg.apiKey(), cfg.apiSecret());
+    }
+
+    // ---- Orchestrator ----
 
     @Bean(destroyMethod = "shutdown")
     public GraphOrchestrator graphOrchestrator() {
@@ -85,5 +116,31 @@ public class ResourceGenConfig {
             orchestrator.setCheckpointService(checkpointService);
         }
         return orchestrator;
+    }
+
+    // ---- Helpers ----
+
+    /**
+     * Resolve API key: prefer YAML literal value, fallback to env var / system property.
+     */
+    private String resolveEnvKey(String yamlValue, String envVar) {
+        if (yamlValue != null && !yamlValue.isBlank() && !yamlValue.startsWith("${")) {
+            return yamlValue;
+        }
+        String sysProp = System.getProperty(envVar);
+        if (sysProp != null && !sysProp.isBlank()) return sysProp;
+        String env = System.getenv(envVar);
+        return env != null ? env : "";
+    }
+
+    /**
+     * RestClient.Builder with long timeouts for LLM calls.
+     */
+    private RestClient.Builder longTimeoutRestClient() {
+        var httpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(30)).build();
+        var requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(Duration.ofMinutes(3));
+        return RestClient.builder().requestFactory(requestFactory);
     }
 }

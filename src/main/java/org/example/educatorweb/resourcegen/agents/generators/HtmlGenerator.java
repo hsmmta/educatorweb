@@ -3,12 +3,13 @@ package org.example.educatorweb.resourcegen.agents.generators;
 import org.example.educatorweb.common.model.ResourceType;
 import org.example.educatorweb.knowledgegraph.model.KnowledgeContext;
 import org.example.educatorweb.profile.model.StudentProfile;
+import org.example.educatorweb.resourcegen.config.ModelRegistry;
 import org.example.educatorweb.resourcegen.infrastructure.HtmlSandboxValidator;
 import org.example.educatorweb.resourcegen.infrastructure.HtmlSandboxValidator.ValidationResult;
+import org.example.educatorweb.resourcegen.infrastructure.ModelProvider;
 import org.example.educatorweb.resourcegen.infrastructure.SandboxTemplate;
 import org.example.educatorweb.resourcegen.model.GenerationState;
 import org.example.educatorweb.resourcegen.model.ResourceBlueprint;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Component;
 
 /**
@@ -19,8 +20,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class HtmlGenerator extends AbstractGenerator {
 
-    public HtmlGenerator(ChatClient chatClient) {
-        super(chatClient, ResourceType.HTML);
+    public HtmlGenerator(ModelRegistry registry) {
+        super(registry, ResourceType.HTML);
     }
 
     @Override
@@ -29,7 +30,8 @@ public class HtmlGenerator extends AbstractGenerator {
         log.info("HtmlGenerator: sending prompt to LLM for topic={} (prompt length={})",
             state.knowledgePoint(), prompt.length());
 
-        String response = chatClient.prompt().user(prompt).call().content();
+        ModelProvider provider = registry.resolve(supportedType());
+        String response = provider.chat(prompt);
         log.info("HtmlGenerator: received LLM response (length={})",
             response != null ? response.length() : 0);
 

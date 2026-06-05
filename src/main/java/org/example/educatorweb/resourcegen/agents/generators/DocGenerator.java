@@ -4,9 +4,10 @@ import org.example.educatorweb.common.model.ResourceType;
 import org.example.educatorweb.knowledgegraph.model.KnowledgeContext;
 import org.example.educatorweb.profile.model.StudentProfile;
 import org.example.educatorweb.rag.model.DocumentSnippet;
+import org.example.educatorweb.resourcegen.config.ModelRegistry;
+import org.example.educatorweb.resourcegen.infrastructure.ModelProvider;
 import org.example.educatorweb.resourcegen.model.GenerationState;
 import org.example.educatorweb.resourcegen.model.ResourceBlueprint;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -14,8 +15,8 @@ import java.util.List;
 @Component
 public class DocGenerator extends AbstractGenerator {
 
-    public DocGenerator(ChatClient chatClient) {
-        super(chatClient, ResourceType.DOC);
+    public DocGenerator(ModelRegistry registry) {
+        super(registry, ResourceType.DOC);
     }
 
     @Override
@@ -24,7 +25,8 @@ public class DocGenerator extends AbstractGenerator {
         log.info("DocGenerator: sending prompt to LLM for topic={} (prompt length={})",
             state.knowledgePoint(), prompt.length());
 
-        String response = chatClient.prompt().user(prompt).call().content();
+        ModelProvider provider = registry.resolve(supportedType());
+        String response = provider.chat(prompt);
         log.info("DocGenerator: received LLM response (length={})",
             response != null ? response.length() : 0);
 

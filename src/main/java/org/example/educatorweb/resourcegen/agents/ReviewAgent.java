@@ -1,7 +1,9 @@
 package org.example.educatorweb.resourcegen.agents;
 
 import org.example.educatorweb.common.model.ResourceType;
+import org.example.educatorweb.resourcegen.config.ModelRegistry;
 import org.example.educatorweb.resourcegen.config.ReviewKeywordsConfig;
+import org.example.educatorweb.resourcegen.infrastructure.ModelProvider;
 import org.example.educatorweb.resourcegen.model.GeneratedResource;
 import org.example.educatorweb.resourcegen.model.GenerationState;
 import org.example.educatorweb.resourcegen.model.ProgressStage;
@@ -12,7 +14,6 @@ import org.example.educatorweb.resourcegen.model.QualityReport.Severity;
 import org.example.educatorweb.resourcegen.orchestration.AgentNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -25,11 +26,11 @@ public class ReviewAgent implements AgentNode {
     private static final Logger log = LoggerFactory.getLogger(ReviewAgent.class);
     private static final int MAX_RETRIES = 3;
 
-    private final ChatClient chatClient;
+    private final ModelRegistry registry;
     private final ReviewKeywordsConfig reviewKeywordsConfig;
 
-    public ReviewAgent(ChatClient chatClient, ReviewKeywordsConfig reviewKeywordsConfig) {
-        this.chatClient = chatClient;
+    public ReviewAgent(ModelRegistry registry, ReviewKeywordsConfig reviewKeywordsConfig) {
+        this.registry = registry;
         this.reviewKeywordsConfig = reviewKeywordsConfig;
     }
 
@@ -127,7 +128,8 @@ public class ReviewAgent implements AgentNode {
 
         try {
             String prompt = buildL2ReviewPrompt(state.knowledgePoint(), resource.type(), content);
-            String response = chatClient.prompt().user(prompt).call().content();
+            ModelProvider provider = registry.resolve(ResourceType.DOC); // always use text model for review
+            String response = provider.chat(prompt);
 
             if (response == null || response.isBlank()) {
                 issues.add(new QualityIssue(
