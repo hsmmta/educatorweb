@@ -100,7 +100,7 @@ public class SeedanceVideoProvider implements VideoProvider {
         log.info("Seedream: generating image (model={})", imageModel);
         try {
             String body = String.format("""
-                {"model":"%s","prompt":"%s","size":"1024x1024",
+                {"model":"%s","prompt":"%s","size":"2048x2048",
                 "response_format":"b64_json","watermark":false}
                 """, imageModel, escape(prompt));
 
