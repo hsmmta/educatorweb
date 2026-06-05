@@ -12,6 +12,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.web.client.RestClient;
+
+import java.net.http.HttpClient;
+import java.time.Duration;
 
 @Configuration
 public class ResourceGenConfig {
@@ -38,7 +43,24 @@ public class ResourceGenConfig {
         if (apiKey == null || apiKey.isBlank() || apiKey.startsWith("sk-your")) {
             log.warn("DEEPSEEK_API_KEY not set or is placeholder — LLM calls will fail");
         }
-        return new OpenAiApi(baseUrl, apiKey);
+        log.info("OpenAiApi: baseUrl={}, apiKey={}...", baseUrl,
+            apiKey != null ? apiKey.substring(0, Math.min(8, apiKey.length())) : "null");
+
+        // Configure RestClient with long timeouts (DeepSeek needs >10s for long prompts)
+        var httpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(30))
+            .build();
+        var requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(Duration.ofMinutes(3));
+
+        var restClientBuilder = RestClient.builder()
+            .requestFactory(requestFactory);
+
+        return OpenAiApi.builder()
+            .baseUrl(baseUrl)
+            .apiKey(apiKey)
+            .restClientBuilder(restClientBuilder)
+            .build();
     }
 
     @Bean
