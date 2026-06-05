@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -19,6 +20,7 @@ import java.net.http.HttpClient;
 import java.time.Duration;
 
 @Configuration
+@EnableConfigurationProperties(ModelRoutingProperties.class)
 public class ResourceGenConfig {
 
     private static final Logger log = LoggerFactory.getLogger(ResourceGenConfig.class);

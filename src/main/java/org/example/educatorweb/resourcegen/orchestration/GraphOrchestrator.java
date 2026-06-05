@@ -150,7 +150,7 @@ public class GraphOrchestrator {
                 resourceData.put("metadata", resource.metadata());
                 payload.put(entry.getKey().name(), resourceData);
             }
-            emit(sink, state, "Pipeline completed — " + state.results().size() + " resources generated", 100, payload);
+            emit(sink, state, "Pipeline completed successfully — " + state.results().size() + " resources generated", 100, payload);
         }
     }
 
