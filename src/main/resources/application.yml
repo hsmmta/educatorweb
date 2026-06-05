@@ -38,8 +38,9 @@ model-routing:
     model: deepseek-chat
     temperature: 0.7
   video:
-    provider: seedance            # seedance | veo | cogvideox
-    model: seedance-v1
+    provider: seedance                          # seedance | veo | cogvideox
+    model: doubao-seedance-1-5-pro-251215       # video generation model
+    image-model: doubao-seedream-4-5-251128     # image generation model (fallback)
     temperature: 0.7
   providers:
     deepseek:
@@ -65,8 +66,8 @@ model-routing:
       api-secret: ${XUNFEI_API_SECRET:}
       app-id: ${XUNFEI_APP_ID:}
     seedance:
-      enabled: false
-      base-url: https://api.seedance.io
+      enabled: true
+      base-url: https://ark.cn-beijing.volces.com/api/v3
       api-key: ${SEEDANCE_API_KEY:}
     huggingface:
       enabled: false

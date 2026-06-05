@@ -91,6 +91,8 @@ public class ResourceGenConfig {
             case "seedance" -> new SeedanceVideoProvider(
                 providerCfg.baseUrl(),
                 resolveEnvKey(providerCfg.apiKey(), "SEEDANCE_API_KEY"),
+                videoCfg.model(),
+                videoCfg.imageModel(),
                 true);
             default -> {
                 log.warn("Unknown video provider '{}', falling back to StaticImageFallbackProvider",

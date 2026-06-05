@@ -16,9 +16,14 @@ public record ModelRoutingProperties(
         }
     }
 
-    public record ModelConfig(String provider, String model, double temperature) {
+    public record ModelConfig(String provider, String model, double temperature, String imageModel) {
         public ModelConfig {
             if (temperature == 0) temperature = 0.7;
+            if (imageModel == null) imageModel = model;
+        }
+        // Backward-compatible constructor without imageModel
+        public ModelConfig(String provider, String model, double temperature) {
+            this(provider, model, temperature, model);
         }
     }
 
