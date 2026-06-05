@@ -65,10 +65,8 @@ public class SeedanceVideoProvider implements VideoProvider {
                 String state = status.get("status").asText();
 
                 if ("succeeded".equals(state)) {
-                    String videoUrl = status.path("output").path("video_url").asText();
-                    if (videoUrl.isBlank()) {
-                        videoUrl = status.at("/data/0/url").asText();
-                    }
+                    // API doc: response is content.video_url (not output.video_url)
+                    String videoUrl = status.path("content").path("video_url").asText();
                     if (!videoUrl.isBlank()) {
                         log.info("Seedance: video ready, downloading from {}", videoUrl);
                         return download(videoUrl);
