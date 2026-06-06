@@ -1,5 +1,6 @@
 package org.example.educatorweb.resourcegen.infrastructure;
 
+import org.apache.poi.sl.usermodel.ShapeType;
 import org.apache.poi.sl.usermodel.TextParagraph;
 import org.apache.poi.xslf.usermodel.*;
 import org.slf4j.Logger;
@@ -19,159 +20,250 @@ public class PptxBuilder {
 
     public record SlideData(String title, List<String> bullets, String notes) {}
 
-    // 16:9 aspect ratio in EMU (English Metric Units)
-    // 13.333" x 7.5" = 12192000 x 6858000 EMU (1 inch = 914400 EMU)
-    private static final int SLIDE_WIDTH = 12192000;
-    private static final int SLIDE_HEIGHT = 6858000;
+    // 16:9 in points (Apache POI legacy setPageSize API expects points, not EMU)
+    private static final int W = 960;   // 13.333" × 72
+    private static final int H = 540;   // 7.5" × 72
 
-    private static final Color TITLE_COLOR = new Color(0x1A56DB);    // Blue
-    private static final Color BULLET_COLOR = new Color(0x4B5563);   // Gray
-    private static final Color SUBTITLE_COLOR = new Color(0x6B7280); // Light gray
-    private static final Color NOTES_COLOR = new Color(0x9CA3AF);    // Lighter gray
-    private static final Color BG_COLOR = new Color(0xF9FAFB);       // Very light background
+    // ── Color palette ──
+    private static final Color CLR_PRIMARY   = new Color(0x1E3A8A);  // deep navy
+    private static final Color CLR_ACCENT    = new Color(0x3B82F6);  // bright blue
+    private static final Color CLR_GOLD      = new Color(0xF59E0B);  // amber gold
+    private static final Color CLR_BG        = Color.WHITE;
+    private static final Color CLR_CARD_BG   = new Color(0xF0F7FF);  // ice blue
+    private static final Color CLR_CARD2_BG  = new Color(0xF5F3FF);  // lavender tint (alt)
+    private static final Color CLR_TEXT      = new Color(0x1E293B);  // slate-800
+    private static final Color CLR_MUTED     = new Color(0x64748B);  // slate-500
+    private static final Color CLR_LIGHT_BAR = new Color(0xDBEAFE);  // blue-100 (deco)
+
+    // Accent bar colors for visual variety across slides
+    private static final Color[] ACCENT_BARS = {
+        new Color(0x3B82F6),  // blue
+        new Color(0x8B5CF6),  // violet
+        new Color(0x06B6D4),  // cyan
+        new Color(0x10B981),  // emerald
+        new Color(0xF59E0B),  // amber
+        new Color(0xEF4444),  // red
+    };
+
+    // ── Public API ──
 
     public byte[] buildPresentation(String topicTitle, List<SlideData> slides) {
         try (XMLSlideShow ppt = new XMLSlideShow()) {
-            ppt.setPageSize(new java.awt.Dimension(SLIDE_WIDTH, SLIDE_HEIGHT));
+            ppt.setPageSize(new java.awt.Dimension(W, H));
 
-            // Title slide
             createTitleSlide(ppt, topicTitle);
 
-            // Content slides
-            for (SlideData slide : slides) {
-                createContentSlide(ppt, slide);
+            int totalSlides = slides.size();
+            for (int i = 0; i < slides.size(); i++) {
+                createContentSlide(ppt, slides.get(i), i + 1, totalSlides);
             }
 
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             ppt.write(baos);
             byte[] result = baos.toByteArray();
-            log.info("PptxBuilder: generated PPTX with {} slides ({} bytes)",
-                1 + slides.size(), result.length);
+            log.info("PptxBuilder: generated PPTX with {} content slides ({} bytes)",
+                slides.size(), result.length);
             return result;
         } catch (IOException e) {
             throw new RuntimeException("Failed to build PPTX: " + e.getMessage(), e);
         }
     }
 
+    // ═══════════════════════════════════════════════
+    //  Title slide
+    // ═══════════════════════════════════════════════
+
     private void createTitleSlide(XMLSlideShow ppt, String topicTitle) {
         XSLFSlide slide = ppt.createSlide();
+        setSlideBackground(slide, CLR_BG);
 
-        // Background color
-        setSlideBackground(slide, BG_COLOR);
+        // ── Top header block (dark bar) ──
+        addRect(slide, 0, 0, W, H * 4 / 10, CLR_PRIMARY);
 
-        // Title text box — centered, large font
+        // ── Gold accent stripe ──
+        addRect(slide, W * 3 / 10, H * 4 / 10 - 4, W * 4 / 10, 8, CLR_GOLD);
+
+        // ── Course label ──
+        XSLFTextBox labelBox = slide.createTextBox();
+        labelBox.setAnchor(new Rectangle(W / 10, H * 7 / 40, W * 8 / 10, H / 10));
+        XSLFTextParagraph labelPara = labelBox.addNewTextParagraph();
+        labelPara.setTextAlign(TextParagraph.TextAlign.CENTER);
+        XSLFTextRun labelRun = labelPara.addNewTextRun();
+        labelRun.setText("机器学习 · 课程精讲");
+        labelRun.setFontSize(14.0);
+        labelRun.setFontColor(new Color(0x93C5FD)); // blue-300
+        labelRun.setBold(false);
+
+        // ── Main title ──
         XSLFTextBox titleBox = slide.createTextBox();
-        titleBox.setAnchor(new Rectangle(
-            SLIDE_WIDTH / 10,
-            SLIDE_HEIGHT * 2 / 7,
-            SLIDE_WIDTH * 8 / 10,
-            SLIDE_HEIGHT * 2 / 7));
+        titleBox.setAnchor(new Rectangle(W / 10, H / 5, W * 8 / 10, H * 2 / 10));
         XSLFTextParagraph titlePara = titleBox.addNewTextParagraph();
         titlePara.setTextAlign(TextParagraph.TextAlign.CENTER);
         XSLFTextRun titleRun = titlePara.addNewTextRun();
         titleRun.setText(topicTitle);
-        titleRun.setFontSize(44.0);
+        titleRun.setFontSize(40.0);
         titleRun.setBold(true);
-        titleRun.setFontColor(TITLE_COLOR);
+        titleRun.setFontColor(Color.WHITE);
 
-        // Subtitle text box
+        // ── Bottom section (white area) ──
+        // Subtitle
         XSLFTextBox subBox = slide.createTextBox();
-        subBox.setAnchor(new Rectangle(
-            SLIDE_WIDTH / 10,
-            SLIDE_HEIGHT * 3 / 5,
-            SLIDE_WIDTH * 8 / 10,
-            SLIDE_HEIGHT / 8));
+        subBox.setAnchor(new Rectangle(W / 10, H * 55 / 100, W * 8 / 10, H / 12));
         XSLFTextParagraph subPara = subBox.addNewTextParagraph();
         subPara.setTextAlign(TextParagraph.TextAlign.CENTER);
         XSLFTextRun subRun = subPara.addNewTextRun();
-        subRun.setText("教学内容精讲");
-        subRun.setFontSize(24.0);
-        subRun.setFontColor(SUBTITLE_COLOR);
+        subRun.setText("个性化 AI 学习平台 · 多模态教学资源");
+        subRun.setFontSize(18.0);
+        subRun.setFontColor(CLR_MUTED);
 
-        // Decorative line
-        XSLFTextBox lineBox = slide.createTextBox();
-        lineBox.setAnchor(new Rectangle(
-            SLIDE_WIDTH / 4,
-            SLIDE_HEIGHT * 7 / 10,
-            SLIDE_WIDTH / 2,
-            SLIDE_HEIGHT / 30));
-        XSLFTextParagraph linePara = lineBox.addNewTextParagraph();
-        linePara.setTextAlign(TextParagraph.TextAlign.CENTER);
-        XSLFTextRun lineRun = linePara.addNewTextRun();
-        lineRun.setText("━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        lineRun.setFontSize(12.0);
-        lineRun.setFontColor(SUBTITLE_COLOR);
+        // ── Decorative icon circles ──
+        int cx = W / 2;
+        int cy = H * 66 / 100;
+        addOval(slide, cx - 40, cy - 20, 24, 24, CLR_ACCENT);
+        addOval(slide, cx - 10, cy - 20, 24, 24, CLR_GOLD);
+        addOval(slide, cx + 20, cy - 20, 24, 24, new Color(0x10B981)); // green
+
+        // ── Footer line ──
+        addRect(slide, W * 3 / 10, H * 94 / 100, W * 4 / 10, 2, CLR_LIGHT_BAR);
     }
 
-    private void createContentSlide(XMLSlideShow ppt, SlideData slideData) {
+    // ═══════════════════════════════════════════════
+    //  Content slide
+    // ═══════════════════════════════════════════════
+
+    private void createContentSlide(XMLSlideShow ppt, SlideData data,
+                                    int pageNum, int totalSlides) {
         XSLFSlide slide = ppt.createSlide();
+        setSlideBackground(slide, CLR_BG);
 
-        setSlideBackground(slide, BG_COLOR);
+        int leftMargin = 80;
+        int accentBarW = 6;
+        int contentX = leftMargin + accentBarW + 18;
 
-        // Slide title — top area, large blue text
+        // Alternating accent bar color per slide
+        Color barColor = ACCENT_BARS[(pageNum - 1) % ACCENT_BARS.length];
+
+        // ── Left accent bar ──
+        addRect(slide, leftMargin, 0, accentBarW, H, barColor);
+
+        // ── Top separator line ──
+        addRect(slide, leftMargin, 44, W - leftMargin * 2, 2, CLR_LIGHT_BAR);
+
+        // ── Slide title ──
+        int titleH = H / 10;
         XSLFTextBox titleBox = slide.createTextBox();
-        titleBox.setAnchor(new Rectangle(
-            SLIDE_WIDTH / 12,
-            SLIDE_HEIGHT / 12,
-            SLIDE_WIDTH * 10 / 12,
-            SLIDE_HEIGHT / 8));
+        titleBox.setAnchor(new Rectangle(contentX, 34, W - contentX - 60, titleH));
         XSLFTextParagraph titlePara = titleBox.addNewTextParagraph();
         XSLFTextRun titleRun = titlePara.addNewTextRun();
-        titleRun.setText(slideData.title());
-        titleRun.setFontSize(32.0);
+        titleRun.setText(data.title());
+        titleRun.setFontSize(30.0);
         titleRun.setBold(true);
-        titleRun.setFontColor(TITLE_COLOR);
+        titleRun.setFontColor(CLR_PRIMARY);
 
-        // Thin separator line under title
-        XSLFTextBox sepBox = slide.createTextBox();
-        sepBox.setAnchor(new Rectangle(
-            SLIDE_WIDTH / 12,
-            SLIDE_HEIGHT * 7 / 40,
-            SLIDE_WIDTH * 10 / 12,
-            SLIDE_HEIGHT / 40));
-        XSLFTextParagraph sepPara = sepBox.addNewTextParagraph();
-        XSLFTextRun sepRun = sepPara.addNewTextRun();
-        sepRun.setText("────────────────────────────");
-        sepRun.setFontSize(10.0);
-        sepRun.setFontColor(SUBTITLE_COLOR);
+        // ── Gold underline under title ──
+        addRect(slide, contentX, 34 + titleH + 4, 56, 4, CLR_GOLD);
 
-        // Bullet points — main content area
-        XSLFTextBox bulletBox = slide.createTextBox();
-        bulletBox.setAnchor(new Rectangle(
-            SLIDE_WIDTH / 8,
-            SLIDE_HEIGHT * 9 / 40,
-            SLIDE_WIDTH * 6 / 8,
-            SLIDE_HEIGHT * 13 / 20));
+        // ── Bullet content area ──
+        int bulletY = 100;
+        int bulletW = W - contentX - 50;
 
-        List<String> bullets = slideData.bullets();
+        List<String> bullets = data.bullets();
         if (bullets != null && !bullets.isEmpty()) {
+            // Card background (alternating tint for visual variety)
+            Color cardColor = (pageNum % 2 == 0) ? CLR_CARD2_BG : CLR_CARD_BG;
+            int cardPadding = 20;
+            int lineH = 30; // per bullet line height
+            int cardH = Math.min(cardPadding * 2 + bullets.size() * lineH, H - bulletY - 50);
+            int usedCardH = cardPadding * 2 + bullets.size() * lineH;
+
+            addRect(slide, contentX, bulletY, bulletW, usedCardH, cardColor);
+
+            XSLFTextBox bulletBox = slide.createTextBox();
+            bulletBox.setAnchor(new Rectangle(contentX + cardPadding, bulletY + 14,
+                bulletW - cardPadding * 2, usedCardH - 28));
+
             for (String bullet : bullets) {
-                XSLFTextParagraph bulletPara = bulletBox.addNewTextParagraph();
-                bulletPara.setLeftMargin(28.0);
-                bulletPara.setIndent(-28.0);
-                XSLFTextRun bulletRun = bulletPara.addNewTextRun();
-                bulletRun.setText("•  " + bullet);
-                bulletRun.setFontSize(20.0);
-                bulletRun.setFontColor(BULLET_COLOR);
+                XSLFTextParagraph bp = bulletBox.addNewTextParagraph();
+                bp.setLeftMargin(22.0);
+                bp.setIndent(-22.0);
+                bp.setSpaceAfter(8.0);
+
+                // Bullet marker
+                XSLFTextRun marker = bp.addNewTextRun();
+                marker.setText("●");
+                marker.setFontSize(9.0);
+                marker.setFontColor(barColor);
+
+                // Bullet text
+                XSLFTextRun bText = bp.addNewTextRun();
+                bText.setText(" " + bullet);
+                bText.setFontSize(17.0);
+                bText.setFontColor(CLR_TEXT);
             }
         }
 
-        // Notes — small italic text at bottom of slide
-        if (slideData.notes() != null && !slideData.notes().isBlank()) {
-            XSLFTextBox notesBox = slide.createTextBox();
-            notesBox.setAnchor(new Rectangle(
-                SLIDE_WIDTH / 12,
-                SLIDE_HEIGHT * 35 / 40,
-                SLIDE_WIDTH * 10 / 12,
-                SLIDE_HEIGHT / 20));
-            XSLFTextParagraph notesPara = notesBox.addNewTextParagraph();
-            notesPara.setTextAlign(TextParagraph.TextAlign.LEFT);
-            XSLFTextRun notesRun = notesPara.addNewTextRun();
-            notesRun.setText("📝 " + slideData.notes());
-            notesRun.setFontSize(10.0);
-            notesRun.setItalic(true);
-            notesRun.setFontColor(NOTES_COLOR);
+        // ── Speaker notes ──
+        if (data.notes() != null && !data.notes().isBlank()) {
+            addSpeakerNotes(ppt, slide, data.notes());
         }
+
+        // ── Page number ──
+        XSLFTextBox pageBox = slide.createTextBox();
+        pageBox.setAnchor(new Rectangle(W - 80, H - 28, 60, 18));
+        XSLFTextParagraph pagePara = pageBox.addNewTextParagraph();
+        pagePara.setTextAlign(TextParagraph.TextAlign.RIGHT);
+        XSLFTextRun pageRun = pagePara.addNewTextRun();
+        pageRun.setText(pageNum + " / " + totalSlides);
+        pageRun.setFontSize(9.0);
+        pageRun.setFontColor(CLR_MUTED);
+
+        // ── Bottom bar ──
+        addRect(slide, leftMargin, H - 2, W - leftMargin * 2, 2, CLR_LIGHT_BAR);
+    }
+
+    // ═══════════════════════════════════════════════
+    //  Speaker notes
+    // ═══════════════════════════════════════════════
+
+    private void addSpeakerNotes(XMLSlideShow ppt, XSLFSlide slide, String notesText) {
+        try {
+            // Check for existing notes slide (most POI versions support this getter)
+            var notesMethod = XMLSlideShow.class.getMethod("getNotesSlide", XSLFSlide.class);
+            XSLFNotes notesSlide = (XSLFNotes) notesMethod.invoke(ppt, slide);
+            if (notesSlide != null) {
+                for (XSLFTextShape shape : notesSlide.getPlaceholders()) {
+                    shape.clearText();
+                    XSLFTextParagraph p = shape.addNewTextParagraph();
+                    XSLFTextRun r = p.addNewTextRun();
+                    r.setText(notesText);
+                    r.setFontSize(12.0);
+                    break;
+                }
+            }
+        } catch (Exception e) {
+            // Speaker notes not supported or no notes slide exists — non-critical
+            log.debug("Speaker notes skipped: {}", e.getMessage());
+        }
+    }
+
+    // ═══════════════════════════════════════════════
+    //  Shape helpers
+    // ═══════════════════════════════════════════════
+
+    private void addRect(XSLFSlide slide, int x, int y, int w, int h, Color fill) {
+        XSLFAutoShape shape = slide.createAutoShape();
+        shape.setShapeType(ShapeType.RECT);
+        shape.setAnchor(new Rectangle(x, y, w, h));
+        shape.setFillColor(fill);
+        shape.setLineWidth(0.0);
+    }
+
+    private void addOval(XSLFSlide slide, int x, int y, int w, int h, Color fill) {
+        XSLFAutoShape shape = slide.createAutoShape();
+        shape.setShapeType(ShapeType.ELLIPSE);
+        shape.setAnchor(new Rectangle(x, y, w, h));
+        shape.setFillColor(fill);
+        shape.setLineWidth(0.0);
     }
 
     private void setSlideBackground(XSLFSlide slide, Color color) {

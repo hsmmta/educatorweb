@@ -226,33 +226,65 @@ public class PptGenerator extends AbstractGenerator {
         sb.append(state.knowledgePoint()).append("\n");
 
         // --- Output requirements: LectureScript JSON format ---
-        sb.append("\n## 输出要求\n\n");
-        sb.append("请设计一套完整的课程讲稿（LectureScript），输出为 JSON 格式。\n\n");
+        // Philosophy: Slides are VISUAL AIDS, not lecture scripts.
+        // Bullet points must be keywords / short scannable phrases.
+        // Full explanations and spoken language belong in narration (speaker notes).
+        sb.append("\n## 幻灯片设计理念\n\n");
+        sb.append("**【核心原则】幻灯片是视觉辅助工具，不是讲义文稿。**\n\n");
+        sb.append("幻灯片上应该放的内容：\n");
+        sb.append("- 关键词、短语、要点列表（一眼就能扫读完）\n");
+        sb.append("- 数据、图表标注、公式\n");
+        sb.append("- 简洁的定义、对比表格\n\n");
+        sb.append("不应该放在幻灯片上的内容（这些放入 narration/备注）：\n");
+        sb.append("- 完整的长句子和口语化表述\n");
+        sb.append("- 讲师的过渡语（如「接下来我们看看...」）\n");
+        sb.append("- 以讲师身份署名或说话的内容\n");
+        sb.append("- 长篇解释段落\n\n");
+        sb.append("**判断标准**：如果一段文字读起来像老师「说」的而不是「展示」的，它就属于备注栏。\n");
+        sb.append("每条 bullet point 控制在 30 字以内（中文）或 20 词以内（英文）。\n\n");
+
+        sb.append("## 输出要求\n\n");
+        sb.append("请设计一套结构完整的课程幻灯片，输出为 JSON 格式。\n\n");
         sb.append("要求：\n");
-        sb.append("1. 共设计 5-10 张幻灯片（根据知识点复杂度调整）\n");
-        sb.append("2. 每张幻灯片包含：\n");
-        sb.append("   - index: 幻灯片序号（从1开始）\n");
-        sb.append("   - title: 幻灯片标题\n");
-        sb.append("   - bulletPoints: 要点列表（每条不超过30字）\n");
-        sb.append("   - narration: 讲师讲解词（口语化，便于讲授）\n");
-        sb.append("   - visualPrompt: 视觉设计描述（用于AI生成幻灯片配图）\n");
-        sb.append("   - durationSeconds: 本页建议讲解时长（秒）\n");
-        sb.append("3. 幻灯片结构应逻辑递进：引入 → 概念讲解 → 原理分析 → 案例演示 → 总结\n");
-        sb.append("4. 包含课程标题（title）、讲师姓名（teacherName）和总时长（estimatedDurationSeconds）\n\n");
+        sb.append("1. 共设计 6-10 张幻灯片，覆盖知识点的核心方面\n");
+        sb.append("2. 每张幻灯片：\n");
+        sb.append("   - title: 明确的幻灯片标题（如「SVM 核心思想：最大间隔分类器」）\n");
+        sb.append("   - bulletPoints: 4-6 个精炼要点，每条≤30字\n");
+        sb.append("     · 需要对比的内容用「A vs B」格式：如「硬间隔：严格线性可分 / 软间隔：允许少量误分类」\n");
+        sb.append("     · 需要列举的内容用「→」串联因果：如「欠拟合 → 高偏差 → 模型过于简单 → 增加特征」\n");
+        sb.append("     · 数学概念用简洁公式标注：如「决策函数：f(x) = sign(w·x + b)」\n");
+        sb.append("   - narration: 讲师详细讲解词（口语化，150-300字），\n");
+        sb.append("     包含引入、展开、举例、过渡。这是你真正「讲」的内容，会放入演讲者备注\n");
+        sb.append("   - visualPrompt: 英文，描述该页幻灯片应该配什么图/表/架构图\n");
+        sb.append("     （如 'A 2x2 comparison table showing hard margin vs soft margin SVM with bias-variance tradeoff'）\n");
+        sb.append("   - durationSeconds: 本页讲解时长（60-120秒）\n");
+        sb.append("3. 幻灯片结构递进：\n");
+        sb.append("   背景动机 → 核心概念 → 数学原理 → 算法流程 → 实例对比 → 应用场景 → 总结要点\n");
+        sb.append("4. 多样性要求：不同类型的幻灯片应有不同的结构\n");
+        sb.append("   - 概念页：定义 + 关键特征（bullet points）+ 直观类比\n");
+        sb.append("   - 原理页：公式 + 推导要点 + 几何/物理直觉\n");
+        sb.append("   - 对比页：左/右或表格对比 + 各自优缺点 + 适用场景\n");
+        sb.append("   - 案例页：具体数据 + 分析步骤 + 结论\n");
+        sb.append("   - 总结页：核心要点回顾 + 知识关联 + 下一步学习方向\n");
+        sb.append("5. 包含课程标题（title）、讲师姓名（teacherName）和总时长（estimatedDurationSeconds）\n\n");
 
         sb.append("输出 JSON 格式：\n");
         sb.append("{\n");
-        sb.append("  \"title\": \"课程标题\",\n");
+        sb.append("  \"title\": \"知识点名称 — 课程精讲\",\n");
         sb.append("  \"teacherName\": \"讲师姓名\",\n");
-        sb.append("  \"estimatedDurationSeconds\": 600,\n");
+        sb.append("  \"estimatedDurationSeconds\": 900,\n");
         sb.append("  \"slides\": [\n");
         sb.append("    {\n");
         sb.append("      \"index\": 1,\n");
-        sb.append("      \"title\": \"幻灯片标题\",\n");
-        sb.append("      \"bulletPoints\": [\"要点1\", \"要点2\", \"要点3\"],\n");
-        sb.append("      \"narration\": \"讲师的讲解词...\",\n");
-        sb.append("      \"visualPrompt\": \"视觉设计描述...\",\n");
-        sb.append("      \"durationSeconds\": 60\n");
+        sb.append("      \"title\": \"引言：为什么需要 [知识点]？\",\n");
+        sb.append("      \"bulletPoints\": [\n");
+        sb.append("        \"核心问题：[一句话描述要解决什么问题]\",\n");
+        sb.append("        \"传统方法局限：[旧方法的关键缺陷]\",\n");
+        sb.append("        \"本课程路线图：概念 → 原理 → 实践\"\n");
+        sb.append("      ],\n");
+        sb.append("      \"narration\": \"今天我们来讲...（150-300字口语化讲解）\",\n");
+        sb.append("      \"visualPrompt\": \"A diagram showing the problem motivation with a real-world example illustration\",\n");
+        sb.append("      \"durationSeconds\": 90\n");
         sb.append("    }\n");
         sb.append("  ]\n");
         sb.append("}\n\n");

@@ -124,6 +124,18 @@ public class ReviewAgent implements AgentNode {
     // ---- L2: LLM-based accuracy and relevance review ----
     private List<QualityIssue> reviewL2Llm(GenerationState state, GeneratedResource resource) {
         List<QualityIssue> issues = new ArrayList<>();
+
+        // Binary resources (PPT, VIDEO) have file paths as content — a text LLM
+        // cannot meaningfully review them. L1 keyword filtering still applies.
+        if (resource.type() == ResourceType.PPT || resource.type() == ResourceType.VIDEO) {
+            issues.add(new QualityIssue(
+                QualityLayer.L2_LLM_REVIEW,
+                "Binary resource (" + resource.type() + ") — L2 text review skipped (file-based, not reviewable by text LLM)",
+                Severity.INFO
+            ));
+            return issues;
+        }
+
         String content = resource.content();
         if (content == null || content.isBlank()) {
             issues.add(new QualityIssue(
