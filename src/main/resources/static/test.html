@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>多模态资源生成 - 测试面板</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; background: #0d1117; color: #c9d1d9; min-height: 100vh; display: flex; }
+  .sidebar { width: 340px; background: #161b22; padding: 20px; border-right: 1px solid #30363d; }
+  .sidebar h2 { font-size: 16px; margin-bottom: 16px; color: #58a6ff; }
+  .form-group { margin-bottom: 12px; }
+  .form-group label { display: block; font-size: 12px; color: #8b949e; margin-bottom: 4px; }
+  .form-group input, .form-group textarea { width: 100%; padding: 8px 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 13px; }
+  .form-group textarea { resize: vertical; min-height: 60px; }
+  .checkbox-group { display: flex; flex-wrap: wrap; gap: 8px; }
+  .checkbox-group label { display: flex; align-items: center; gap: 4px; font-size: 13px; color: #c9d1d9; cursor: pointer; }
+  .checkbox-group input[type=checkbox] { accent-color: #238636; }
+  button { width: 100%; padding: 10px; background: #238636; color: white; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 8px; }
+  button:hover { background: #2ea043; }
+  button:disabled { background: #30363d; cursor: not-allowed; }
+  button.stop { background: #da3633; }
+  button.stop:hover { background: #f85149; }
+  .main { flex: 1; padding: 20px; overflow-y: auto; }
+  .main h2 { font-size: 16px; margin-bottom: 12px; color: #58a6ff; }
+  #progress-bar { width: 100%; height: 6px; background: #21262d; border-radius: 3px; margin-bottom: 16px; overflow: hidden; }
+  #progress-fill { height: 100%; background: #238636; transition: width 0.3s; border-radius: 3px; width: 0%; }
+  .event { padding: 10px 14px; margin-bottom: 6px; border-radius: 6px; font-size: 13px; font-family: monospace; border-left: 3px solid #30363d; background: #161b22; animation: fadeIn 0.2s; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+  .event.INIT { border-color: #8b949e; }
+  .event.REQUIRE { border-color: #e94560; }
+  .event.DESIGN { border-color: #f39c12; }
+  .event.GENERATING { border-color: #2ecc71; }
+  .event.REVIEWING { border-color: #9b59b6; }
+  .event.DONE { border-color: #58a6ff; }
+  .event.FALLBACK { border-color: #da3633; }
+  .result-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+  .result-card h3 { font-size: 14px; margin-bottom: 8px; }
+  .result-card .type-badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+  .type-badge.DOC { background: #1f6feb33; color: #58a6ff; }
+  .type-badge.MINDMAP { background: #23863633; color: #3fb950; }
+  .type-badge.QUIZ { background: #9e6a0333; color: #d29922; }
+  .type-badge.CODE { background: #7c3aed33; color: #a371f7; }
+  .type-badge.HTML { background: #bf4b8a33; color: #f778ba; }
+  .type-badge.PPT { background: #da363333; color: #f85149; }
+  .type-badge.VIDEO { background: #9e6a0333; color: #d29922; }
+  pre { background: #0d1117; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 12px; max-height: 400px; overflow-y: auto; margin-top: 8px; }
+  .stats { display: flex; gap: 12px; margin-bottom: 16px; }
+  .stat { background: #161b22; padding: 10px 16px; border-radius: 6px; border: 1px solid #30363d; }
+  .stat .value { font-size: 20px; font-weight: 700; color: #58a6ff; }
+  .stat .label { font-size: 11px; color: #8b949e; }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <h2>⚡ 资源生成测试面板</h2>
+  <div class="form-group">
+    <label>知识主题</label>
+    <input id="knowledgePoint" value="SVM对偶问题" placeholder="如：SVM对偶问题、梯度下降">
+  </div>
+  <div class="form-group">
+    <label>学生ID</label>
+    <input id="studentId" value="test-001">
+  </div>
+  <div class="form-group">
+    <label>资源类型</label>
+    <div class="checkbox-group">
+      <label><input type="checkbox" value="DOC" checked> 📄 文档</label>
+      <label><input type="checkbox" value="MINDMAP" checked> 🧠 导图</label>
+      <label><input type="checkbox" value="QUIZ"> 📝 习题</label>
+      <label><input type="checkbox" value="CODE"> 💻 代码</label>
+      <label><input type="checkbox" value="HTML"> 🧪 HTML</label>
+      <label><input type="checkbox" value="PPT"> 📊 PPT</label>
+      <label><input type="checkbox" value="VIDEO"> 🎬 视频</label>
+    </div>
+  </div>
+  <button id="generateBtn" onclick="startGeneration()">🚀 开始生成</button>
+  <button id="stopBtn" class="stop" onclick="stopGeneration()" style="display:none">⏹ 停止</button>
+  <div class="stats" style="margin-top:16px">
+    <div class="stat"><div class="value" id="totalEvents">0</div><div class="label">事件数</div></div>
+    <div class="stat"><div class="value" id="totalTime">0s</div><div class="label">耗时</div></div>
+    <div class="stat"><div class="value" id="resourceCount">0</div><div class="label">资源数</div></div>
+  </div>
+</div>
+
+<div class="main">
+  <h2>📡 SSE 事件流</h2>
+  <div id="progress-bar"><div id="progress-fill"></div></div>
+  <div id="events"></div>
+  <div id="results" style="margin-top:16px"></div>
+</div>
+
+<script>
+let eventSource = null;
+let eventCount = 0;
+let startTime = 0;
+
+function startGeneration() {
+  const knowledgePoint = document.getElementById('knowledgePoint').value;
+  const studentId = document.getElementById('studentId').value;
+  const types = [...document.querySelectorAll('.checkbox-group input:checked')].map(cb => cb.value);
+
+  document.getElementById('events').innerHTML = '';
+  document.getElementById('progress-fill').style.width = '0%';
+  document.getElementById('totalEvents').textContent = '0';
+  document.getElementById('totalTime').textContent = '0s';
+  document.getElementById('resourceCount').textContent = '0';
+  eventCount = 0;
+  startTime = Date.now();
+
+  document.getElementById('generateBtn').disabled = true;
+  document.getElementById('stopBtn').style.display = 'block';
+
+  const url = '/api/generate';
+  const body = JSON.stringify({ studentId, knowledgePoint, types });
+
+  // Use fetch + ReadableStream for SSE (more reliable than EventSource for POST)
+  fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+    body: body
+  }).then(async response => {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data:')) {
+          try {
+            const data = JSON.parse(line.substring(5).trim());
+            addEvent(data);
+          } catch (e) {
+            if (line.substring(5).trim()) {
+              addEvent({ stage: 'INFO', message: line.substring(5).trim(), requestId: '' });
+            }
+          }
+        }
+      }
+    }
+    document.getElementById('generateBtn').disabled = false;
+    document.getElementById('stopBtn').style.display = 'none';
+    document.getElementById('totalTime').textContent = ((Date.now() - startTime) / 1000).toFixed(1) + 's';
+  }).catch(err => {
+    addEvent({ stage: 'FALLBACK', message: 'Connection error: ' + err.message, requestId: '' });
+    document.getElementById('generateBtn').disabled = false;
+    document.getElementById('stopBtn').style.display = 'none';
+  });
+}
+
+function stopGeneration() {
+  if (eventSource) { eventSource.close(); eventSource = null; }
+  document.getElementById('generateBtn').disabled = false;
+  document.getElementById('stopBtn').style.display = 'none';
+}
+
+function addEvent(event) {
+  eventCount++;
+  document.getElementById('totalEvents').textContent = eventCount;
+
+  const stage = event.stage || 'INFO';
+  const percent = event.progressPercent || 0;
+  document.getElementById('progress-fill').style.width = Math.min(percent, 100) + '%';
+
+  const container = document.getElementById('events');
+  const div = document.createElement('div');
+  div.className = 'event ' + stage;
+
+  let icon = '📌';
+  if (stage === 'REQUIRE') icon = '🔍';
+  else if (stage === 'DESIGN') icon = '🎨';
+  else if (stage === 'GENERATING') icon = '⚡';
+  else if (stage === 'REVIEWING') icon = '🛡️';
+  else if (stage === 'DONE') icon = '✅';
+  else if (stage === 'FALLBACK') icon = '❌';
+
+  const time = new Date().toLocaleTimeString();
+  div.innerHTML = `${icon} <strong>${stage}</strong> <span style="color:#8b949e">${time}</span><br>${event.message || event.data || ''}`;
+  container.prepend(div);
+
+  // Render resource cards from payload
+  if (event.payload && typeof event.payload === 'object') {
+    const resultsDiv = document.getElementById('results');
+    resultsDiv.innerHTML = '<h2 style="margin-bottom:12px">📦 生成的资源</h2>';
+
+    let count = 0;
+    for (const [type, resource] of Object.entries(event.payload)) {
+      count++;
+      const card = document.createElement('div');
+      card.className = 'result-card';
+
+      const typeClass = (resource.type || type).replace(/[^A-Z]/g, '');
+      let formatLabel = '';
+      if (type === 'MINDMAP') formatLabel = '<span style="color:#8b949e;font-size:11px;margin-left:8px">Mermaid 语法 — 复制到 <a href="https://mermaid.live" target="_blank">mermaid.live</a> 查看</span>';
+      if (type === 'HTML') formatLabel = '<span style="color:#8b949e;font-size:11px;margin-left:8px">可独立保存为 .html 打开</span>';
+      if (type === 'PPT') formatLabel = '<span style="color:#8b949e;font-size:11px;margin-left:8px">PPTX 文件路径</span>';
+
+      card.innerHTML = `
+        <h3><span class="type-badge ${typeClass}">${type}</span> ${resource.title || ''}${formatLabel}</h3>
+        <pre>${escapeHtml(resource.content || '')}</pre>
+      `;
+      resultsDiv.appendChild(card);
+    }
+
+    document.getElementById('resourceCount').textContent = count;
+    document.getElementById('totalTime').textContent = ((Date.now() - startTime) / 1000).toFixed(1) + 's';
+  }
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+</script>
+</body>
+</html>
