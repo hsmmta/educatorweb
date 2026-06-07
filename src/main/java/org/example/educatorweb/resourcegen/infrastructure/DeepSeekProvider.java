@@ -1,0 +1,28 @@
+package org.example.educatorweb.resourcegen.infrastructure;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.client.ChatClient;
+
+public class DeepSeekProvider implements ModelProvider {
+    private static final Logger log = LoggerFactory.getLogger(DeepSeekProvider.class);
+    private final ChatClient chatClient;
+    private final boolean enabled;
+
+    public DeepSeekProvider(ChatClient chatClient, boolean enabled) {
+        this.chatClient = chatClient;
+        this.enabled = enabled;
+    }
+
+    @Override
+    public String chat(String prompt) {
+        log.debug("DeepSeekProvider: sending prompt ({} chars)", prompt.length());
+        return chatClient.prompt().user(prompt).call().content();
+    }
+
+    @Override
+    public String providerName() { return "deepseek"; }
+
+    @Override
+    public boolean isEnabled() { return enabled; }
+}

@@ -1,0 +1,97 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: educatorweb
+  ai:
+    openai:
+      api-key: ${DEEPSEEK_API_KEY:sk-placeholder}
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.autoconfigure.openai.OpenAiAutoConfiguration
+  datasource:
+    url: jdbc:mysql://localhost:3306/educatorweb?createDatabaseIfNotExist=true
+    username: root
+    password: ${MYSQL_PASSWORD:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    open-in-view: false
+  neo4j:
+    uri: ${NEO4J_URI:bolt://localhost:7687}
+    authentication:
+      username: ${NEO4J_USERNAME:neo4j}
+      password: ${NEO4J_PASSWORD:password}
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: ${REDIS_PASSWORD:}
+
+# ═══════════════════════════════════════════
+# Multi-Model Provider Routing (v2)
+# ═══════════════════════════════════════════
+model-routing:
+  text:
+    provider: deepseek
+    model: deepseek-chat
+    temperature: 0.7
+  visual:
+    provider: deepseek              # default to deepseek (V1 fallback); change to siliconflow/openai/openrouter when ready
+    model: deepseek-chat
+    temperature: 0.7
+  video:
+    provider: seedance                          # seedance | veo | cogvideox
+    model: doubao-seedance-1-5-pro-251215       # video generation model
+    temperature: 0.7
+  video-image-model: doubao-seedream-4-5-251128 # image generation model (Seedream)
+  providers:
+    deepseek:
+      enabled: true
+      base-url: https://api.deepseek.com
+      api-key: ${DEEPSEEK_API_KEY}
+    siliconflow:
+      enabled: false
+      base-url: https://api.siliconflow.cn/v1
+      api-key: ${SILICONFLOW_API_KEY:}
+    openai:
+      enabled: false
+      base-url: https://api.openai.com
+      api-key: ${OPENAI_API_KEY:}
+    openrouter:
+      enabled: false
+      base-url: https://openrouter.ai/api
+      api-key: ${OPENROUTER_API_KEY:}
+    xunfei:
+      enabled: false
+      base-url: https://spark-api-open.xf-yun.com
+      api-key: ${XUNFEI_API_KEY:}
+      api-secret: ${XUNFEI_API_SECRET:}
+      app-id: ${XUNFEI_APP_ID:}
+    seedance:
+      enabled: true
+      base-url: https://ark.cn-beijing.volces.com/api/v3
+      api-key: ${SEEDANCE_API_KEY:}
+    huggingface:
+      enabled: false
+      base-url: https://api-inference.huggingface.co
+      api-key: ${HUGGINGFACE_API_KEY:}
+
+logging:
+  level:
+    org.example.educatorweb: DEBUG
+    org.springframework.ai: DEBUG
+
+generation:
+  fanout:
+    thread-pool-size: 6
+  checkpoint:
+    ttl-hours: 1
+
+review:
+  keywords:
+    - "violence"
+    - "hate speech"
