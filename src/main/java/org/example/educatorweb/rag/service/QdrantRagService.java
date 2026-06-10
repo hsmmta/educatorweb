@@ -1,9 +1,8 @@
 package org.example.educatorweb.rag.service;
 
-import com.google.protobuf.Struct;
-import com.google.protobuf.Value;
 import io.qdrant.client.QdrantClient;
 import io.qdrant.client.grpc.Collections;
+import io.qdrant.client.grpc.JsonWithInt;
 import io.qdrant.client.grpc.Points;
 import org.example.educatorweb.rag.RagService;
 import org.example.educatorweb.rag.model.DocumentChunk;
@@ -69,9 +68,9 @@ public class QdrantRagService implements RagService {
             for (Points.ScoredPoint point : scoredPoints) {
                 var payload = point.getPayloadMap();
                 String text = payload.getOrDefault("text",
-                    Value.newBuilder().setStringValue("").build()).getStringValue();
+                    JsonWithInt.Value.newBuilder().setStringValue("").build()).getStringValue();
                 String source = payload.getOrDefault("source",
-                    Value.newBuilder().setStringValue("").build()).getStringValue();
+                    JsonWithInt.Value.newBuilder().setStringValue("").build()).getStringValue();
                 double score = 1.0 - point.getScore(); // Qdrant returns distance, convert to similarity
 
                 if (!text.isBlank()) {
@@ -106,22 +105,20 @@ public class QdrantRagService implements RagService {
                 float[] vector = i < embeddings.size() ? embeddings.get(i) : new float[0];
                 if (vector.length == 0) continue;
 
-                Struct payload = Struct.newBuilder()
-                    .putFields("docId", Value.newBuilder().setStringValue(chunk.docId()).build())
-                    .putFields("source", Value.newBuilder().setStringValue(chunk.source()).build())
-                    .putFields("title", Value.newBuilder().setStringValue(chunk.title()).build())
-                    .putFields("text", Value.newBuilder().setStringValue(chunk.text()).build())
-                    .putFields("knowledgePoint", Value.newBuilder().setStringValue(chunk.knowledgePoint()).build())
-                    .putFields("page", Value.newBuilder().setNumberValue(chunk.page()).build())
-                    .build();
-
                 List<Float> floatList = new ArrayList<>(vector.length);
                 for (float f : vector) floatList.add(f);
 
                 Points.PointStruct point = Points.PointStruct.newBuilder()
                     .setId(Points.PointId.newBuilder().setUuid(chunk.id().toString()).build())
-                    .setVector(Points.Vector.newBuilder().addAllData(floatList).build())
-                    .setPayload(payload)
+                    .setVectors(Points.Vectors.newBuilder()
+                        .setVector(Points.Vector.newBuilder().addAllData(floatList).build())
+                        .build())
+                    .putPayload("docId", JsonWithInt.Value.newBuilder().setStringValue(chunk.docId()).build())
+                    .putPayload("source", JsonWithInt.Value.newBuilder().setStringValue(chunk.source()).build())
+                    .putPayload("title", JsonWithInt.Value.newBuilder().setStringValue(chunk.title()).build())
+                    .putPayload("text", JsonWithInt.Value.newBuilder().setStringValue(chunk.text()).build())
+                    .putPayload("knowledgePoint", JsonWithInt.Value.newBuilder().setStringValue(chunk.knowledgePoint()).build())
+                    .putPayload("page", JsonWithInt.Value.newBuilder().setIntegerValue(chunk.page()).build())
                     .build();
                 pointStructs.add(point);
             }
