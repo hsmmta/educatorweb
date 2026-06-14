@@ -115,6 +115,24 @@
             <artifactId>guava</artifactId>
             <version>33.3.1-jre</version>
         </dependency>
+        <!-- 阿里云 TTS 语音合成 -->
+        <dependency>
+            <groupId>com.alibaba.nls</groupId>
+            <artifactId>nls-sdk-tts</artifactId>
+            <version>2.2.11</version>
+        </dependency>
+
+        <!-- LangChain4j 核心库 -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-core</artifactId>
+            <version>1.6.0</version>
+        </dependency>
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-open-ai</artifactId>
+            <version>1.6.0</version>
+        </dependency>
     </dependencies>
 
     <repositories>
