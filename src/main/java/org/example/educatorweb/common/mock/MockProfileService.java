@@ -2,6 +2,8 @@ package org.example.educatorweb.common.mock;
 
 import org.example.educatorweb.profile.ProfileService;
 import org.example.educatorweb.profile.model.StudentProfile;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import java.util.List;
@@ -10,6 +12,9 @@ import java.util.Map;
 @Service
 @Profile("mock")
 public class MockProfileService implements ProfileService {
+
+    private static final Logger log = LoggerFactory.getLogger(MockProfileService.class);
+
     @Override
     public StudentProfile getProfile(String studentId) {
         return new StudentProfile(
@@ -22,5 +27,10 @@ public class MockProfileService implements ProfileService {
                 Map.of("video", 0.4, "document", 0.35, "code", 0.25)),
             new StudentProfile.D6_GoalOrientation("求职准备", 0.88)
         );
+    }
+
+    @Override
+    public void updateProfile(String studentId, StudentProfile profile) {
+        log.debug("MockProfileService: updateProfile called for studentId={}", studentId);
     }
 }
