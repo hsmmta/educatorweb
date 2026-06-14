@@ -103,9 +103,9 @@ public class MindmapGenerator extends AbstractGenerator {
         sb.append("## 学生画像\n");
         StudentProfile profile = state.profile();
         if (profile != null) {
-            sb.append("- 认知风格: ").append(profile.cognitiveStyle()).append("\n");
-            sb.append("- 学习节奏: ").append(profile.learningPace()).append("\n");
-            sb.append("- 内容偏好: ").append(profile.contentPreference()).append("\n");
+            sb.append("- 认知风格: ").append(profile.getCognitiveStyleType()).append("\n");
+            sb.append("- 学习节奏: ").append(profile.getLearningPaceType()).append("\n");
+            sb.append("- 内容偏好: ").append(profile.getContentPreferenceType()).append("\n");
         } else {
             sb.append("（无可用画像数据）\n");
         }

@@ -1,124 +1,119 @@
 package org.example.educatorweb.profile.model;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
+import org.example.educatorweb.profile.converter.JsonListConverter;
+import org.example.educatorweb.profile.converter.JsonMapConverter;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Student learning profile with 6 dimensions, persisted via JPA.
- * Inner dimension types remain as records (serialized to JSON columns).
- * Accessor names match the old record style: knowledgeBase(), cognitiveStyle(), etc.
- */
 @Entity
-@Table(name = "student_profiles")
+@Table(name = "student_profile")
 public class StudentProfile {
 
-    private static final ObjectMapper objectMapper = new ObjectMapper();
-
     @Id
-    @Column(name = "student_id")
+    @Column(name = "student_id", length = 64)
     private String studentId;
 
-    @Column(name = "knowledge_base", columnDefinition = "TEXT")
-    private String knowledgeBaseJson;
-    @Column(name = "cognitive_style", columnDefinition = "TEXT")
-    private String cognitiveStyleJson;
-    @Column(name = "error_pattern", columnDefinition = "TEXT")
-    private String errorPatternJson;
-    @Column(name = "learning_pace", columnDefinition = "TEXT")
-    private String learningPaceJson;
-    @Column(name = "content_preference", columnDefinition = "TEXT")
-    private String contentPreferenceJson;
-    @Column(name = "goal_orientation", columnDefinition = "TEXT")
-    private String goalOrientationJson;
+    @Column(name = "knowledge_base_level", length = 32, nullable = false)
+    private String knowledgeBaseLevel;
 
-    // ---- Dimension records (kept as records, not persisted directly) ----
+    @Column(name = "knowledge_base_confidence", precision = 3, scale = 2, nullable = false)
+    private BigDecimal knowledgeBaseConfidence;
 
-    public record D1_KnowledgeBase(String level, double confidence, Map<String, String> details) {}
-    public record D2_CognitiveStyle(String type, double confidence) {}
-    public record D3_ErrorPattern(List<String> tags, double confidence) {}
-    public record D4_LearningPace(String type, double confidence) {}
-    public record D5_ContentPreference(String type, Map<String, Double> ratio) {}
-    public record D6_GoalOrientation(String type, double confidence) {}
+    @Column(name = "cognitive_style_type", length = 32, nullable = false)
+    private String cognitiveStyleType;
 
-    // ---- JPA-required no-arg constructor ----
+    @Column(name = "cognitive_style_confidence", precision = 3, scale = 2, nullable = false)
+    private BigDecimal cognitiveStyleConfidence;
 
+    @Column(name = "error_pattern_tags", columnDefinition = "json", nullable = false)
+    @Convert(converter = JsonListConverter.class)
+    private List<String> errorPatternTags = new ArrayList<>();
+
+    @Column(name = "error_pattern_confidence", precision = 3, scale = 2, nullable = false)
+    private BigDecimal errorPatternConfidence;
+
+    @Column(name = "learning_pace_type", length = 32, nullable = false)
+    private String learningPaceType;
+
+    @Column(name = "learning_pace_confidence", precision = 3, scale = 2, nullable = false)
+    private BigDecimal learningPaceConfidence;
+
+    @Column(name = "content_preference_type", length = 32, nullable = false)
+    private String contentPreferenceType;
+
+    @Column(name = "content_preference_ratio", columnDefinition = "json", nullable = false)
+    @Convert(converter = JsonMapConverter.class)
+    private Map<String, Double> contentPreferenceRatio;
+
+    @Column(name = "goal_orientation_type", length = 32, nullable = false)
+    private String goalOrientationType;
+
+    @Column(name = "goal_orientation_confidence", precision = 3, scale = 2, nullable = false)
+    private BigDecimal goalOrientationConfidence;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @OneToMany(mappedBy = "studentProfile", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private List<StudentKnowledgeProficiency> knowledgeDetails = new ArrayList<>();
+
+    // 无参构造方法（JPA 必需）
     public StudentProfile() {}
 
-    // ---- Constructors ----
-
-    /** 6-arg constructor — backward compatible with MockProfileService and existing code. */
-    public StudentProfile(D1_KnowledgeBase knowledgeBase, D2_CognitiveStyle cognitiveStyle,
-                          D3_ErrorPattern errorPattern, D4_LearningPace learningPace,
-                          D5_ContentPreference contentPreference, D6_GoalOrientation goalOrientation) {
-        setKnowledgeBase(knowledgeBase);
-        setCognitiveStyle(cognitiveStyle);
-        setErrorPattern(errorPattern);
-        setLearningPace(learningPace);
-        setContentPreference(contentPreference);
-        setGoalOrientation(goalOrientation);
-    }
-
-    /** Full constructor with studentId for JPA repository use. */
-    public StudentProfile(String studentId, D1_KnowledgeBase knowledgeBase,
-                          D2_CognitiveStyle cognitiveStyle, D3_ErrorPattern errorPattern,
-                          D4_LearningPace learningPace, D5_ContentPreference contentPreference,
-                          D6_GoalOrientation goalOrientation) {
-        this.studentId = studentId;
-        setKnowledgeBase(knowledgeBase);
-        setCognitiveStyle(cognitiveStyle);
-        setErrorPattern(errorPattern);
-        setLearningPace(learningPace);
-        setContentPreference(contentPreference);
-        setGoalOrientation(goalOrientation);
-    }
-
-    // ---- Accessors (record-style naming — NOT getXxx) ----
-
+    // ========= Getter 和 Setter =========
     public String getStudentId() { return studentId; }
     public void setStudentId(String studentId) { this.studentId = studentId; }
 
-    public D1_KnowledgeBase knowledgeBase() { return fromJson(knowledgeBaseJson, D1_KnowledgeBase.class); }
-    public void setKnowledgeBase(D1_KnowledgeBase kb) { this.knowledgeBaseJson = toJson(kb); }
+    public String getKnowledgeBaseLevel() { return knowledgeBaseLevel; }
+    public void setKnowledgeBaseLevel(String knowledgeBaseLevel) { this.knowledgeBaseLevel = knowledgeBaseLevel; }
 
-    public D2_CognitiveStyle cognitiveStyle() { return fromJson(cognitiveStyleJson, D2_CognitiveStyle.class); }
-    public void setCognitiveStyle(D2_CognitiveStyle cs) { this.cognitiveStyleJson = toJson(cs); }
+    public BigDecimal getKnowledgeBaseConfidence() { return knowledgeBaseConfidence; }
+    public void setKnowledgeBaseConfidence(BigDecimal knowledgeBaseConfidence) { this.knowledgeBaseConfidence = knowledgeBaseConfidence; }
 
-    public D3_ErrorPattern errorPattern() { return fromJson(errorPatternJson, D3_ErrorPattern.class); }
-    public void setErrorPattern(D3_ErrorPattern ep) { this.errorPatternJson = toJson(ep); }
+    public String getCognitiveStyleType() { return cognitiveStyleType; }
+    public void setCognitiveStyleType(String cognitiveStyleType) { this.cognitiveStyleType = cognitiveStyleType; }
 
-    public D4_LearningPace learningPace() { return fromJson(learningPaceJson, D4_LearningPace.class); }
-    public void setLearningPace(D4_LearningPace lp) { this.learningPaceJson = toJson(lp); }
+    public BigDecimal getCognitiveStyleConfidence() { return cognitiveStyleConfidence; }
+    public void setCognitiveStyleConfidence(BigDecimal cognitiveStyleConfidence) { this.cognitiveStyleConfidence = cognitiveStyleConfidence; }
 
-    public D5_ContentPreference contentPreference() { return fromJson(contentPreferenceJson, D5_ContentPreference.class); }
-    public void setContentPreference(D5_ContentPreference cp) { this.contentPreferenceJson = toJson(cp); }
+    public List<String> getErrorPatternTags() { return errorPatternTags; }
+    public void setErrorPatternTags(List<String> errorPatternTags) { this.errorPatternTags = errorPatternTags; }
 
-    public D6_GoalOrientation goalOrientation() { return fromJson(goalOrientationJson, D6_GoalOrientation.class); }
-    public void setGoalOrientation(D6_GoalOrientation go) { this.goalOrientationJson = toJson(go); }
+    public BigDecimal getErrorPatternConfidence() { return errorPatternConfidence; }
+    public void setErrorPatternConfidence(BigDecimal errorPatternConfidence) { this.errorPatternConfidence = errorPatternConfidence; }
 
-    // ---- JSON helpers ----
+    public String getLearningPaceType() { return learningPaceType; }
+    public void setLearningPaceType(String learningPaceType) { this.learningPaceType = learningPaceType; }
 
-    private static <T> T fromJson(String json, Class<T> type) {
-        if (json == null || json.isBlank()) return null;
-        try {
-            return objectMapper.readValue(json, type);
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException("Failed to deserialize " + type.getSimpleName(), e);
-        }
-    }
+    public BigDecimal getLearningPaceConfidence() { return learningPaceConfidence; }
+    public void setLearningPaceConfidence(BigDecimal learningPaceConfidence) { this.learningPaceConfidence = learningPaceConfidence; }
 
-    private static String toJson(Object obj) {
-        if (obj == null) return null;
-        try {
-            return objectMapper.writeValueAsString(obj);
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException("Failed to serialize " + obj.getClass().getSimpleName(), e);
-        }
-    }
+    public String getContentPreferenceType() { return contentPreferenceType; }
+    public void setContentPreferenceType(String contentPreferenceType) { this.contentPreferenceType = contentPreferenceType; }
+
+    public Map<String, Double> getContentPreferenceRatio() { return contentPreferenceRatio; }
+    public void setContentPreferenceRatio(Map<String, Double> contentPreferenceRatio) { this.contentPreferenceRatio = contentPreferenceRatio; }
+
+    public String getGoalOrientationType() { return goalOrientationType; }
+    public void setGoalOrientationType(String goalOrientationType) { this.goalOrientationType = goalOrientationType; }
+
+    public BigDecimal getGoalOrientationConfidence() { return goalOrientationConfidence; }
+    public void setGoalOrientationConfidence(BigDecimal goalOrientationConfidence) { this.goalOrientationConfidence = goalOrientationConfidence; }
+
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+
+    public List<StudentKnowledgeProficiency> getKnowledgeDetails() { return knowledgeDetails; }
+    public void setKnowledgeDetails(List<StudentKnowledgeProficiency> knowledgeDetails) { this.knowledgeDetails = knowledgeDetails; }
 }

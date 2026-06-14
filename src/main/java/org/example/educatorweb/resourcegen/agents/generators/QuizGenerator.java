@@ -56,24 +56,24 @@ public class QuizGenerator extends AbstractGenerator {
         StudentProfile profile = state.profile();
         String difficultyHint = "中等";
         if (profile != null) {
-            sb.append("- 知识基础: ").append(profile.knowledgeBase() != null
-                ? profile.knowledgeBase().level() : "未评估").append("\n");
-            sb.append("- 认知风格: ").append(profile.cognitiveStyle() != null
-                ? profile.cognitiveStyle().type() : "未评估").append("\n");
-            if (profile.errorPattern() != null && profile.errorPattern().tags() != null
-                    && !profile.errorPattern().tags().isEmpty()) {
-                sb.append("- 常见错误模式: ").append(profile.errorPattern().tags()).append("\n");
+            sb.append("- 知识基础: ").append(profile.getKnowledgeBaseLevel() != null
+                ? profile.getKnowledgeBaseLevel() : "未评估").append("\n");
+            sb.append("- 认知风格: ").append(profile.getCognitiveStyleType() != null
+                ? profile.getCognitiveStyleType() : "未评估").append("\n");
+            if (profile.getErrorPatternTags() != null
+                    && !profile.getErrorPatternTags().isEmpty()) {
+                sb.append("- 常见错误模式: ").append(profile.getErrorPatternTags()).append("\n");
             }
-            sb.append("- 学习节奏: ").append(profile.learningPace() != null
-                ? profile.learningPace().type() : "未评估").append("\n");
-            sb.append("- 内容偏好: ").append(profile.contentPreference() != null
-                ? profile.contentPreference().type() : "未评估").append("\n");
-            sb.append("- 学习目标: ").append(profile.goalOrientation() != null
-                ? profile.goalOrientation().type() : "未评估").append("\n");
+            sb.append("- 学习节奏: ").append(profile.getLearningPaceType() != null
+                ? profile.getLearningPaceType() : "未评估").append("\n");
+            sb.append("- 内容偏好: ").append(profile.getContentPreferenceType() != null
+                ? profile.getContentPreferenceType() : "未评估").append("\n");
+            sb.append("- 学习目标: ").append(profile.getGoalOrientationType() != null
+                ? profile.getGoalOrientationType() : "未评估").append("\n");
 
-            // Personalize difficulty based on D1 knowledgeBase level
-            if (profile.knowledgeBase() != null) {
-                String level = profile.knowledgeBase().level();
+            // Personalize difficulty based on knowledgeBase level
+            if (profile.getKnowledgeBaseLevel() != null) {
+                String level = profile.getKnowledgeBaseLevel();
                 difficultyHint = switch (level) {
                     case "优秀", "熟练" -> "较难";
                     case "一般" -> "中等";

@@ -6,6 +6,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -17,16 +19,20 @@ public class MockProfileService implements ProfileService {
 
     @Override
     public StudentProfile getProfile(String studentId) {
-        return new StudentProfile(
-            new StudentProfile.D1_KnowledgeBase("一般", 0.85,
-                Map.of("Python", "熟练", "线性代数", "了解", "概率论", "一般")),
-            new StudentProfile.D2_CognitiveStyle("直觉型", 0.72),
-            new StudentProfile.D3_ErrorPattern(List.of("过拟合概念混淆", "梯度消失理解错误"), 0.68),
-            new StudentProfile.D4_LearningPace("稳扎稳打型", 0.90),
-            new StudentProfile.D5_ContentPreference("混合学习",
-                Map.of("video", 0.4, "document", 0.35, "code", 0.25)),
-            new StudentProfile.D6_GoalOrientation("求职准备", 0.88)
-        );
+        StudentProfile profile = new StudentProfile();
+        profile.setKnowledgeBaseLevel("一般");
+        profile.setKnowledgeBaseConfidence(new BigDecimal("0.85"));
+        profile.setCognitiveStyleType("直觉型");
+        profile.setCognitiveStyleConfidence(new BigDecimal("0.72"));
+        profile.setErrorPatternTags(List.of("过拟合概念混淆", "梯度消失理解错误"));
+        profile.setErrorPatternConfidence(new BigDecimal("0.68"));
+        profile.setLearningPaceType("稳扎稳打型");
+        profile.setLearningPaceConfidence(new BigDecimal("0.90"));
+        profile.setContentPreferenceType("混合学习");
+        profile.setContentPreferenceRatio(Map.of("video", 0.4, "document", 0.35, "code", 0.25));
+        profile.setGoalOrientationType("求职准备");
+        profile.setGoalOrientationConfidence(new BigDecimal("0.88"));
+        return profile;
     }
 
     @Override

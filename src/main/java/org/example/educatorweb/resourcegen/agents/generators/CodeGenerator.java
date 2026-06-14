@@ -68,21 +68,21 @@ public class CodeGenerator extends AbstractGenerator {
         StudentProfile profile = state.profile();
         String levelHint = "中等";
         if (profile != null) {
-            sb.append("- 知识基础: ").append(profile.knowledgeBase() != null
-                ? profile.knowledgeBase().level() : "未评估").append("\n");
-            sb.append("- 认知风格: ").append(profile.cognitiveStyle() != null
-                ? profile.cognitiveStyle().type() : "未评估").append("\n");
-            if (profile.errorPattern() != null && profile.errorPattern().tags() != null
-                    && !profile.errorPattern().tags().isEmpty()) {
-                sb.append("- 常见错误模式: ").append(profile.errorPattern().tags()).append("\n");
+            sb.append("- 知识基础: ").append(profile.getKnowledgeBaseLevel() != null
+                ? profile.getKnowledgeBaseLevel() : "未评估").append("\n");
+            sb.append("- 认知风格: ").append(profile.getCognitiveStyleType() != null
+                ? profile.getCognitiveStyleType() : "未评估").append("\n");
+            if (profile.getErrorPatternTags() != null
+                    && !profile.getErrorPatternTags().isEmpty()) {
+                sb.append("- 常见错误模式: ").append(profile.getErrorPatternTags()).append("\n");
             }
-            sb.append("- 学习节奏: ").append(profile.learningPace() != null
-                ? profile.learningPace().type() : "未评估").append("\n");
-            sb.append("- 学习目标: ").append(profile.goalOrientation() != null
-                ? profile.goalOrientation().type() : "未评估").append("\n");
+            sb.append("- 学习节奏: ").append(profile.getLearningPaceType() != null
+                ? profile.getLearningPaceType() : "未评估").append("\n");
+            sb.append("- 学习目标: ").append(profile.getGoalOrientationType() != null
+                ? profile.getGoalOrientationType() : "未评估").append("\n");
 
-            if (profile.knowledgeBase() != null) {
-                levelHint = switch (profile.knowledgeBase().level()) {
+            if (profile.getKnowledgeBaseLevel() != null) {
+                levelHint = switch (profile.getKnowledgeBaseLevel()) {
                     case "优秀", "熟练" -> "进阶（可涉及高级算法和优化）";
                     case "一般" -> "中等（适当的算法实现和解释）";
                     case "薄弱", "入门" -> "基础（简单清晰的示例，注重可理解性）";

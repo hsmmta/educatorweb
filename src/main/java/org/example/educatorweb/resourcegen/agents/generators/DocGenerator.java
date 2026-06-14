@@ -46,15 +46,15 @@ public class DocGenerator extends AbstractGenerator {
         sb.append("## 学生画像\n");
         StudentProfile profile = state.profile();
         if (profile != null) {
-            sb.append("- 知识基础: ").append(profile.knowledgeBase()).append("\n");
-            sb.append("- 认知风格: ").append(profile.cognitiveStyle()).append("\n");
-            if (profile.errorPattern() != null && profile.errorPattern().tags() != null
-                    && !profile.errorPattern().tags().isEmpty()) {
-                sb.append("- 常见错误模式: ").append(profile.errorPattern().tags()).append("\n");
+            sb.append("- 知识基础: ").append(profile.getKnowledgeBaseLevel()).append("\n");
+            sb.append("- 认知风格: ").append(profile.getCognitiveStyleType()).append("\n");
+            if (profile.getErrorPatternTags() != null
+                    && !profile.getErrorPatternTags().isEmpty()) {
+                sb.append("- 常见错误模式: ").append(profile.getErrorPatternTags()).append("\n");
             }
-            sb.append("- 学习节奏: ").append(profile.learningPace()).append("\n");
-            sb.append("- 内容偏好: ").append(profile.contentPreference()).append("\n");
-            sb.append("- 学习目标: ").append(profile.goalOrientation()).append("\n");
+            sb.append("- 学习节奏: ").append(profile.getLearningPaceType()).append("\n");
+            sb.append("- 内容偏好: ").append(profile.getContentPreferenceType()).append("\n");
+            sb.append("- 学习目标: ").append(profile.getGoalOrientationType()).append("\n");
         } else {
             sb.append("（无可用画像数据，请使用通用风格和中等难度）\n");
         }

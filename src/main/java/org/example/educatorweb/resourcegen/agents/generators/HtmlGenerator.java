@@ -117,20 +117,20 @@ public class HtmlGenerator extends AbstractGenerator {
         sb.append("## 学生画像\n");
         StudentProfile profile = state.profile();
         if (profile != null) {
-            sb.append("- 知识基础: ").append(profile.knowledgeBase() != null
-                ? profile.knowledgeBase().level() : "未评估").append("\n");
-            sb.append("- 认知风格: ").append(profile.cognitiveStyle() != null
-                ? profile.cognitiveStyle().type() : "未评估").append("\n");
-            if (profile.errorPattern() != null && profile.errorPattern().tags() != null
-                    && !profile.errorPattern().tags().isEmpty()) {
-                sb.append("- 常见错误模式: ").append(profile.errorPattern().tags()).append("\n");
+            sb.append("- 知识基础: ").append(profile.getKnowledgeBaseLevel() != null
+                ? profile.getKnowledgeBaseLevel() : "未评估").append("\n");
+            sb.append("- 认知风格: ").append(profile.getCognitiveStyleType() != null
+                ? profile.getCognitiveStyleType() : "未评估").append("\n");
+            if (profile.getErrorPatternTags() != null
+                    && !profile.getErrorPatternTags().isEmpty()) {
+                sb.append("- 常见错误模式: ").append(profile.getErrorPatternTags()).append("\n");
             }
-            sb.append("- 学习节奏: ").append(profile.learningPace() != null
-                ? profile.learningPace().type() : "未评估").append("\n");
-            sb.append("- 内容偏好: ").append(profile.contentPreference() != null
-                ? profile.contentPreference().type() : "未评估").append("\n");
-            sb.append("- 学习目标: ").append(profile.goalOrientation() != null
-                ? profile.goalOrientation().type() : "未评估").append("\n");
+            sb.append("- 学习节奏: ").append(profile.getLearningPaceType() != null
+                ? profile.getLearningPaceType() : "未评估").append("\n");
+            sb.append("- 内容偏好: ").append(profile.getContentPreferenceType() != null
+                ? profile.getContentPreferenceType() : "未评估").append("\n");
+            sb.append("- 学习目标: ").append(profile.getGoalOrientationType() != null
+                ? profile.getGoalOrientationType() : "未评估").append("\n");
         } else {
             sb.append("（无可用画像数据，请使用通用风格和中等难度）\n");
         }
