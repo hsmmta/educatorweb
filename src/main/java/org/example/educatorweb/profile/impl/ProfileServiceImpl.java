@@ -1,6 +1,5 @@
 package org.example.educatorweb.profile.impl;
 
-import lombok.RequiredArgsConstructor;
 import org.example.educatorweb.profile.ProfileService;
 import org.example.educatorweb.profile.model.StudentKnowledgeProficiency;
 import org.example.educatorweb.profile.model.StudentProfile;
@@ -17,11 +16,16 @@ import java.util.Map;
 import java.util.Optional;
 
 @Service
-@RequiredArgsConstructor
 public class ProfileServiceImpl implements ProfileService {
 
     private final StudentProfileRepository profileRepo;
     private final StudentKnowledgeProficiencyRepository knowledgeRepo;
+
+    public ProfileServiceImpl(StudentProfileRepository profileRepo,
+                               StudentKnowledgeProficiencyRepository knowledgeRepo) {
+        this.profileRepo = profileRepo;
+        this.knowledgeRepo = knowledgeRepo;
+    }
 
     @Override
     @Transactional(readOnly = true)

@@ -40,20 +40,28 @@ class RequireAgentTest {
     @InjectMocks
     private RequireAgent requireAgent;
 
+    private static StudentProfile testProfile() {
+        StudentProfile p = new StudentProfile();
+        p.setKnowledgeBaseLevel("一般");
+        p.setKnowledgeBaseConfidence(new java.math.BigDecimal("0.85"));
+        p.setCognitiveStyleType("直觉型");
+        p.setCognitiveStyleConfidence(new java.math.BigDecimal("0.72"));
+        p.setErrorPatternTags(List.of("过拟合概念混淆"));
+        p.setErrorPatternConfidence(new java.math.BigDecimal("0.68"));
+        p.setLearningPaceType("稳扎稳打型");
+        p.setLearningPaceConfidence(new java.math.BigDecimal("0.90"));
+        p.setContentPreferenceType("混合学习");
+        p.setContentPreferenceRatio(Map.of("video", 0.4, "document", 0.35));
+        p.setGoalOrientationType("求职准备");
+        p.setGoalOrientationConfidence(new java.math.BigDecimal("0.88"));
+        return p;
+    }
+
     // ---- Test 1: All services succeed, state fully populated ----
 
     @Test
     void shouldFetchAllContextsAndPopulateState() {
-        var profile = new StudentProfile(
-            new StudentProfile.D1_KnowledgeBase("一般", 0.85,
-                Map.of("Python", "熟练", "线性代数", "了解")),
-            new StudentProfile.D2_CognitiveStyle("直觉型", 0.72),
-            new StudentProfile.D3_ErrorPattern(List.of("过拟合概念混淆"), 0.68),
-            new StudentProfile.D4_LearningPace("稳扎稳打型", 0.90),
-            new StudentProfile.D5_ContentPreference("混合学习",
-                Map.of("video", 0.4, "document", 0.35)),
-            new StudentProfile.D6_GoalOrientation("求职准备", 0.88)
-        );
+        var profile = testProfile();
         var kgContext = new KnowledgeContext(
             List.of("线性回归"), List.of("核方法"),
             List.of("支持向量", "核函数"), 3);
@@ -108,14 +116,7 @@ class RequireAgentTest {
 
     @Test
     void shouldHandleKnowledgeGraphFailureGracefully() {
-        var profile = new StudentProfile(
-            new StudentProfile.D1_KnowledgeBase("一般", 0.85, Map.of()),
-            new StudentProfile.D2_CognitiveStyle("直觉型", 0.72),
-            new StudentProfile.D3_ErrorPattern(List.of(), 0.68),
-            new StudentProfile.D4_LearningPace("稳扎稳打型", 0.90),
-            new StudentProfile.D5_ContentPreference("混合学习", Map.of()),
-            new StudentProfile.D6_GoalOrientation("求职准备", 0.88)
-        );
+        var profile = testProfile();
         when(profileService.getProfile("student-1")).thenReturn(profile);
         when(kgService.queryContext(anyString()))
             .thenThrow(new RuntimeException("KG unavailable"));
@@ -137,14 +138,7 @@ class RequireAgentTest {
 
     @Test
     void shouldHandleRagServiceFailureGracefully() {
-        var profile = new StudentProfile(
-            new StudentProfile.D1_KnowledgeBase("一般", 0.85, Map.of()),
-            new StudentProfile.D2_CognitiveStyle("直觉型", 0.72),
-            new StudentProfile.D3_ErrorPattern(List.of(), 0.68),
-            new StudentProfile.D4_LearningPace("稳扎稳打型", 0.90),
-            new StudentProfile.D5_ContentPreference("混合学习", Map.of()),
-            new StudentProfile.D6_GoalOrientation("求职准备", 0.88)
-        );
+        var profile = testProfile();
         var kgContext = new KnowledgeContext(List.of(), List.of(), List.of(), 1);
 
         when(profileService.getProfile("student-1")).thenReturn(profile);
