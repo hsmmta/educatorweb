@@ -18,11 +18,20 @@ public class RagConfig {
     @Value("${qdrant.grpc-port:6334}")
     private int qdrantGrpcPort;
 
+    @Value("${qdrant.api-key:}")
+    private String qdrantApiKey;
+
     @Bean
     public QdrantClient qdrantClient() {
-        return new QdrantClient(
-            QdrantGrpcClient.newBuilder(qdrantHost, qdrantGrpcPort, false).build()
-        );
+        // Strip protocol prefix for gRPC connection
+        String host = qdrantHost.replaceFirst("^https?://", "");
+        boolean useTls = qdrantHost.startsWith("https://");
+
+        var builder = QdrantGrpcClient.newBuilder(host, qdrantGrpcPort, useTls);
+        if (qdrantApiKey != null && !qdrantApiKey.isBlank()) {
+            builder.withApiKey(qdrantApiKey);
+        }
+        return new QdrantClient(builder.build());
     }
 
     @Bean
