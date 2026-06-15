@@ -58,43 +58,45 @@ public class KnowledgeGraphInitializer {
 
         log.info("KnowledgeGraphInitializer: Neo4j is empty, generating seed data via DeepSeek...");
 
-        try {
+        try (var session = neo4jDriver.session()) {
             String json = generateSeedData();
             List<SeedPoint> seedPoints = objectMapper.readValue(json,
                 new TypeReference<List<SeedPoint>>() {});
 
-            // Phase 1: save all nodes (without relationships)
-            Map<String, KnowledgePoint> nodeMap = new HashMap<>();
+            // Phase 1: create all nodes via raw Cypher
             for (SeedPoint sp : seedPoints) {
-                KnowledgePoint node = new KnowledgePoint(
-                    sp.id(), sp.name(), sp.category(), sp.difficulty(),
-                    sp.description());
-                repo.save(node);
-                nodeMap.put(sp.id(), node);
+                session.run("""
+                    MERGE (n:KnowledgePoint {id: $id})
+                    SET n.name = $name, n.category = $category, n.difficulty = $difficulty,
+                        n.description = $description
+                    """,
+                    Map.of("id", sp.id(), "name", sp.name(), "category", sp.category(),
+                        "difficulty", sp.difficulty(), "description",
+                        sp.description() != null ? sp.description() : ""));
             }
-            log.info("KnowledgeGraphInitializer: saved {} knowledge point nodes", seedPoints.size());
+            log.info("KnowledgeGraphInitializer: created {} knowledge point nodes", seedPoints.size());
 
-            // Phase 2: link relationships (second pass to ensure all nodes exist)
+            // Phase 2: create relationships
             int relCount = 0;
             for (SeedPoint sp : seedPoints) {
-                KnowledgePoint node = nodeMap.get(sp.id());
-                if (node == null) continue;
-
                 for (String preId : sp.prerequisites()) {
-                    KnowledgePoint prereq = nodeMap.get(preId);
-                    if (prereq != null) {
-                        node.getPrerequisites().add(prereq);
-                        relCount++;
-                    }
+                    var result = session.run("""
+                        MATCH (a:KnowledgePoint {id: $from}), (b:KnowledgePoint {id: $to})
+                        MERGE (a)-[:REQUIRES]->(b)
+                        RETURN count(*) AS c
+                        """,
+                        Map.of("from", sp.id(), "to", preId));
+                    if (result.hasNext() && result.single().get("c").asInt() > 0) relCount++;
                 }
                 for (String relId : sp.relatedConcepts()) {
-                    KnowledgePoint related = nodeMap.get(relId);
-                    if (related != null) {
-                        node.getRelatedConcepts().add(related);
-                        relCount++;
-                    }
+                    var result = session.run("""
+                        MATCH (a:KnowledgePoint {id: $from}), (b:KnowledgePoint {id: $to})
+                        MERGE (a)-[:RELATED_TO]->(b)
+                        RETURN count(*) AS c
+                        """,
+                        Map.of("from", sp.id(), "to", relId));
+                    if (result.hasNext() && result.single().get("c").asInt() > 0) relCount++;
                 }
-                repo.save(node);
             }
 
             log.info("KnowledgeGraphInitializer: seed complete — {} nodes, {} relationships",
