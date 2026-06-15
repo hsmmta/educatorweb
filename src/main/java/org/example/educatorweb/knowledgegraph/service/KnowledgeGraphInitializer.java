@@ -99,12 +99,144 @@ public class KnowledgeGraphInitializer {
                 }
             }
 
-            log.info("KnowledgeGraphInitializer: seed complete — {} nodes, {} relationships",
+            log.info("KnowledgeGraphInitializer: seed complete — {} KP nodes, {} relationships",
                 seedPoints.size(), relCount);
+
+            // Phase 3: generate Courses and link to KnowledgePoints
+            seedCourses(session);
+
+            // Phase 4: generate LearningResources and link to KnowledgePoints
+            seedResources(session);
+
+            log.info("KnowledgeGraphInitializer: full 3-layer seed complete!");
 
         } catch (Exception e) {
             log.error("KnowledgeGraphInitializer: seed failed — will rely on runtime fallback: {}",
                 e.getMessage());
+        }
+    }
+
+    private void seedCourses(org.neo4j.driver.Session session) {
+        String prompt = """
+            You are a ML curriculum expert. Based on the knowledge points already generated
+            for a university ML course covering: 数学基础, 监督学习, 无监督学习, 深度学习,
+            集成学习, 模型评估与优化, 应用与工具.
+
+            Generate 8 courses that cover these ML domains. Reference (microsoft/ML-For-Beginners):
+            %s
+
+            Output a JSON array of courses:
+            [{"id":"ml_basics","name":"机器学习基础_中科大","institution":"中国科学技术大学",
+              "duration":"长期","type":"理论","rating":4.8,
+              "description":"机器学习核心算法与理论基础",
+              "knowledgePointIds":["linear_regression","logistic_regression","svm","decision_tree","knn"],
+              "prerequisiteCourseIds":[]}]
+            Output ONLY the JSON array, no markdown.
+            """.formatted(loadReferenceContext());
+
+        String response = llmProvider.chat(prompt);
+        if (response == null || response.isBlank()) return;
+        response = response.replaceAll("```json\\s*", "").replaceAll("```\\s*$", "").trim();
+
+        try {
+            if (response.startsWith("{")) {
+                JsonNode root = objectMapper.readTree(response);
+                if (root.has("courses")) response = objectMapper.writeValueAsString(root.get("courses"));
+            }
+            List<Map<String, Object>> courses = objectMapper.readValue(response,
+                new TypeReference<List<Map<String, Object>>>() {});
+
+            for (var c : courses) {
+                String id = (String) c.get("id");
+                String name = (String) c.getOrDefault("name", "");
+                String institution = (String) c.getOrDefault("institution", "");
+                String duration = (String) c.getOrDefault("duration", "短期");
+                String type = (String) c.getOrDefault("type", "理论");
+                double rating = c.get("rating") instanceof Number n ? n.doubleValue() : 4.0;
+                String desc = (String) c.getOrDefault("description", "");
+
+                session.run("""
+                    MERGE (c:Course {id: $id})
+                    SET c.name = $name, c.institution = $institution, c.duration = $duration,
+                        c.type = $type, c.rating = $rating, c.description = $desc
+                    """,
+                    Map.of("id", id, "name", name, "institution", institution,
+                        "duration", duration, "type", type, "rating", rating, "desc", desc));
+
+                @SuppressWarnings("unchecked")
+                List<String> kpIds = (List<String>) c.getOrDefault("knowledgePointIds", List.of());
+                for (String kpId : kpIds) {
+                    session.run("""
+                        MATCH (c:Course {id: $cid}), (kp:KnowledgePoint {id: $kpid})
+                        MERGE (c)-[:CONTAINS_KNOWLEDGE]->(kp)
+                        """, Map.of("cid", id, "kpid", kpId));
+                }
+
+                @SuppressWarnings("unchecked")
+                List<String> preCourseIds = (List<String>) c.getOrDefault("prerequisiteCourseIds", List.of());
+                for (String preId : preCourseIds) {
+                    session.run("""
+                        MATCH (c:Course {id: $cid}), (pre:Course {id: $preId})
+                        MERGE (c)-[:PREREQUISITE]->(pre)
+                        """, Map.of("cid", id, "preId", preId));
+                }
+            }
+            log.info("KnowledgeGraphInitializer: created {} course nodes", courses.size());
+        } catch (Exception e) {
+            log.warn("KnowledgeGraphInitializer: course seed failed: {}", e.getMessage());
+        }
+    }
+
+    private void seedResources(org.neo4j.driver.Session session) {
+        String prompt = """
+            Generate learning resources for a university ML course. Include classic textbooks,
+            online courses, papers, and code repositories. Also include the following as reference:
+            %s
+
+            Output a JSON array:
+            [{"id":"zhou_ml","title":"周志华《机器学习》","type":"TEXTBOOK","url":"",
+              "description":"经典中文教材，西瓜书","knowledgePointIds":["linear_regression","svm","decision_tree"]}]
+            Types: TEXTBOOK, VIDEO, EXERCISE, CODE, PAPER.
+            Output ONLY the JSON array, no markdown.
+            """.formatted(loadReferenceContext());
+
+        String response = llmProvider.chat(prompt);
+        if (response == null || response.isBlank()) return;
+        response = response.replaceAll("```json\\s*", "").replaceAll("```\\s*$", "").trim();
+
+        try {
+            if (response.startsWith("{")) {
+                JsonNode root = objectMapper.readTree(response);
+                if (root.has("resources")) response = objectMapper.writeValueAsString(root.get("resources"));
+            }
+            List<Map<String, Object>> resources = objectMapper.readValue(response,
+                new TypeReference<List<Map<String, Object>>>() {});
+
+            for (var r : resources) {
+                String id = (String) r.get("id");
+                String title = (String) r.getOrDefault("title", "");
+                String type = (String) r.getOrDefault("type", "TEXTBOOK");
+                String url = (String) r.getOrDefault("url", "");
+                String desc = (String) r.getOrDefault("description", "");
+
+                session.run("""
+                    MERGE (r:LearningResource {id: $id})
+                    SET r.title = $title, r.type = $type, r.url = $url, r.description = $desc
+                    """,
+                    Map.of("id", id, "title", title, "type", type, "url", url, "desc", desc));
+
+                @SuppressWarnings("unchecked")
+                List<String> kpIds = (List<String>) r.getOrDefault("knowledgePointIds", List.of());
+                for (String kpId : kpIds) {
+                    session.run("""
+                        MATCH (r:LearningResource {id: $rid}), (kp:KnowledgePoint {id: $kpid})
+                        MERGE (kp)-[:HAS_RESOURCE]->(r)
+                        """, Map.of("rid", id, "kpid", kpId));
+                }
+            }
+            log.info("KnowledgeGraphInitializer: created {} learning resource nodes", resources.size());
+        } catch (Exception e) {
+            log.warn("KnowledgeGraphInitializer: resource seed failed: {}", e.getMessage());
         }
     }
 
