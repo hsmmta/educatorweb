@@ -56,7 +56,7 @@ public class KnowledgeGraphInitializer {
             for (SeedPoint sp : seedPoints) {
                 KnowledgePoint node = new KnowledgePoint(
                     sp.id(), sp.name(), sp.category(), sp.difficulty(),
-                    sp.description(), sp.chapter());
+                    sp.description());
                 repo.save(node);
                 nodeMap.put(sp.id(), node);
             }
@@ -96,27 +96,58 @@ public class KnowledgeGraphInitializer {
 
     private String generateSeedData() {
         String prompt = """
-            You are a Machine Learning curriculum expert. Generate a comprehensive knowledge graph
-            for a university-level ML course. Requirements:
-            - At least 80 knowledge points
-            - Cover: 数学基础, 监督学习, 无监督学习, 深度学习, 集成学习, 模型评估与优化, 应用与工具
-            - Each point must have: id (English slug), name (Chinese), category, difficulty (1-5),
-              description, chapter, prerequisites (list of ids), relatedConcepts (list of ids)
-            - prerequisites define strict "must-learn-before" dependencies
-            - relatedConcepts link thematically related topics
+            You are a Machine Learning curriculum expert. Generate a comprehensive 3-layer
+            knowledge graph for a university-level ML course. The three layers are:
+              1. Course — the ML course itself and its sub-modules
+              2. KnowledgePoint — all concepts, algorithms, techniques (≥80)
+              3. LearningResource — textbooks, references for each knowledge point
 
-            Output ONLY valid JSON, no markdown, no explanation:
+            Requirements:
+            - At least 80 knowledge points covering: 数学基础, 监督学习, 无监督学习, 深度学习, 集成学习, 模型评估与优化, 应用与工具
+            - At least 5 courses covering the main ML sub-domains
+            - At least 30 learning resources (textbooks, online courses, papers, videos)
+            - KnowledgePoint: id (English slug), name (Chinese), category, difficulty (1-5),
+              description, prerequisites (ids), relatedConcepts (ids), courseId, resourceIds
+            - Course: id, name, institution (e.g. 斯坦福大学), duration (短期/中期/长期),
+              type (理论/实践), rating (1.0-5.0), description, prerequisiteCourseIds
+            - LearningResource: id, title, type (TEXTBOOK/VIDEO/EXERCISE/CODE/PAPER), url, description
+
+            Output ONLY valid JSON, no markdown:
             {
+              "courses": [
+                {
+                  "id": "ml_basics",
+                  "name": "机器学习基础_中科大",
+                  "institution": "中国科学技术大学",
+                  "duration": "长期",
+                  "type": "理论",
+                  "rating": 4.8,
+                  "description": "机器学习核心算法与理论基础",
+                  "prerequisiteCourseIds": []
+                },
+                ...
+              ],
               "knowledgePoints": [
                 {
                   "id": "linear_regression",
                   "name": "线性回归",
                   "category": "算法",
                   "difficulty": 2,
-                  "description": "通过拟合线性关系预测连续值的监督学习基础算法",
-                  "chapter": "监督学习",
+                  "description": "通过拟合线性关系预测连续值",
                   "prerequisites": ["linear_algebra", "probability"],
-                  "relatedConcepts": ["gradient_descent", "logistic_regression", "regularization"]
+                  "relatedConcepts": ["gradient_descent", "logistic_regression"],
+                  "courseId": "ml_basics",
+                  "resourceIds": ["zhou_ml", "li_hang_stats"]
+                },
+                ...
+              ],
+              "resources": [
+                {
+                  "id": "zhou_ml",
+                  "title": "周志华《机器学习》",
+                  "type": "TEXTBOOK",
+                  "url": "",
+                  "description": "机器学习领域经典中文教材，俗称西瓜书"
                 },
                 ...
               ]
@@ -150,7 +181,6 @@ public class KnowledgeGraphInitializer {
         String category,
         int difficulty,
         String description,
-        String chapter,
         List<String> prerequisites,
         List<String> relatedConcepts
     ) {}

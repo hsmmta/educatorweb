@@ -17,7 +17,6 @@ public class KnowledgePoint {
     private String category;     // 数学基础 | 概念 | 算法 | 应用 | 工具
     private int difficulty;      // 1-5
     private String description;  // one-sentence summary
-    private String chapter;      // "监督学习"
 
     @Relationship(type = "REQUIRES", direction = Relationship.Direction.OUTGOING)
     private Set<KnowledgePoint> prerequisites = new HashSet<>();
@@ -25,16 +24,27 @@ public class KnowledgePoint {
     @Relationship(type = "RELATED_TO", direction = Relationship.Direction.OUTGOING)
     private Set<KnowledgePoint> relatedConcepts = new HashSet<>();
 
+    /** Composite KP containing sub-knowledge-points (e.g. "监督学习" → "线性回归", "SVM"). */
+    @Relationship(type = "CONTAINS", direction = Relationship.Direction.OUTGOING)
+    private Set<KnowledgePoint> subPoints = new HashSet<>();
+
+    /** Course this knowledge point belongs to. */
+    @Relationship(type = "BELONGS_TO", direction = Relationship.Direction.OUTGOING)
+    private Course course;
+
+    /** Learning resources (textbooks, videos, exercises) for this knowledge point. */
+    @Relationship(type = "HAS_RESOURCE", direction = Relationship.Direction.OUTGOING)
+    private Set<LearningResource> resources = new HashSet<>();
+
     public KnowledgePoint() {}
 
     public KnowledgePoint(String id, String name, String category, int difficulty,
-                          String description, String chapter) {
+                          String description) {
         this.id = id;
         this.name = name;
         this.category = category;
         this.difficulty = difficulty;
         this.description = description;
-        this.chapter = chapter;
     }
 
     public String getId() { return id; }
@@ -47,12 +57,16 @@ public class KnowledgePoint {
     public void setDifficulty(int difficulty) { this.difficulty = difficulty; }
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
-    public String getChapter() { return chapter; }
-    public void setChapter(String chapter) { this.chapter = chapter; }
     public Set<KnowledgePoint> getPrerequisites() { return prerequisites; }
     public void setPrerequisites(Set<KnowledgePoint> prerequisites) { this.prerequisites = prerequisites; }
     public Set<KnowledgePoint> getRelatedConcepts() { return relatedConcepts; }
     public void setRelatedConcepts(Set<KnowledgePoint> relatedConcepts) { this.relatedConcepts = relatedConcepts; }
+    public Set<KnowledgePoint> getSubPoints() { return subPoints; }
+    public void setSubPoints(Set<KnowledgePoint> subPoints) { this.subPoints = subPoints; }
+    public Course getCourse() { return course; }
+    public void setCourse(Course course) { this.course = course; }
+    public Set<LearningResource> getResources() { return resources; }
+    public void setResources(Set<LearningResource> resources) { this.resources = resources; }
 
     @Override
     public boolean equals(Object o) {

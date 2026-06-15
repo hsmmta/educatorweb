@@ -1,6 +1,7 @@
 package org.example.educatorweb.knowledgegraph.repository;
 
 import org.example.educatorweb.knowledgegraph.model.KnowledgePoint;
+import org.example.educatorweb.knowledgegraph.model.LearningResource;
 import org.springframework.data.neo4j.repository.Neo4jRepository;
 import org.springframework.data.neo4j.repository.query.Query;
 import org.springframework.data.repository.query.Param;
@@ -32,4 +33,16 @@ public interface KnowledgePointRepository extends Neo4jRepository<KnowledgePoint
      */
     @Query("MATCH (n:KnowledgePoint {id: $id})-[:RELATED_TO]-(related:KnowledgePoint) RETURN related")
     List<KnowledgePoint> findRelated(@Param("id") String id);
+
+    /**
+     * Sub-knowledge-points (composite relation).
+     */
+    @Query("MATCH (n:KnowledgePoint {id: $id})-[:CONTAINS]->(sub:KnowledgePoint) RETURN sub")
+    List<KnowledgePoint> findSubPoints(@Param("id") String id);
+
+    /**
+     * Learning resources for this knowledge point.
+     */
+    @Query("MATCH (n:KnowledgePoint {id: $id})-[:HAS_RESOURCE]->(r:LearningResource) RETURN r")
+    List<LearningResource> findResources(@Param("id") String id);
 }

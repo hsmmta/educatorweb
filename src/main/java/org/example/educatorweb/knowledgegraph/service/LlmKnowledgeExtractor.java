@@ -63,14 +63,14 @@ public class LlmKnowledgeExtractor {
             List<String> relatedNames = (List<String>) data.getOrDefault("relatedConcepts", List.of());
 
             // Persist node
-            KnowledgePoint node = new KnowledgePoint(id, name, category, difficulty, description, chapter);
+            KnowledgePoint node = new KnowledgePoint(id, name, category, difficulty, description);
             repo.save(node);
 
             // Link prerequisites (create stub nodes if they don't exist)
             for (String preName : prerequisiteNames) {
                 KnowledgePoint prereq = repo.findByName(preName)
                     .orElseGet(() -> repo.save(
-                        new KnowledgePoint(slugify(preName), preName, "概念", 3, "", "")));
+                        new KnowledgePoint(slugify(preName), preName, "概念", 3, "")));
                 node.getPrerequisites().add(prereq);
             }
 
@@ -78,7 +78,7 @@ public class LlmKnowledgeExtractor {
             for (String relName : relatedNames) {
                 KnowledgePoint related = repo.findByName(relName)
                     .orElseGet(() -> repo.save(
-                        new KnowledgePoint(slugify(relName), relName, "概念", 3, "", "")));
+                        new KnowledgePoint(slugify(relName), relName, "概念", 3, "")));
                 node.getRelatedConcepts().add(related);
             }
 
