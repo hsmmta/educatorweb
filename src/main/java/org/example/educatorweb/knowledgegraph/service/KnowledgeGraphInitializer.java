@@ -12,7 +12,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 /**
  * Seeds the Neo4j knowledge graph on first startup if no data exists.
@@ -103,102 +107,88 @@ public class KnowledgeGraphInitializer {
     }
 
     private String generateSeedData() {
-        // Load reference JSON extracted from GitHub repos as context
         String referenceContext = loadReferenceContext();
 
-        String prompt = """
-            You are a Machine Learning curriculum expert. Generate a comprehensive 3-layer
-            knowledge graph for a university-level ML course. The three layers are:
-              1. Course — the ML course itself and its sub-modules
-              2. KnowledgePoint — all concepts, algorithms, techniques (≥80)
-              3. LearningResource — textbooks, references for each knowledge point
+        List<String> batches = List.of(
+            "数学基础（线性代数、概率论、微积分、最优化等）",
+            "监督学习核心算法（线性回归、逻辑回归、决策树、SVM、KNN、朴素贝叶斯等）",
+            "无监督学习（KMeans、PCA、DBSCAN、GMM、层次聚类、关联规则等）",
+            "深度学习（CNN、RNN、LSTM、Transformer、GAN、反向传播、激活函数等）",
+            "集成学习与模型优化（Bagging、Boosting、XGBoost、正则化、交叉验证等）",
+            "应用与工具（NLP、CV、推荐系统、sklearn、PyTorch、特征工程等）"
+        );
 
-            ## Reference Data (from real-world ML courses)
-            Below is structured data extracted from microsoft/ML-For-Beginners (26 lessons)
-            and eriklindernoren/ML-From-Scratch (20+ pure Python implementations).
-            Use this as your primary reference. All knowledge point names MUST be in Chinese.
+        List<String> allPointsJson = new ArrayList<>();
+        for (String batch : batches) {
+            String prompt = """
+                You are a ML curriculum expert. Generate knowledge points for topic: %s.
+                Reference (microsoft/ML-For-Beginners + ML-From-Scratch):
+                %s
 
-            %s
+                Output a JSON array of 10-15 knowledge points for this topic ONLY:
+                [{
+                  "id":"english_slug",
+                  "name":"中文名",
+                  "category":"%s",
+                  "difficulty":1-5,
+                  "description":"一句话描述",
+                  "prerequisites":["id1","id2"],
+                  "relatedConcepts":["id3"],
+                  "courseId":"ml_basics",
+                  "resourceIds":[]
+                }]
+                Output ONLY the JSON array, no markdown, no explanation. Maximum 3000 characters.
+                """.formatted(batch, referenceContext, guessCategory(batch));
 
-            ## Requirements
-            - At least 80 knowledge points covering: 数学基础, 监督学习, 无监督学习, 深度学习, 集成学习, 模型评估与优化, 应用与工具
-            - At least 8 courses covering the main ML sub-domains (use the reference course structure, add Chinese name + institution)
-            - At least 40 learning resources (include the reference code repos + classic textbooks)
-            - KnowledgePoint: id (English slug), name (Chinese), category, difficulty (1-5),
-              description, prerequisites (ids), relatedConcepts (ids), courseId, resourceIds
-            - Course: id, name, institution (e.g. 斯坦福大学), duration (短期/中期/长期),
-              type (理论/实践), rating (1.0-5.0), description, prerequisiteCourseIds
-            - LearningResource: id, title, type (TEXTBOOK/VIDEO/EXERCISE/CODE/PAPER), url, description
-
-            Output ONLY valid JSON, no markdown:
-            {
-              "courses": [
-                {
-                  "id": "ml_basics",
-                  "name": "机器学习基础_中科大",
-                  "institution": "中国科学技术大学",
-                  "duration": "长期",
-                  "type": "理论",
-                  "rating": 4.8,
-                  "description": "机器学习核心算法与理论基础",
-                  "prerequisiteCourseIds": []
-                },
-                ...
-              ],
-              "knowledgePoints": [
-                {
-                  "id": "linear_regression",
-                  "name": "线性回归",
-                  "category": "算法",
-                  "difficulty": 2,
-                  "description": "通过拟合线性关系预测连续值",
-                  "prerequisites": ["linear_algebra", "probability"],
-                  "relatedConcepts": ["gradient_descent", "logistic_regression"],
-                  "courseId": "ml_basics",
-                  "resourceIds": ["zhou_ml", "li_hang_stats"]
-                },
-                ...
-              ],
-              "resources": [
-                {
-                  "id": "zhou_ml",
-                  "title": "周志华《机器学习》",
-                  "type": "TEXTBOOK",
-                  "url": "",
-                  "description": "机器学习领域经典中文教材，俗称西瓜书"
-                },
-                ...
-              ]
+            log.info("KnowledgeGraphInitializer: generating batch: {}", batch);
+            String response = llmProvider.chat(prompt);
+            if (response != null && !response.isBlank()) {
+                response = response.replaceAll("```json\\s*", "").replaceAll("```\\s*$", "").trim();
+                // Extract array from possible wrapper
+                if (response.startsWith("{")) {
+                    try {
+                        JsonNode root = objectMapper.readTree(response);
+                        if (root.isObject()) {
+                            for (var field : java.util.List.of("knowledgePoints", "points", "data")) {
+                                if (root.has(field)) {
+                                    response = objectMapper.writeValueAsString(root.get(field));
+                                    break;
+                                }
+                            }
+                        }
+                    } catch (Exception ignored) {}
+                }
+                allPointsJson.add(response);
+                log.info("KnowledgeGraphInitializer: batch '{}' returned {} chars", batch, response.length());
             }
-            """;
-
-        String response = llmProvider.chat(prompt);
-        if (response == null || response.isBlank()) {
-            throw new RuntimeException("DeepSeek returned empty seed data");
         }
-        response = response.replaceAll("```json\\s*", "").replaceAll("```\\s*$", "").trim();
-        log.info("KnowledgeGraphInitializer: DeepSeek responded with {} chars", response.length());
 
-        // Extract the "knowledgePoints" array from the wrapper object
-        try {
-            JsonNode root = objectMapper.readTree(response);
-            if (root.isObject() && root.has("knowledgePoints")) {
-                return objectMapper.writeValueAsString(root.get("knowledgePoints"));
-            }
-            // If response is already an array, return as-is
-            if (root.isArray()) {
-                return response;
-            }
-            return response;
-        } catch (Exception e) {
-            log.warn("KnowledgeGraphInitializer: JSON parse failed, trying raw: {}", e.getMessage());
-            // Last resort: wrap in brackets if it looks like JSON
-            String stripped = response.strip();
-            if (!stripped.startsWith("[") && stripped.contains("\"id\"")) {
-                stripped = "[" + stripped + "]";
-            }
-            return stripped;
+        // Merge all batches into one array
+        StringBuilder merged = new StringBuilder("[");
+        boolean first = true;
+        for (String json : allPointsJson) {
+            if (json.startsWith("[")) json = json.substring(1);
+            if (json.endsWith("]")) json = json.substring(0, json.length() - 1);
+            String trimmed = json.trim();
+            if (trimmed.isEmpty()) continue;
+            if (!first && !trimmed.startsWith(",")) merged.append(",");
+            merged.append(trimmed);
+            first = false;
         }
+        merged.append("]");
+
+        String result = merged.toString();
+        log.info("KnowledgeGraphInitializer: merged {} batches into {} chars", allPointsJson.size(), result.length());
+        return result;
+    }
+
+    private String guessCategory(String batch) {
+        if (batch.contains("数学")) return "数学基础";
+        if (batch.contains("监督")) return "算法";
+        if (batch.contains("无监督")) return "算法";
+        if (batch.contains("深度")) return "深度学习";
+        if (batch.contains("集成") || batch.contains("优化")) return "算法";
+        return "应用";
     }
 
     /**
