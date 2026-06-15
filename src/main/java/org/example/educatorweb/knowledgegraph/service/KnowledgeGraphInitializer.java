@@ -227,6 +227,7 @@ public class KnowledgeGraphInitializer {
 
     // ---- DTO for JSON parsing (flat fields, no Neo4j annotations) ----
 
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
     record SeedPoint(
         String id,
         String name,
@@ -234,6 +235,8 @@ public class KnowledgeGraphInitializer {
         int difficulty,
         String description,
         List<String> prerequisites,
-        List<String> relatedConcepts
+        List<String> relatedConcepts,
+        String courseId,
+        List<String> resourceIds
     ) {}
 }
