@@ -95,6 +95,9 @@ public class KnowledgeGraphInitializer {
     }
 
     private String generateSeedData() {
+        // Load reference JSON extracted from GitHub repos as context
+        String referenceContext = loadReferenceContext();
+
         String prompt = """
             You are a Machine Learning curriculum expert. Generate a comprehensive 3-layer
             knowledge graph for a university-level ML course. The three layers are:
@@ -102,10 +105,17 @@ public class KnowledgeGraphInitializer {
               2. KnowledgePoint — all concepts, algorithms, techniques (≥80)
               3. LearningResource — textbooks, references for each knowledge point
 
-            Requirements:
+            ## Reference Data (from real-world ML courses)
+            Below is structured data extracted from microsoft/ML-For-Beginners (26 lessons)
+            and eriklindernoren/ML-From-Scratch (20+ pure Python implementations).
+            Use this as your primary reference. All knowledge point names MUST be in Chinese.
+
+            %s
+
+            ## Requirements
             - At least 80 knowledge points covering: 数学基础, 监督学习, 无监督学习, 深度学习, 集成学习, 模型评估与优化, 应用与工具
-            - At least 5 courses covering the main ML sub-domains
-            - At least 30 learning resources (textbooks, online courses, papers, videos)
+            - At least 8 courses covering the main ML sub-domains (use the reference course structure, add Chinese name + institution)
+            - At least 40 learning resources (include the reference code repos + classic textbooks)
             - KnowledgePoint: id (English slug), name (Chinese), category, difficulty (1-5),
               description, prerequisites (ids), relatedConcepts (ids), courseId, resourceIds
             - Course: id, name, institution (e.g. 斯坦福大学), duration (短期/中期/长期),
@@ -171,6 +181,40 @@ public class KnowledgeGraphInitializer {
         } catch (Exception e) {
             return response; // fallback
         }
+    }
+
+    /**
+     * Compact reference data extracted from GitHub repos.
+     * Provides real-world ML course structure as context for DeepSeek.
+     */
+    private String loadReferenceContext() {
+        return """
+            ## Reference Course Structure (microsoft/ML-For-Beginners, 86.9k Stars)
+            9 weekly modules: Introduction → Regression → Web-App → Classification
+            → Clustering → NLP → TimeSeries → Reinforcement → Real-World
+            Each module has 2-4 lessons covering one ML concept.
+
+            ## Reference Knowledge Points (26 lessons extracted)
+            intro_to_ml, history_of_ml, fairness, techniques_of_ml (Introduction)
+            tools, data, linear, logistic (Regression)
+            web_app (Web-App)
+            introduction, classifiers_1, classifiers_2, applied (Classification)
+            visualize, k_means (Clustering)
+            intro_to_nlp, tasks, translation_sentiment, hotel_reviews (NLP)
+            introduction, arima, svr (TimeSeries)
+            qlearning, gym (Reinforcement)
+            applications, debugging_ml_models (Real-World)
+
+            ## Reference Resources (eriklindernoren/ML-From-Scratch, 31.9k Stars + classics)
+            Code (20+): adaboost, bayesian_regression, decision_tree, gradient_boosting,
+            k_nearest_neighbors, logistic_regression, multilayer_perceptron, naive_bayes,
+            perceptron, random_forest, regression, support_vector_machine, xgboost,
+            k_means, dbscan, gaussian_mixture_model, principal_component_analysis,
+            apriori, autoencoder, generative_adversarial_network, neural_network
+            Textbooks: 周志华《机器学习》, 李航《统计学习方法》, CS229 notes,
+            Goodfellow《Deep Learning》, Bishop PRML, Hastie ESL
+            Videos: 吴恩达 Coursera ML, DeepLearning.AI specialization
+            """;
     }
 
     // ---- DTO for JSON parsing (flat fields, no Neo4j annotations) ----
