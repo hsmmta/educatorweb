@@ -21,7 +21,8 @@ public class KnowledgeGraphConfig {
     @Bean
     public KnowledgeGraphInitializer knowledgeGraphInitializer(
             KnowledgePointRepository repo,
+            org.neo4j.driver.Driver neo4jDriver,
             @Qualifier("deepSeekProvider") ModelProvider deepSeekProvider) {
-        return new KnowledgeGraphInitializer(repo, deepSeekProvider);
+        return new KnowledgeGraphInitializer(repo, neo4jDriver, deepSeekProvider);
     }
 }

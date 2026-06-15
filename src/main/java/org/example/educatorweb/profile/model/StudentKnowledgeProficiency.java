@@ -1,11 +1,13 @@
 package org.example.educatorweb.profile.model;
 
 import jakarta.persistence.*;
+import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "student_knowledge_proficiency")
+@IdClass(StudentKnowledgeProficiencyId.class)
 public class StudentKnowledgeProficiency {
 
     @Id

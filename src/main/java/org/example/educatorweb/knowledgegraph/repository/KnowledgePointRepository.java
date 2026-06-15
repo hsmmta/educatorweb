@@ -12,6 +12,12 @@ import java.util.Optional;
 public interface KnowledgePointRepository extends Neo4jRepository<KnowledgePoint, String> {
 
     /**
+     * Count all knowledge points (works around SDN transaction template issue in WebFlux).
+     */
+    @Query("MATCH (n:KnowledgePoint) RETURN count(n)")
+    long countAll();
+
+    /**
      * Find by name (generators often pass Chinese names like "支持向量机").
      */
     Optional<KnowledgePoint> findByName(String name);

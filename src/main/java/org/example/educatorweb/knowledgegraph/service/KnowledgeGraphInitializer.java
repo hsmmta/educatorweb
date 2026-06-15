@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.educatorweb.knowledgegraph.model.KnowledgePoint;
 import org.example.educatorweb.knowledgegraph.repository.KnowledgePointRepository;
 import org.example.educatorweb.resourcegen.infrastructure.ModelProvider;
+import org.neo4j.driver.Driver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -22,25 +23,32 @@ public class KnowledgeGraphInitializer {
     private static final Logger log = LoggerFactory.getLogger(KnowledgeGraphInitializer.class);
 
     private final KnowledgePointRepository repo;
+    private final Driver neo4jDriver;
     private final ModelProvider llmProvider;
     private final ObjectMapper objectMapper;
 
-    public KnowledgeGraphInitializer(KnowledgePointRepository repo, ModelProvider llmProvider) {
+    public KnowledgeGraphInitializer(KnowledgePointRepository repo,
+                                      Driver neo4jDriver,
+                                      ModelProvider llmProvider) {
         this.repo = repo;
+        this.neo4jDriver = neo4jDriver;
         this.llmProvider = llmProvider;
         this.objectMapper = new ObjectMapper();
     }
 
     @EventListener(ApplicationReadyEvent.class)
     public void seedIfEmpty() {
-        try {
-            long count = repo.count();
-            if (count > 0) {
-                log.info("KnowledgeGraphInitializer: graph already has {} points, skipping seed", count);
-                return;
-            }
+        long count;
+        try (var session = neo4jDriver.session()) {
+            var result = session.run("MATCH (n:KnowledgePoint) RETURN count(n) AS c");
+            count = result.single().get("c").asLong();
         } catch (Exception e) {
             log.warn("KnowledgeGraphInitializer: Neo4j not available, skipping seed: {}", e.getMessage());
+            return;
+        }
+
+        if (count > 0) {
+            log.info("KnowledgeGraphInitializer: graph already has {} points, skipping seed", count);
             return;
         }
 
@@ -169,17 +177,27 @@ public class KnowledgeGraphInitializer {
             throw new RuntimeException("DeepSeek returned empty seed data");
         }
         response = response.replaceAll("```json\\s*", "").replaceAll("```\\s*$", "").trim();
+        log.info("KnowledgeGraphInitializer: DeepSeek responded with {} chars", response.length());
 
         // Extract the "knowledgePoints" array from the wrapper object
         try {
             JsonNode root = objectMapper.readTree(response);
-            JsonNode pointsArray = root.get("knowledgePoints");
-            if (pointsArray != null && pointsArray.isArray()) {
-                return objectMapper.writeValueAsString(pointsArray);
+            if (root.isObject() && root.has("knowledgePoints")) {
+                return objectMapper.writeValueAsString(root.get("knowledgePoints"));
             }
-            return response; // fallback: treat as raw array
+            // If response is already an array, return as-is
+            if (root.isArray()) {
+                return response;
+            }
+            return response;
         } catch (Exception e) {
-            return response; // fallback
+            log.warn("KnowledgeGraphInitializer: JSON parse failed, trying raw: {}", e.getMessage());
+            // Last resort: wrap in brackets if it looks like JSON
+            String stripped = response.strip();
+            if (!stripped.startsWith("[") && stripped.contains("\"id\"")) {
+                stripped = "[" + stripped + "]";
+            }
+            return stripped;
         }
     }
 
