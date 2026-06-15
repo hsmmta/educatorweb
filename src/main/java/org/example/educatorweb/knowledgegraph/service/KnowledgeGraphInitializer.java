@@ -331,31 +331,49 @@ public class KnowledgeGraphInitializer {
      */
     private String loadReferenceContext() {
         return """
-            ## Reference Course Structure (microsoft/ML-For-Beginners, 86.9k Stars)
-            9 weekly modules: Introduction → Regression → Web-App → Classification
-            → Clustering → NLP → TimeSeries → Reinforcement → Real-World
-            Each module has 2-4 lessons covering one ML concept.
+            ## REAL COURSES (use these exact names for credibility)
+            - 斯坦福大学 CS229: Machine Learning (Andrew Ng) — 理论为主, 长期课程
+            - 斯坦福大学 CS231n: Convolutional Neural Networks for Visual Recognition (Fei-Fei Li)
+            - 麻省理工学院 6.036: Introduction to Machine Learning — 入门, 中期课程
+            - DeepLearning.AI 深度学习专项课程 (Andrew Ng, Coursera) — 5门课系列
+            - 台灣大學 機器學習 (李宏毅) — 中文授课, 长期课程
+            - 南京大学 机器学习 (周志华) — 中文授课, 理论为主
+            - microsoft/ML-For-Beginners (GitHub 12周课程) — 入门, 含代码练习
+            - fast.ai Practical Deep Learning (Jeremy Howard) — 实践为主
+            - 中国大学MOOC: 机器学习 (浙江大学) — 中文, 入门
+            - 中国大学MOOC: 机器学习与模式识别 (中科大) — 中文, 中期
 
-            ## Reference Knowledge Points (26 lessons extracted)
-            intro_to_ml, history_of_ml, fairness, techniques_of_ml (Introduction)
-            tools, data, linear, logistic (Regression)
-            web_app (Web-App)
-            introduction, classifiers_1, classifiers_2, applied (Classification)
-            visualize, k_means (Clustering)
-            intro_to_nlp, tasks, translation_sentiment, hotel_reviews (NLP)
-            introduction, arima, svr (TimeSeries)
-            qlearning, gym (Reinforcement)
-            applications, debugging_ml_models (Real-World)
+            ## REAL TEXTBOOKS (use these exact titles)
+            - 周志华《机器学习》(清华大学出版社, 2016) — 经典中文教材, "西瓜书"
+            - 李航《统计学习方法》(清华大学出版社, 第2版) — 侧重理论推导
+            - Christopher Bishop "Pattern Recognition and Machine Learning" (Springer, 2006)
+            - Trevor Hastie "The Elements of Statistical Learning" (Springer, 2nd ed)
+            - Ian Goodfellow "Deep Learning" (MIT Press, 2016) — 深度学习圣经
+            - Kevin Murphy "Probabilistic Machine Learning" (MIT Press, 2022)
+            - Andrew Ng "Machine Learning Yearning" — 实战方法论
+            - Tom Mitchell "Machine Learning" (McGraw-Hill, 1997) — 经典入门
 
-            ## Reference Resources (eriklindernoren/ML-From-Scratch, 31.9k Stars + classics)
-            Code (20+): adaboost, bayesian_regression, decision_tree, gradient_boosting,
-            k_nearest_neighbors, logistic_regression, multilayer_perceptron, naive_bayes,
-            perceptron, random_forest, regression, support_vector_machine, xgboost,
-            k_means, dbscan, gaussian_mixture_model, principal_component_analysis,
-            apriori, autoencoder, generative_adversarial_network, neural_network
-            Textbooks: 周志华《机器学习》, 李航《统计学习方法》, CS229 notes,
-            Goodfellow《Deep Learning》, Bishop PRML, Hastie ESL
-            Videos: 吴恩达 Coursera ML, DeepLearning.AI specialization
+            ## REAL CODE REPOSITORIES (use exact URLs)
+            - eriklindernoren/ML-From-Scratch (31.9k stars) — 20+ algorithms in pure Python
+            - scikit-learn/scikit-learn (66.3k stars) — standard ML library
+            - tensorflow/tensorflow (195k stars) — deep learning framework
+            - trekhleb/homemade-machine-learning (24.6k stars) — Jupyter demos
+            - ashishpatel26/500-AI-ML-projects (34.5k stars) — project collection
+
+            ## REAL VIDEO COURSES
+            - 吴恩达 Machine Learning (Coursera, 2011原版) — 全球最受欢迎的ML入门课
+            - 吴恩达 Machine Learning Specialization (Coursera, 2022新版)
+            - DeepLearning.AI Specialization (Coursera, 5 courses)
+            - 李沐《动手学深度学习》(d2l.ai, 免费在线)
+            - 3Blue1Brown Neural Networks (YouTube) — 可视化理解
+
+            ## REAL PAPERS (landmark papers for reference)
+            - "ImageNet Classification with Deep CNNs" (Krizhevsky et al., 2012)
+            - "Attention Is All You Need" (Vaswani et al., 2017) — Transformer
+            - "Deep Residual Learning for Image Recognition" (He et al., 2016) — ResNet
+            - "Generative Adversarial Nets" (Goodfellow et al., 2014) — GAN
+            - "BERT" (Devlin et al., 2019) — NLP breakthrough
+            - "Playing Atari with Deep RL" (Mnih et al., 2013) — DQN
             """;
     }
 
