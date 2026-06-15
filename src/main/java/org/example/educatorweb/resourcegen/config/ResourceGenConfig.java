@@ -108,6 +108,10 @@ public class ResourceGenConfig {
     public DeepSeekProvider deepSeekProvider(ModelRoutingProperties props) {
         var cfg = props.providers().get("deepseek");
         String apiKey = System.getProperty("DEEPSEEK_API_KEY", System.getenv("DEEPSEEK_API_KEY"));
+        if (apiKey == null || apiKey.isBlank()) {
+            log.warn("DEEPSEEK_API_KEY not set — AI features will fail at runtime. Using placeholder to allow startup.");
+            apiKey = "sk-no-key-configured";
+        }
         var restClientBuilder = longTimeoutRestClient();
         var api = OpenAiApi.builder().baseUrl(cfg.baseUrl()).apiKey(apiKey)
             .restClientBuilder(restClientBuilder).build();

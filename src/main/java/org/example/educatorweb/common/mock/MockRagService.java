@@ -2,12 +2,10 @@ package org.example.educatorweb.common.mock;
 
 import org.example.educatorweb.rag.RagService;
 import org.example.educatorweb.rag.model.DocumentSnippet;
-import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import java.util.List;
 
 @Service
-@Profile("mock")
 public class MockRagService implements RagService {
     @Override
     public List<DocumentSnippet> retrieve(String query, int topK) {

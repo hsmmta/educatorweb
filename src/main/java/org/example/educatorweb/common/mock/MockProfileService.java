@@ -2,13 +2,11 @@ package org.example.educatorweb.common.mock;
 
 import org.example.educatorweb.profile.ProfileService;
 import org.example.educatorweb.profile.model.StudentProfile;
-import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Map;
 
 @Service
-@Profile("mock")
 public class MockProfileService implements ProfileService {
     @Override
     public StudentProfile getProfile(String studentId) {

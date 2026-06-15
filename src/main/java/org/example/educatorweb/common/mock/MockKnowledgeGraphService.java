@@ -2,12 +2,10 @@ package org.example.educatorweb.common.mock;
 
 import org.example.educatorweb.knowledgegraph.KnowledgeGraphService;
 import org.example.educatorweb.knowledgegraph.model.KnowledgeContext;
-import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import java.util.List;
 
 @Service
-@Profile("mock")
 public class MockKnowledgeGraphService implements KnowledgeGraphService {
     @Override
     public KnowledgeContext queryContext(String knowledgePoint) {
