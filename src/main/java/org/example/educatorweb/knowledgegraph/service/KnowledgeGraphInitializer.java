@@ -9,8 +9,6 @@ import org.example.educatorweb.resourcegen.infrastructure.ModelProvider;
 import org.neo4j.driver.Driver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -40,7 +38,7 @@ public class KnowledgeGraphInitializer {
         this.objectMapper = new ObjectMapper();
     }
 
-    @EventListener(ApplicationReadyEvent.class)
+    // @EventListener(ApplicationReadyEvent.class) — deprecated, replaced by KgBuildAgent
     public void seedIfEmpty() {
         long count;
         try (var session = neo4jDriver.session()) {

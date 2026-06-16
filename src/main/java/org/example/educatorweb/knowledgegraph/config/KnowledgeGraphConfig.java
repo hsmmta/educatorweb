@@ -1,7 +1,6 @@
 package org.example.educatorweb.knowledgegraph.config;
 
 import org.example.educatorweb.knowledgegraph.repository.KnowledgePointRepository;
-import org.example.educatorweb.knowledgegraph.service.KnowledgeGraphInitializer;
 import org.example.educatorweb.knowledgegraph.service.LlmKnowledgeExtractor;
 import org.example.educatorweb.resourcegen.infrastructure.ModelProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -18,11 +17,11 @@ public class KnowledgeGraphConfig {
         return new LlmKnowledgeExtractor(deepSeekProvider, repo);
     }
 
-    @Bean
-    public KnowledgeGraphInitializer knowledgeGraphInitializer(
-            KnowledgePointRepository repo,
-            org.neo4j.driver.Driver neo4jDriver,
-            @Qualifier("deepSeekProvider") ModelProvider deepSeekProvider) {
-        return new KnowledgeGraphInitializer(repo, neo4jDriver, deepSeekProvider);
-    }
+    // @Bean — deprecated, replaced by KgBuildAgent
+    // public KnowledgeGraphInitializer knowledgeGraphInitializer(
+    //         KnowledgePointRepository repo,
+    //         org.neo4j.driver.Driver neo4jDriver,
+    //         @Qualifier("deepSeekProvider") ModelProvider deepSeekProvider) {
+    //     return new KnowledgeGraphInitializer(repo, neo4jDriver, deepSeekProvider);
+    // }
 }
