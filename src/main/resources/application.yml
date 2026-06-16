@@ -37,6 +37,23 @@ qdrant:
   grpc-port: 6334
   api-key: ${QDRANT_API_KEY:}
 
+# --- Knowledge Graph Build Agent ---
+kg:
+  sources:
+    github:
+      - url: https://github.com/microsoft/ML-For-Beginners
+        name: ml-for-beginners
+        type: course
+      - url: https://github.com/eriklindernoren/ML-From-Scratch
+        name: ml-from-scratch
+        type: code-repo
+    web-api:
+      enabled: false
+      provider: tavily
+  build:
+    schedule: "0 0 3 * * SUN"
+    batch-size: 5
+
 # ═══════════════════════════════════════════
 # Multi-Model Provider Routing (v2)
 # ═══════════════════════════════════════════
