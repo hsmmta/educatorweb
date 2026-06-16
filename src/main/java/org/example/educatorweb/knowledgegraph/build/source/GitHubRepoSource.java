@@ -30,26 +30,28 @@ public class GitHubRepoSource implements KgSource {
 
     @Override
     public List<DocumentChunk> fetch() {
-        File repoDir = syncRepo();
-        if (repoDir == null || !repoDir.exists()) return List.of();
+        File repoDir = new File(BASE_DIR + name);
+        // If repo already exists locally, skip git and just parse
+        if (!repoDir.exists()) {
+            repoDir = syncRepo();
+            if (repoDir == null || !repoDir.exists()) return List.of();
+        }
         return parseRepo(repoDir);
     }
 
     private File syncRepo() {
         File repoDir = new File(BASE_DIR + name);
         try {
-            ProcessBuilder pb;
-            if (repoDir.exists() && new File(repoDir, ".git").exists()) {
-                log.info("GitHubRepoSource: pulling {}", name);
-                pb = new ProcessBuilder("git", "pull", "origin");
-                pb.directory(repoDir);
-            } else {
-                log.info("GitHubRepoSource: cloning {} → {}", url, repoDir);
-                repoDir.getParentFile().mkdirs();
-                pb = new ProcessBuilder("git", "clone", "--depth", "1", url, repoDir.getAbsolutePath());
-            }
+            log.info("GitHubRepoSource: cloning {} → {}", url, repoDir);
+            repoDir.getParentFile().mkdirs();
+            var pb = new ProcessBuilder("git", "clone", "--depth", "1", url, repoDir.getAbsolutePath());
             var proc = pb.start();
             proc.waitFor(60, TimeUnit.SECONDS);
+            if (!repoDir.exists()) {
+                log.warn("GitHubRepoSource: clone failed, stderr: {}",
+                    new String(proc.getErrorStream().readAllBytes()));
+                return null;
+            }
             return repoDir;
         } catch (Exception e) {
             log.error("GitHubRepoSource: git operation failed for {}: {}", name, e.getMessage());
