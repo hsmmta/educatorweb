@@ -71,6 +71,23 @@ public class GitHubRepoSource implements KgSource {
                 || dirName.equals("sketchnotes") || dirName.equals("quiz-app"))
                 continue;
 
+            // For code-repo type: parse .py files as algorithm implementations
+            if ("code-repo".equals(type)) {
+                File[] pyFiles = entry.listFiles((dir, fname) -> fname.endsWith(".py") && !fname.startsWith("__"));
+                if (pyFiles != null) {
+                    for (File pyFile : pyFiles) {
+                        String algoName = pyFile.getName().replace(".py", "").replace("_", " ");
+                        chunks.add(DocumentChunk.of(
+                            name + "/" + pyFile.getName(),
+                            name,
+                            dirName + " → " + algoName,
+                            algoName + " algorithm implementation (ML-From-Scratch)",
+                            extractTopic(dirName), 0));
+                    }
+                }
+                continue;
+            }
+
             File[] lessons = entry.listFiles(File::isDirectory);
             if (lessons != null) {
                 for (File lesson : lessons) {
