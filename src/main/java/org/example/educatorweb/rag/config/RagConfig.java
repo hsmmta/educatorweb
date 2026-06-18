@@ -36,8 +36,8 @@ public class RagConfig {
 
     @Bean
     public EmbeddingService embeddingService() {
-        String apiKey = System.getProperty("DEEPSEEK_API_KEY",
-            System.getenv().getOrDefault("DEEPSEEK_API_KEY", ""));
+        String apiKey = System.getProperty("ZHIPU_API_KEY",
+            System.getenv().getOrDefault("ZHIPU_API_KEY", ""));
         return new EmbeddingService(apiKey);
     }
 

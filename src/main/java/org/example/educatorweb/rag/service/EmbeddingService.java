@@ -16,15 +16,17 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Calls DeepSeek's embedding API to convert text to vectors.
- * Uses the same DEEPSEEK_API_KEY as the chat provider.
+ * Calls Zhipu (智谱) Embedding-3 API to convert text to vectors.
+ * Endpoint: https://open.bigmodel.cn/api/paas/v4/embeddings
+ * Model: embedding-3, default dimension: 2048
  */
 public class EmbeddingService {
 
     private static final Logger log = LoggerFactory.getLogger(EmbeddingService.class);
 
-    private static final String EMBEDDING_URL = "https://api.deepseek.com/v1/embeddings";
-    private static final String EMBEDDING_MODEL = "deepseek-chat";
+    private static final String EMBEDDING_URL = "https://open.bigmodel.cn/api/paas/v4/embeddings";
+    private static final String EMBEDDING_MODEL = "embedding-3";
+    private static final int EMBEDDING_DIMENSIONS = 2048;
 
     private final String apiKey;
     private final HttpClient httpClient;
@@ -56,7 +58,8 @@ public class EmbeddingService {
         try {
             Map<String, Object> body = Map.of(
                 "model", EMBEDDING_MODEL,
-                "input", texts
+                "input", texts,
+                "dimensions", EMBEDDING_DIMENSIONS
             );
             String requestBody = objectMapper.writeValueAsString(body);
 

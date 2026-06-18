@@ -19,7 +19,7 @@ public class KgReferenceStore {
 
     private static final Logger log = LoggerFactory.getLogger(KgReferenceStore.class);
     static final String COLLECTION_NAME = "kg_references";
-    private static final int VECTOR_DIM = 1024;
+    private static final int VECTOR_DIM = 2048;  // Zhipu embedding-3 default
 
     private final QdrantClient qdrantClient;
     private volatile boolean initialized;

@@ -29,7 +29,7 @@ public class QdrantRagService implements RagService {
     private static final Logger log = LoggerFactory.getLogger(QdrantRagService.class);
 
     private static final String COLLECTION_NAME = "ml_documents";
-    private static final int VECTOR_DIMENSION = 1024; // DeepSeek embedding dimension
+    private static final int VECTOR_DIMENSION = 2048; // Zhipu embedding-3 dimension
 
     private final QdrantClient qdrantClient;
     private final EmbeddingService embeddingService;
