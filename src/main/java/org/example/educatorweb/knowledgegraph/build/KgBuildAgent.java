@@ -63,8 +63,64 @@ public class KgBuildAgent {
             totalKps += writer.writeKnowledgePoints(nodes);
             totalRels += writer.linkRelationships(nodes);
         }
-        log.info("KgBuildAgent: FULL build done — {} KPs, {} relationships", totalKps, totalRels);
+        // Generate Courses and LearningResources on top of KPs
+        int totalCourses = seedCourses();
+        int totalResources = seedResources();
+
+        log.info("KgBuildAgent: FULL build done — {} KPs, {} rels, {} courses, {} resources",
+            totalKps, totalRels, totalCourses, totalResources);
         return new BuildResult(totalKps, totalRels, 0);
+    }
+
+    private int seedCourses() {
+        float[] vec = embedder.embed("机器学习课程");
+        List<String> refs = store.retrieve(vec, "课程", 5);
+        List<Map<String, Object>> courses = nodeBuilder.buildCourses(refs);
+        int count = 0;
+        try (var session = writer.newSession()) {
+            for (var c : courses) {
+                String id = (String) c.get("id");
+                if (id == null) continue;
+                session.run("""
+                    MERGE (c:Course {id: $id})
+                    SET c.name = $name, c.institution = $inst, c.duration = $dur,
+                        c.type = $type, c.rating = $rating, c.description = $desc
+                    """,
+                    java.util.Map.of("id", id, "name", (String) c.getOrDefault("name", id),
+                        "inst", (String) c.getOrDefault("institution", ""),
+                        "dur", (String) c.getOrDefault("duration", "短期"),
+                        "type", (String) c.getOrDefault("type", "理论"),
+                        "rating", c.get("rating") instanceof Number n ? n.doubleValue() : 4.0,
+                        "desc", (String) c.getOrDefault("description", "")));
+                count++;
+            }
+        }
+        log.info("KgBuildAgent: seeded {} courses", count);
+        return count;
+    }
+
+    private int seedResources() {
+        float[] vec = embedder.embed("机器学习教材");
+        List<String> refs = store.retrieve(vec, "资源", 5);
+        List<Map<String, Object>> resources = nodeBuilder.buildCourses(refs);
+        int count = 0;
+        try (var session = writer.newSession()) {
+            for (var r : resources) {
+                String id = (String) r.get("id");
+                if (id == null) continue;
+                session.run("""
+                    MERGE (r:LearningResource {id: $id})
+                    SET r.title = $title, r.type = $type, r.url = $url, r.description = $desc
+                    """,
+                    java.util.Map.of("id", id, "title", (String) r.getOrDefault("title", ""),
+                        "type", (String) r.getOrDefault("type", "TEXTBOOK"),
+                        "url", (String) r.getOrDefault("url", ""),
+                        "desc", (String) r.getOrDefault("description", "")));
+                count++;
+            }
+        }
+        log.info("KgBuildAgent: seeded {} learning resources", count);
+        return count;
     }
 
     public BuildResult buildIncremental() {
@@ -85,7 +141,10 @@ public class KgBuildAgent {
             totalKps += writer.writeKnowledgePoints(nodes);
             totalRels += writer.linkRelationships(nodes);
         }
-        log.info("KgBuildAgent: INCREMENTAL build done — {} KPs, {} relationships", totalKps, totalRels);
+        int totalCourses = seedCourses();
+        int totalResources = seedResources();
+        log.info("KgBuildAgent: INCREMENTAL build done — {} KPs, {} rels, {} courses, {} resources",
+            totalKps, totalRels, totalCourses, totalResources);
         return new BuildResult(totalKps, totalRels, newCount);
     }
 

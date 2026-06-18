@@ -16,6 +16,11 @@ public class KgNeo4jWriter {
         this.neo4jDriver = neo4jDriver;
     }
 
+    /** Expose raw session for course/resource writes. */
+    public org.neo4j.driver.Session newSession() {
+        return neo4jDriver.session();
+    }
+
     public int writeKnowledgePoints(List<Map<String, Object>> nodes) {
         int count = 0;
         try (var session = neo4jDriver.session()) {
