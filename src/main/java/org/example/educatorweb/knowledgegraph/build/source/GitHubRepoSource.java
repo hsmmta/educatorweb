@@ -71,6 +71,33 @@ public class GitHubRepoSource implements KgSource {
                 || dirName.equals("sketchnotes") || dirName.equals("quiz-app"))
                 continue;
 
+            // For awesome-list type: extract GitHub links from README
+            if ("awesome-list".equals(type)) {
+                File readme = new File(entry, "README.md");
+                if (!readme.exists()) readme = new File(repoDir, "README.md");
+                if (readme.exists()) {
+                    String text = readText(readme);
+                    java.util.regex.Matcher m = java.util.regex.Pattern
+                        .compile("https://github\\.com/([a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+)")
+                        .matcher(text);
+                    java.util.Set<String> seen = new java.util.HashSet<>();
+                    int idx = 0;
+                    while (m.find() && idx < 30) {
+                        String repo = m.group(1);
+                        if (seen.add(repo)) {
+                            chunks.add(DocumentChunk.of(
+                                name + "/" + repo.replace("/", "_"),
+                                name,
+                                "awesome-list: " + repo,
+                                repo + " — ML resource from awesome list",
+                                extractTopic(dirName), 0));
+                            idx++;
+                        }
+                    }
+                }
+                return chunks;  // awesome-list only has one README at root
+            }
+
             // For code-repo type: parse .py files as algorithm implementations
             if ("code-repo".equals(type)) {
                 File[] pyFiles = entry.listFiles((dir, fname) -> fname.endsWith(".py") && !fname.startsWith("__"));
