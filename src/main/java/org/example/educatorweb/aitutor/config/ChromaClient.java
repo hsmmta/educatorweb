@@ -1,0 +1,202 @@
+package org.example.educatorweb.aitutor.config;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.web.client.RestClient;
+
+import java.net.http.HttpClient;
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Thin wrapper around Chroma's REST API for conversation storage.
+ *
+ * <p>Uses Spring {@link RestClient} — no extra dependency needed.
+ * Chroma base URL is configured via {@code chroma.base-url} in application.yml,
+ * defaulting to {@code http://localhost:8000}.
+ *
+ * <h3>API reference</h3>
+ * <ul>
+ *   <li>GET  /api/v1/collections/{name}  — collection info (contains UUID)</li>
+ *   <li>POST /api/v1/collections           — create collection</li>
+ *   <li>POST /api/v1/collections/{id}/add  — insert records</li>
+ *   <li>POST /api/v1/collections/{id}/query — semantic search</li>
+ * </ul>
+ */
+public class ChromaClient {
+
+    private static final Logger log = LoggerFactory.getLogger(ChromaClient.class);
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    private static final String COLLECTION_NAME = "ai_tutor_conversations";
+
+    private final RestClient restClient;
+    /** Cached collection UUID after first lookup. */
+    private volatile String collectionId;
+    /** Track whether we failed to reach Chroma (avoid repeated log spam). */
+    private volatile boolean unavailable;
+
+    public ChromaClient(String baseUrl) {
+        var httpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(5))
+            .build();
+        var requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(Duration.ofSeconds(10));
+        this.restClient = RestClient.builder()
+            .baseUrl(baseUrl)
+            .requestFactory(requestFactory)
+            .build();
+    }
+
+    // ---------------------------------------------------------------
+    // Public API
+    // ---------------------------------------------------------------
+
+    /**
+     * Store a message record (question or answer) in Chroma.
+     *
+     * @param id          unique document id, e.g. {@code conv-123:user:1718000000000}
+     * @param embedding   vector representation of the message text
+     * @param text        the raw message text
+     * @param metadata    userId, conversationId, role, timestamp, etc.
+     */
+    public boolean add(String id, List<Float> embedding, String text, Map<String, Object> metadata) {
+        String collId = ensureCollection();
+        if (collId == null) return false;
+
+        try {
+            Map<String, Object> body = Map.of(
+                "ids", List.of(id),
+                "embeddings", List.of(embedding),
+                "documents", List.of(text),
+                "metadatas", List.of(metadata)
+            );
+            // Chroma accepts either name or UUID in the path
+            restClient.post()
+                .uri("/api/v1/collections/{name}/add", COLLECTION_NAME)
+                .body(body)
+                .retrieve()
+                .toBodilessEntity();
+            log.debug("ChromaClient: stored record {}", id);
+            return true;
+        } catch (Exception e) {
+            log.warn("ChromaClient: add failed for {}: {}", id, e.getMessage());
+            unavailable = true;
+            return false;
+        }
+    }
+
+    /**
+     * Query conversation history for a user by semantic similarity.
+     *
+     * @param queryEmbedding embedding of the current question
+     * @param userId         filter to this user's messages
+     * @param nResults       max number of results to return
+     * @return list of matching records, each a map with keys: id, document, metadata, distance
+     */
+    public List<Map<String, Object>> query(List<Float> queryEmbedding, String userId, int nResults) {
+        String collId = ensureCollection();
+        if (collId == null) return List.of();
+
+        try {
+            Map<String, Object> body = Map.of(
+                "query_embeddings", List.of(queryEmbedding),
+                "n_results", nResults,
+                "where", Map.of("userId", userId)
+            );
+            String resp = restClient.post()
+                .uri("/api/v1/collections/{name}/query", COLLECTION_NAME)
+                .body(body)
+                .retrieve()
+                .body(String.class);
+
+            // Parse response
+            Map<String, Object> result = OBJECT_MAPPER.readValue(resp, new TypeReference<>() {});
+            // Chroma returns {"ids": [[...]], "documents": [[...]], "metadatas": [[...]], "distances": [[...]]}
+            // Each value is a nested list: outer = per-query, inner = per-result
+            return flattenQueryResult(result);
+        } catch (Exception e) {
+            log.warn("ChromaClient: query failed: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Internals
+    // ---------------------------------------------------------------
+
+    private String ensureCollection() {
+        if (unavailable) return null;
+        if (collectionId != null) return collectionId;
+
+        try {
+            // Try to get existing collection
+            String resp = restClient.get()
+                .uri("/api/v1/collections/{name}", COLLECTION_NAME)
+                .retrieve()
+                .body(String.class);
+
+            Map<String, Object> info = OBJECT_MAPPER.readValue(resp, new TypeReference<>() {});
+            collectionId = (String) info.get("id");
+            if (collectionId != null) {
+                log.info("ChromaClient: collection '{}' found (id={})", COLLECTION_NAME, collectionId);
+                return collectionId;
+            }
+        } catch (Exception e) {
+            log.info("ChromaClient: collection '{}' not found, creating...", COLLECTION_NAME);
+        }
+
+        // Create collection
+        try {
+            Map<String, Object> body = Map.of(
+                "name", COLLECTION_NAME,
+                "metadata", Map.of("hnsw:space", "cosine")
+            );
+            String resp = restClient.post()
+                .uri("/api/v1/collections")
+                .body(body)
+                .retrieve()
+                .body(String.class);
+
+            Map<String, Object> info = OBJECT_MAPPER.readValue(resp, new TypeReference<>() {});
+            collectionId = (String) info.get("id");
+            log.info("ChromaClient: collection '{}' created (id={})", COLLECTION_NAME, collectionId);
+            return collectionId;
+        } catch (Exception e) {
+            log.error("ChromaClient: cannot create collection '{}': {}", COLLECTION_NAME, e.getMessage());
+            unavailable = true;
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> flattenQueryResult(Map<String, Object> raw) {
+        List<List<String>> ids = (List<List<String>>) raw.get("ids");
+        List<List<String>> documents = (List<List<String>>) raw.get("documents");
+        List<List<Map<String, Object>>> metadatas = (List<List<Map<String, Object>>>) raw.get("metadatas");
+        List<List<Double>> distances = (List<List<Double>>) raw.get("distances");
+
+        if (ids == null || ids.isEmpty()) return List.of();
+
+        List<String> idList = ids.get(0);
+        List<String> docList = documents != null ? documents.get(0) : List.of();
+        List<Map<String, Object>> metaList = metadatas != null ? metadatas.get(0) : List.of();
+        List<Double> distList = distances != null ? distances.get(0) : List.of();
+
+        List<Map<String, Object>> results = new java.util.ArrayList<>();
+        for (int i = 0; i < idList.size(); i++) {
+            int idx = i;
+            results.add(Map.of(
+                "id", idList.get(i),
+                "document", i < docList.size() ? docList.get(i) : "",
+                "metadata", i < metaList.size() ? metaList.get(i) : Map.of(),
+                "distance", i < distList.size() ? distList.get(i) : 1.0
+            ));
+        }
+        return results;
+    }
+}

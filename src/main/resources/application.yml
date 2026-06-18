@@ -36,6 +36,10 @@ qdrant:
   host: ${QDRANT_HOST:localhost}
   grpc-port: 6334
 
+# --- Chroma Vector Database (Conversation History) ---
+chroma:
+  base-url: ${CHROMA_URL:http://localhost:8000}
+
 # ═══════════════════════════════════════════
 # Multi-Model Provider Routing (v2)
 # ═══════════════════════════════════════════

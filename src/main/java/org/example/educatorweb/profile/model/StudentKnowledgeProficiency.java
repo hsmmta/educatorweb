@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "student_knowledge_proficiency")
+@IdClass(StudentKnowledgeProficiencyId.class)
 public class StudentKnowledgeProficiency {
 
     @Id
