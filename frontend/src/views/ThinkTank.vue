@@ -86,15 +86,11 @@
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Upload, UploadFilled, MoreFilled } from '@element-plus/icons-vue'
-
-// 接口预留：后续对接后端上传 API
-const API_BASE = '/api/thinktank'
+import request from '@/api/request'
 
 const showUpload = ref(false)
 const uploading = ref(false)
 const pendingFiles = ref([])
-
-// 模拟已上传资料
 const materials = ref([])
 
 const fileIcon = (type) => {
@@ -112,22 +108,30 @@ const confirmUpload = async () => {
     return
   }
   uploading.value = true
+  let successCount = 0
   try {
-    // TODO: 对接后端上传 API
-    // await axios.post(`${API_BASE}/upload`, formData)
-    pendingFiles.value.forEach(f => {
+    for (const f of pendingFiles.value) {
+      const formData = new FormData()
+      formData.append('file', f.raw)
+      const res = await request.post('/rag/documents', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 60000
+      })
+      const data = res.data
       materials.value.push({
         id: Date.now() + Math.random(),
-        name: f.name,
+        name: data.filename || f.name,
         type: f.name.split('.').pop().toLowerCase(),
-        size: formatSize(f.size || 0)
+        size: `${data.chunks || 0} 个文本块`
       })
-    })
-    ElMessage.success(`成功上传 ${pendingFiles.value.length} 个文件`)
+      successCount++
+    }
+    ElMessage.success(`成功上传 ${successCount} 个文件`)
     showUpload.value = false
     pendingFiles.value = []
   } catch (e) {
-    ElMessage.error('上传失败，请稍后重试')
+    const msg = e.response?.data?.error || '上传失败，请稍后重试'
+    ElMessage.error(msg)
   } finally {
     uploading.value = false
   }

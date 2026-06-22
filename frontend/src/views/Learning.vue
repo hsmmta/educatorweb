@@ -95,9 +95,6 @@ import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { MagicStick, CircleCheckFilled, Loading, Download } from '@element-plus/icons-vue'
 
-// 接口预留
-const API_BASE = '/api/generate'
-
 const selectedType = ref('doc')
 const topic = ref('')
 const context = ref('')
@@ -123,41 +120,116 @@ const agents = [
   { name: 'ReviewAgent',   avatar: '🛡️', desc: '质量审核：内容安全过滤与事实核查' }
 ]
 
+/** Map SSE stage to the agent step index */
+const stageToIdx = { INIT: -1, REQUIRE: 0, DESIGN: 1, GENERATING: 2, REVIEWING: 3, DONE: 4, FALLBACK: 4 }
+
+const getStudentId = () => {
+  try {
+    const info = JSON.parse(localStorage.getItem('userInfo') || '{}')
+    return info.phone || info.studentId || 'anonymous'
+  } catch { return 'anonymous' }
+}
+
 const startGenerate = async () => {
   if (!topic.value.trim()) return
   generating.value = true
   agentSteps.value = []
   result.value = null
 
-  // 模拟多智能体流程
-  for (const agent of agents) {
-    agentSteps.value = agentSteps.value.map(a => ({ ...a, status: 'done' }))
-    agentSteps.value.push({
-      name: agent.name, avatar: agent.avatar,
-      desc: agent.desc, status: 'loading'
+  const token = localStorage.getItem('token') || ''
+  const body = JSON.stringify({
+    studentId: getStudentId(),
+    knowledgePoint: topic.value,
+    types: [selectedType.value.toUpperCase()]
+  })
+
+  try {
+    const response = await fetch('/api/generate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+        'Authorization': token ? `Bearer ${token}` : ''
+      },
+      body
     })
-    await new Promise(r => setTimeout(r, 800 + Math.random() * 400))
-  }
-  agentSteps.value = agentSteps.value.map(a => ({ ...a, status: 'done' }))
 
-  // 模拟结果
-  const resMap = {
-    doc: { title: `${topic.value} - 学习文档`, type: 'Markdown', size: '12KB' },
-    ppt: { title: `${topic.value} - 教学课件`, type: 'PPTX', size: '2.3MB' },
-    quiz: { title: `${topic.value} - 练习题库`, type: 'JSON', size: '8KB' },
-    mindmap: { title: `${topic.value} - 思维导图`, type: 'XMind', size: '45KB' },
-    video: { title: `${topic.value} - 教学视频`, type: 'MP4', size: '18MB' },
-    code: { title: `${topic.value} - 代码案例`, type: 'ZIP', size: '3.1MB' },
-    html: { title: `${topic.value} - 交互课件`, type: 'HTML', size: '56KB' }
-  }
-  result.value = {
-    ...resMap[selectedType.value],
-    preview: `<p>✅ 资源已生成！</p><p>类型：${selectedType.value}</p><p>主题：${topic.value}</p><p>难度：${difficulty.value}</p><p>接口已预留，等待后端接入真实多智能体生成流程。</p>`
-  }
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
 
-  ElMessage.success('资源生成完成')
-  generating.value = false
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+
+      // Parse SSE lines
+      const lines = buffer.split('\n')
+      buffer = lines.pop() // keep incomplete line in buffer
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue
+        const json = line.substring(5).trim()
+        if (!json) continue
+        try {
+          const evt = JSON.parse(json)
+          handleSseEvent(evt)
+        } catch { /* skip unparseable */ }
+      }
+    }
+  } catch (e) {
+    ElMessage.error('生成失败：' + (e.message || '请稍后重试'))
+  } finally {
+    generating.value = false
+  }
 }
+
+const handleSseEvent = (evt) => {
+  const stage = evt.stage || ''
+  const idx = stageToIdx[stage] ?? -1
+
+  // Update agent steps visualization
+  if (idx >= 0 && idx < agents.length) {
+    agentSteps.value = agents.slice(0, idx + 1).map((a, i) => ({
+      name: a.name, avatar: a.avatar, desc: a.desc,
+      status: i < idx ? 'done' : 'loading'
+    }))
+  }
+
+  if (stage === 'DONE' || stage === 'FALLBACK') {
+    agentSteps.value = agents.map(a => ({
+      name: a.name, avatar: a.avatar, desc: a.desc, status: 'done'
+    }))
+
+    const typeKey = selectedType.value.toUpperCase()
+    const payload = evt.payload || {}
+    const item = payload[typeKey] || Object.values(payload)[0]
+    if (item) {
+      result.value = {
+        title: item.title || `${topic.value} - 学习资源`,
+        type: item.type || typeKey,
+        size: '',
+        preview: `<pre style="white-space:pre-wrap;max-height:400px;overflow:auto;">${escapeHtml(item.content || '生成完成')}</pre>`
+      }
+    } else {
+      result.value = {
+        title: `${topic.value} - 学习资源`,
+        type: typeKey,
+        size: '',
+        preview: `<p>✅ ${evt.message || '生成完成'}</p>`
+      }
+    }
+
+    if (stage === 'DONE') ElMessage.success('资源生成完成')
+    if (stage === 'FALLBACK') ElMessage.warning(evt.message || '生成降级完成')
+  }
+}
+
+const escapeHtml = (s) =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 </script>
 
 <style scoped>

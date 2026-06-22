@@ -107,15 +107,61 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Edit, UserFilled } from '@element-plus/icons-vue'
+import request from '@/api/request'
 
 const userInfo = ref({})
+const profileLoading = ref(false)
 
-onMounted(() => {
+const getStudentId = () => {
+  try {
+    const info = JSON.parse(localStorage.getItem('userInfo') || '{}')
+    return info.phone || info.studentId || ''
+  } catch { return '' }
+}
+
+onMounted(async () => {
   const info = localStorage.getItem('userInfo')
   if (info) {
-    try { userInfo.value = JSON.parse(info) } catch (e) { userInfo.value = {} }
+    try { userInfo.value = JSON.parse(info) } catch { userInfo.value = {} }
   }
+  await fetchProfile()
 })
+
+const fetchProfile = async () => {
+  const studentId = getStudentId()
+  if (!studentId) return
+  profileLoading.value = true
+  try {
+    const res = await request.get(`/profile/${studentId}`)
+    const p = res.data
+    dimensions.value[0].value = p.knowledgeBaseLevel || ''
+    dimensions.value[0].confidence = parseConfidence(p.knowledgeBaseConfidence)
+    dimensions.value[1].value = p.cognitiveStyleType || ''
+    dimensions.value[1].confidence = parseConfidence(p.cognitiveStyleConfidence)
+    dimensions.value[2].value = (p.errorPatternTags || []).join('、') || ''
+    dimensions.value[2].confidence = parseConfidence(p.errorPatternConfidence)
+    dimensions.value[3].value = p.learningPaceType || ''
+    dimensions.value[3].confidence = parseConfidence(p.learningPaceConfidence)
+    dimensions.value[4].value = p.contentPreferenceType || ''
+    dimensions.value[4].confidence = parseConfidence(p.contentPreferenceRatio ? 50 : 0)
+    dimensions.value[5].value = p.goalOrientationType || ''
+    dimensions.value[5].confidence = parseConfidence(p.goalOrientationConfidence)
+  } catch (e) {
+    if (e.response?.status !== 404) {
+      console.warn('Failed to fetch profile:', e.message)
+    }
+  } finally {
+    profileLoading.value = false
+  }
+}
+
+/** Convert BigDecimal (0.00-1.00) to percentage (0-100) */
+const parseConfidence = (val) => {
+  if (val == null) return 0
+  const n = Number(val)
+  if (n <= 1) return Math.round(n * 100)
+  return Math.round(n)
+}
 
 const dimensions = ref([
   { key: 'knowledge',   icon: '📖', label: '知识基础',   value: '', color: '#667eea', confidence: 0 },
