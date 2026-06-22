@@ -69,7 +69,7 @@ public class AiTutorServiceImpl implements AiTutorService {
 
         // 6. Build response
         List<ChatResponse.SourceSnippet> sources = ragSnippets.stream()
-            .map(s -> new ChatResponse.SourceSnippet(s.text(), s.source(), s.score()))
+            .map(s -> new ChatResponse.SourceSnippet(s.content(), s.source(), s.score()))
             .toList();
 
         return new ChatResponse(conversationId, answer, sources, Instant.now());
@@ -181,7 +181,7 @@ public class AiTutorServiceImpl implements AiTutorService {
             sb.append("【参考资料】\n");
             for (int i = 0; i < ragSnippets.size(); i++) {
                 DocumentSnippet s = ragSnippets.get(i);
-                sb.append("[").append(i + 1).append("] ").append(s.text()).append("\n");
+                sb.append("[").append(i + 1).append("] ").append(s.content()).append("\n");
                 sb.append("    —来源: ").append(s.source()).append("\n\n");
             }
         }
