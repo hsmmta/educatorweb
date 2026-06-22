@@ -50,11 +50,32 @@ public class EmbeddingService {
     }
 
     /**
-     * Generate embedding vectors for multiple texts in one API call.
+     * Generate embedding vectors for multiple texts, automatically batching
+     * to respect the Zhipu API limit of 4 inputs per request.
      */
     public List<float[]> embedBatch(List<String> texts) {
         if (texts == null || texts.isEmpty()) return List.of();
 
+        List<float[]> allEmbeddings = new ArrayList<>();
+        int batchSize = 4; // Zhipu embedding-3 API max inputs per request
+
+        for (int start = 0; start < texts.size(); start += batchSize) {
+            List<String> batch = texts.subList(start, Math.min(start + batchSize, texts.size()));
+            List<float[]> batchResult = embedSingleBatch(batch);
+            allEmbeddings.addAll(batchResult);
+        }
+
+        log.debug("EmbeddingService: generated {} embeddings in {} batches, dimension={}",
+            allEmbeddings.size(),
+            (texts.size() + batchSize - 1) / batchSize,
+            allEmbeddings.isEmpty() || allEmbeddings.get(0).length == 0 ? 0 : allEmbeddings.get(0).length);
+        return allEmbeddings;
+    }
+
+    /**
+     * Send a single batch (max 4 texts) to the Zhipu Embedding API.
+     */
+    private List<float[]> embedSingleBatch(List<String> texts) {
         try {
             Map<String, Object> body = Map.of(
                 "model", EMBEDDING_MODEL,
@@ -92,8 +113,6 @@ public class EmbeddingService {
                 embeddings.add(vec);
             }
 
-            log.debug("EmbeddingService: generated {} embeddings, dimension={}",
-                embeddings.size(), embeddings.isEmpty() ? 0 : embeddings.get(0).length);
             return embeddings;
 
         } catch (IOException | InterruptedException e) {

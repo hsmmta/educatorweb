@@ -123,6 +123,11 @@ public class QdrantRagService implements RagService {
                 pointStructs.add(point);
             }
 
+            if (pointStructs.isEmpty()) {
+                log.warn("QdrantRagService: all embeddings failed, nothing to store");
+                return 0;
+            }
+
             qdrantClient.upsertAsync(
                 Points.UpsertPoints.newBuilder()
                     .setCollectionName(COLLECTION_NAME)
