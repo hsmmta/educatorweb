@@ -5,7 +5,11 @@
       <div class="bg-shape shape-2"></div>
       <div class="bg-shape shape-3"></div>
     </div>
-    <el-card class="auth-card">
+    <div class="auth-left">
+      <Stationery3D />
+    </div>
+    <div class="auth-right">
+      <el-card class="auth-card">
       <div class="auth-header">
         <div class="logo-icon">✦</div>
         <h2>智学派</h2>
@@ -93,6 +97,7 @@
         </el-form-item>
       </el-form>
     </el-card>
+    </div>
   </div>
 </template>
 
@@ -102,6 +107,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Iphone, Lock, Key } from '@element-plus/icons-vue'
 import { loginApi } from '@/api/auth'
+import Stationery3D from '@/components/Stationery3D.vue'
 
 const router = useRouter()
 const formRef = ref()
@@ -220,11 +226,26 @@ const handleLogin = async () => {
 .auth-container {
   min-height: 100vh;
   display: flex;
-  justify-content: center;
-  align-items: center;
   position: relative;
   overflow: hidden;
   background: #f0f4ff;
+}
+
+.auth-left {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.auth-right {
+  width: 480px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 48px;
+  z-index: 2;
 }
 
 .auth-bg {
@@ -272,7 +293,7 @@ const handleLogin = async () => {
 }
 
 .auth-card {
-  width: 440px;
+  width: 100%;
   border-radius: 20px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.08), 0 8px 20px rgba(0, 0, 0, 0.04);
   z-index: 1;
@@ -404,5 +425,43 @@ const handleLogin = async () => {
   font-weight: 500;
   margin-left: 0 !important;
   margin-top: 8px;
+}
+
+/* ========== Responsive ========== */
+@media (max-width: 900px) {
+  .auth-container {
+    flex-direction: column;
+  }
+
+  .auth-left {
+    flex: none;
+    height: 320px;
+    min-height: 320px;
+  }
+
+  .auth-right {
+    width: 100%;
+    padding: 24px 20px 40px;
+    flex-shrink: 1;
+  }
+}
+
+@media (max-width: 480px) {
+  .auth-left {
+    height: 240px;
+    min-height: 240px;
+  }
+
+  .auth-right {
+    padding: 16px 12px 32px;
+  }
+
+  .code-row {
+    flex-direction: column;
+  }
+
+  .code-btn {
+    min-width: unset;
+  }
 }
 </style>
