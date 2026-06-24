@@ -14,7 +14,9 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
 import static io.qdrant.client.QueryFactory.nearest;
@@ -156,6 +158,63 @@ public class QdrantRagService implements RagService {
             Thread.currentThread().interrupt();
             return 0;
         }
+    }
+
+    /**
+     * List all unique documents uploaded by a specific user.
+     * Groups chunk-level points by source/docId and returns file-level metadata.
+     */
+    public List<Map<String, Object>> listDocuments(String userId) {
+        if (!ensureCollection()) return List.of();
+
+        try {
+            var filter = Points.Filter.newBuilder()
+                .addMust(ConditionFactory.matchKeyword("userId", userId))
+                .build();
+
+            var scrollResponse = qdrantClient.scrollAsync(
+                Points.ScrollPoints.newBuilder()
+                    .setCollectionName(COLLECTION_NAME)
+                    .setFilter(filter)
+                    .setWithPayload(Points.WithPayloadSelector.newBuilder().setEnable(true).build())
+                    .setLimit(1000)
+                    .build()
+            ).get();
+
+            // Group by source field — all chunks from the same file share the same source value
+            Map<String, Map<String, Object>> docMap = new LinkedHashMap<>();
+            for (var point : scrollResponse.getResultList()) {
+                var payload = point.getPayloadMap();
+                String source = getPayloadString(payload, "source");
+                String title = getPayloadString(payload, "title");
+
+                if (source.isBlank()) continue;
+
+                docMap.compute(source, (k, v) -> {
+                    if (v == null) {
+                        Map<String, Object> entry = new LinkedHashMap<>();
+                        entry.put("source", source);
+                        entry.put("title", title.isBlank() ? source : title);
+                        entry.put("chunks", 1);
+                        return entry;
+                    }
+                    v.put("chunks", ((Integer) v.get("chunks")) + 1);
+                    return v;
+                });
+            }
+
+            return new ArrayList<>(docMap.values());
+
+        } catch (InterruptedException | ExecutionException e) {
+            log.error("QdrantRagService: listDocuments failed: {}", e.getMessage());
+            Thread.currentThread().interrupt();
+            return List.of();
+        }
+    }
+
+    private String getPayloadString(Map<String, JsonWithInt.Value> payload, String key) {
+        var value = payload.get(key);
+        return value != null ? value.getStringValue() : "";
     }
 
     private boolean ensureCollection() {

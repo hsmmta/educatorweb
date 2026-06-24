@@ -83,7 +83,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Upload, UploadFilled, MoreFilled } from '@element-plus/icons-vue'
 import request from '@/api/request'
@@ -99,6 +99,27 @@ const getStudentId = () => {
     return info.phone || info.studentId || 'anonymous'
   } catch { return 'anonymous' }
 }
+
+/** Load uploaded files from backend on page mount */
+const loadMaterials = async () => {
+  try {
+    const res = await request.get('/rag/documents', {
+      params: { studentId: getStudentId() }
+    })
+    materials.value = (res.data || []).map(doc => ({
+      id: doc.source,
+      name: doc.title || doc.source,
+      type: (doc.source || '').split('.').pop()?.toLowerCase() || 'pdf',
+      size: `${doc.chunks || 0} 个文本块`
+    }))
+  } catch (e) {
+    console.warn('Failed to load materials:', e.message)
+  }
+}
+
+onMounted(() => {
+  loadMaterials()
+})
 
 const fileIcon = (type) => {
   const map = { pdf: '📕', doc: '📘', docx: '📘', ppt: '📊', pptx: '📊', md: '📝', txt: '📄', png: '🖼️', jpg: '🖼️' }
@@ -125,13 +146,8 @@ const confirmUpload = async () => {
         params: { studentId: getStudentId() },
         timeout: 60000
       })
-      const data = res.data
-      materials.value.push({
-        id: Date.now() + Math.random(),
-        name: data.filename || f.name,
-        type: f.name.split('.').pop().toLowerCase(),
-        size: `${data.chunks || 0} 个文本块`
-      })
+      // Reload full list from backend to stay consistent
+      await loadMaterials()
       successCount++
     }
     ElMessage.success(`成功上传 ${successCount} 个文件`)

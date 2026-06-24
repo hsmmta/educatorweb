@@ -4,6 +4,7 @@ import org.example.educatorweb.rag.RagService;
 import org.example.educatorweb.rag.model.DocumentSnippet;
 import org.springframework.stereotype.Service;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class MockRagService implements RagService {
@@ -17,5 +18,10 @@ public class MockRagService implements RagService {
             new DocumentSnippet("核技巧允许SVM在高维空间中隐式地计算内积...",
                 "统计学习方法-第7章", 0.82)
         );
+    }
+
+    @Override
+    public List<Map<String, Object>> listDocuments(String userId) {
+        return List.of();
     }
 }

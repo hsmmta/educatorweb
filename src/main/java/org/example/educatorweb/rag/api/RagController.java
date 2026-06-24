@@ -88,6 +88,16 @@ public class RagController {
     }
 
     /**
+     * List all documents uploaded by a specific user.
+     */
+    @GetMapping("/documents")
+    public ResponseEntity<List<Map<String, Object>>> listDocuments(
+            @RequestParam("studentId") String studentId) {
+        List<Map<String, Object>> docs = ragService.listDocuments(studentId);
+        return ResponseEntity.ok(docs);
+    }
+
+    /**
      * Semantic search over a specific user's uploaded documents.
      */
     @GetMapping("/search")
