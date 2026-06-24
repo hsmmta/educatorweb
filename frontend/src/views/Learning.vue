@@ -126,10 +126,19 @@
                   <span class="option-text">{{ opt.replace(/^[A-Z][.)]\s*/, '') }}</span>
                 </li>
               </ul>
-              <!-- Non-interactive options for other types -->
-              <ul v-else-if="q.options && q.options.length" class="quiz-options">
-                <li v-for="(opt, j) in q.options" :key="j">{{ opt }}</li>
-              </ul>
+              <!-- Non-interactive SHORT_ANSWER / FILL_BLANK -->
+              <div v-else-if="q.type === 'SHORT_ANSWER' || q.type === 'FILL_BLANK'" class="quiz-written">
+                <div v-if="q.type === 'SHORT_ANSWER'" class="written-area">
+                  <el-input type="textarea" :rows="3" placeholder="请输入你的答案..." disabled />
+                </div>
+                <div v-else class="written-area">
+                  <el-input placeholder="请填空..." disabled />
+                </div>
+                <div v-if="showAnswers" class="quiz-answer">
+                  <div class="quiz-answer-row"><strong>参考答案：</strong>{{ q.answer }}</div>
+                  <div v-if="q.explanation" class="quiz-explain"><strong>解析：</strong>{{ q.explanation }}</div>
+                </div>
+              </div>
               <div v-if="showAnswers || optionResult[i]" class="quiz-answer">
                 <div class="quiz-answer-row">
                   <strong>答案：</strong>{{ q.answer }}
@@ -143,14 +152,32 @@
           <pre v-else class="raw-fallback">{{ result.content }}</pre>
         </div>
 
-        <!-- CODE: code block + copy + execution output -->
+        <!-- CODE: Jupyter-like interactive editor -->
         <div v-else-if="result.type === 'CODE'" class="code-render">
           <div class="code-toolbar">
             <span class="code-lang">Python</span>
-            <el-button size="small" :icon="DocumentCopy" @click="copyCode">复制代码</el-button>
+            <div class="code-toolbar-actions">
+              <el-button size="small" type="primary" :icon="VideoPlay" @click="runCode" :loading="codeRunning">
+                {{ codeRunning ? '运行中…' : '运行' }}
+              </el-button>
+              <el-button size="small" :icon="DocumentCopy" @click="copyCode">复制</el-button>
+            </div>
           </div>
-          <pre class="code-block"><code>{{ result.content }}</code></pre>
-          <p class="code-hint">💡 上方代码已在后端沙箱运行，输出以注释形式嵌入在代码顶部。</p>
+          <el-input
+            v-model="editableCode"
+            type="textarea"
+            :rows="14"
+            class="code-editor"
+            placeholder="在此编辑 Python 代码…"
+            :disabled="codeRunning"
+          />
+          <div v-if="codeOutput || codeRunning" class="code-output">
+            <div class="output-header">
+              <span class="output-label">▶ 输出</span>
+              <span class="output-meta" v-if="!codeRunning">{{ codeExecTime }}ms · exit={{ codeExitCode }}</span>
+            </div>
+            <pre class="output-body" :class="{ 'output-error': codeExitCode !== 0 }">{{ codeOutput || '（等待输出…）' }}</pre>
+          </div>
         </div>
 
         <!-- HTML: live interactive iframe -->
@@ -187,7 +214,7 @@
 <script setup>
 import { ref, computed, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import { MagicStick, CircleCheckFilled, Loading, Download, DocumentCopy } from '@element-plus/icons-vue'
+import { MagicStick, CircleCheckFilled, Loading, Download, DocumentCopy, VideoPlay } from '@element-plus/icons-vue'
 import { marked } from 'marked'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
@@ -233,6 +260,12 @@ const result = ref(null)
 const quizData = ref(null)
 const showAnswers = ref(false)
 const mindmapSvg = ref('')
+// Interactive code state
+const editableCode = ref('')
+const codeRunning = ref(false)
+const codeOutput = ref('')
+const codeExecTime = ref(0)
+const codeExitCode = ref(0)
 // Interactive quiz state: { questionIndex: 'A' }
 const selectedOption = ref({})
 // { questionIndex: 'correct' | 'incorrect' }
@@ -283,29 +316,40 @@ const resetQuiz = () => {
 
 const selectOption = (qIndex, optText) => {
   const q = quizData.value?.questions?.[qIndex]
-  if (!q || q.type === 'SHORT_ANSWER') return
+  if (!q || q.type === 'SHORT_ANSWER' || q.type === 'FILL_BLANK') return
   const letter = optionLetter(optText)
   if (!letter) return
   selectedOption.value = { ...selectedOption.value, [qIndex]: letter }
-  // TF: answer is "True"/"False", map A→True, B→False
-  let correctAnswer = q.answer?.trim() || ''
+
+  let isCorrect = false
   if (q.type === 'TF') {
-    if (letter === 'A') correctAnswer = 'True'
-    else if (letter === 'B') correctAnswer = 'False'
+    // Compare option content (stripped of letter prefix) with answer using
+    // semantic truth-value matching: True/正确/√ vs False/错误/×
+    const optContent = optText.replace(/^[A-Z][.)]\s*/, '').trim()
+    const ans = q.answer?.trim() || ''
+    const optTrue = /^(true|t|yes|正确|是|√|对)$/i.test(optContent)
+    const ansTrue = /^(true|t|yes|正确|是|√|对)$/i.test(ans)
+    isCorrect = optTrue === ansTrue
+  } else {
+    // MC: letter match (answer is like "C")
+    const correctLetter = q.answer?.trim().toUpperCase() || ''
+    isCorrect = letter.toUpperCase() === correctLetter
   }
-  const isCorrect = letter === correctAnswer || letter.toLowerCase() === correctAnswer.toLowerCase()
   optionResult.value = { ...optionResult.value, [qIndex]: isCorrect ? 'correct' : 'incorrect' }
 }
 
 const isCorrectAnswer = (q, optText) => {
   if (!q) return false
-  const letter = optionLetter(optText)
-  // TF: answer is "True"/"False"
   if (q.type === 'TF') {
+    const optContent = optText.replace(/^[A-Z][.)]\s*/, '').trim()
     const ans = q.answer?.trim() || ''
-    return (letter === 'A' && ans === 'True') || (letter === 'B' && ans === 'False')
+    const optTrue = /^(true|t|yes|正确|是|√|对)$/i.test(optContent)
+    const ansTrue = /^(true|t|yes|正确|是|√|对)$/i.test(ans)
+    return optTrue === ansTrue
   }
-  return letter === (q.answer?.trim() || '')
+  // MC: letter match
+  const letter = optionLetter(optText)
+  return letter.toUpperCase() === (q.answer?.trim()?.toUpperCase() || '')
 }
 
 const quizTypeLabel = (t) => ({
@@ -434,6 +478,13 @@ const handleSseEvent = (evt) => {
       if (result.value.type === 'MINDMAP') {
         nextTick(() => renderMindmap(result.value.content))
       }
+      // Init editable code for interactive editor
+      if (result.value.type === 'CODE') {
+        editableCode.value = result.value.content || ''
+        codeOutput.value = ''
+        codeExecTime.value = 0
+        codeExitCode.value = 0
+      }
     } else {
       result.value = {
         type: typeKey,
@@ -449,9 +500,43 @@ const handleSseEvent = (evt) => {
   }
 }
 
+const runCode = async () => {
+  if (!editableCode.value.trim()) {
+    ElMessage.warning('代码为空，无法运行')
+    return
+  }
+  codeRunning.value = true
+  codeOutput.value = ''
+  try {
+    const res = await fetch('/api/generate/run-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: editableCode.value })
+    })
+    const data = await res.json()
+    if (res.ok) {
+      codeOutput.value = [data.stdout, data.stderr ? `\n--- stderr ---\n${data.stderr}` : '']
+        .filter(Boolean).join('\n').trim() || '（无输出）'
+      codeExecTime.value = data.executionTimeMs ?? 0
+      codeExitCode.value = data.exitCode ?? 0
+      if (data.timedOut) {
+        codeOutput.value += '\n⚠ 执行超时（30秒）'
+      }
+    } else {
+      codeOutput.value = data.error || '执行失败'
+      codeExitCode.value = -1
+    }
+  } catch (e) {
+    codeOutput.value = '请求失败：' + (e.message || '请稍后重试')
+    codeExitCode.value = -1
+  } finally {
+    codeRunning.value = false
+  }
+}
+
 const copyCode = async () => {
   try {
-    await navigator.clipboard.writeText(result.value.content)
+    await navigator.clipboard.writeText(editableCode.value || result.value?.content || '')
     ElMessage.success('代码已复制')
   } catch {
     ElMessage.error('复制失败')
@@ -606,12 +691,37 @@ const downloadResult = () => {
 .quiz-answer { margin: 12px 0 0 30px; padding: 12px; background: #f0f9eb; border-radius: 8px; font-size: 13px; }
 .quiz-answer-row { color: #529b2e; margin-bottom: 6px; }
 .quiz-explain { color: #606266; line-height: 1.6; }
+.quiz-written { margin: 10px 0 0 30px; }
+.written-area { margin-bottom: 10px; opacity: 0.7; }
 
 /* CODE */
-.code-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.code-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .code-lang { font-size: 12px; color: #909399; font-weight: 600; }
-.code-block { background: #1e1e2e; color: #e0e0e0; padding: 16px; border-radius: 10px; font-family: 'Consolas', 'Monaco', monospace; font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+.code-toolbar-actions { display: flex; gap: 8px; }
+.code-editor :deep(textarea) {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
+  font-size: 13px !important; line-height: 1.6 !important;
+  background: #1e1e2e !important; color: #e0e0e0 !important;
+  border-radius: 10px !important; border-color: #3a3a5c !important;
+}
+.code-editor :deep(textarea):focus { border-color: #667eea !important; }
 .code-hint { font-size: 12px; color: #909399; margin: 10px 0 0; }
+
+/* Code output panel */
+.code-output { margin-top: 12px; border: 1px solid #e4e7ed; border-radius: 10px; overflow: hidden; }
+.output-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 14px; background: #f5f7fa; border-bottom: 1px solid #e4e7ed;
+}
+.output-label { font-size: 13px; font-weight: 600; color: #303133; }
+.output-meta { font-size: 11px; color: #909399; font-family: monospace; }
+.output-body {
+  margin: 0; padding: 12px 14px; background: #fafbfc;
+  font-family: 'Consolas', 'Monaco', monospace; font-size: 13px; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word;
+  color: #303133; max-height: 400px; overflow: auto;
+}
+.output-body.output-error { color: #f56c6c; background: #fef0f0; }
 
 /* MINDMAP */
 .mindmap-svg { overflow-x: auto; padding: 12px 0; }

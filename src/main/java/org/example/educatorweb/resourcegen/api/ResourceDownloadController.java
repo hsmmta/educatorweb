@@ -1,5 +1,7 @@
 package org.example.educatorweb.resourcegen.api;
 
+import org.example.educatorweb.resourcegen.infrastructure.CodeSandboxService;
+import org.example.educatorweb.resourcegen.infrastructure.CodeSandboxService.ExecutionResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.FileSystemResource;
@@ -7,20 +9,18 @@ import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 
 /**
- * Serves generated PPT/VIDEO files from the generated-resources directory.
- * Path traversal is prevented by validating the resolved path stays within the base dir.
+ * Serves generated PPT/VIDEO files and provides a code-execution endpoint
+ * for the interactive Jupyter-like code editor in the frontend.
  */
 @RestController
 @RequestMapping("/api/generate")
@@ -28,6 +28,12 @@ public class ResourceDownloadController {
 
     private static final Logger log = LoggerFactory.getLogger(ResourceDownloadController.class);
     private static final Path BASE_DIR = Path.of("generated-resources").toAbsolutePath().normalize();
+
+    private final CodeSandboxService sandbox;
+
+    public ResourceDownloadController(CodeSandboxService sandbox) {
+        this.sandbox = sandbox;
+    }
 
     @GetMapping("/download/{requestId}/{filename}")
     public ResponseEntity<Resource> download(@PathVariable String requestId,
@@ -59,6 +65,28 @@ public class ResourceDownloadController {
                 "attachment; filename*=UTF-8''" + encodedName)
             .contentType(MediaType.parseMediaType(contentType))
             .body(resource);
+    }
+
+    /**
+     * Execute Python code in the sandbox and return stdout/stderr.
+     * Used by the frontend Jupyter-like interactive code editor.
+     */
+    @PostMapping("/run-code")
+    public ResponseEntity<Map<String, Object>> runCode(@RequestBody Map<String, String> body) {
+        String code = body.getOrDefault("code", "");
+        if (code.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Code must not be empty"));
+        }
+        log.info("ResourceDownloadController: running code ({} chars)", code.length());
+        ExecutionResult result = sandbox.execute(code);
+        Map<String, Object> response = Map.of(
+            "stdout", result.stdout(),
+            "stderr", result.stderr(),
+            "exitCode", result.exitCode(),
+            "executionTimeMs", result.executionTimeMs(),
+            "timedOut", result.timedOut()
+        );
+        return ResponseEntity.ok(response);
     }
 
     private String guessContentType(String filename) {
