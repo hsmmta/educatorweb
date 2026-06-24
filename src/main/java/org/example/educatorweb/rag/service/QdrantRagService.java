@@ -236,8 +236,22 @@ public class QdrantRagService implements RagService {
                         .build()
                 ).get();
 
-                // Note: Qdrant auto-indexes keyword payload fields —
-                // no explicit index creation needed for userId filtering
+            }
+            // Ensure payload index on userId (required for filtering in Qdrant Cloud)
+            try {
+                var indexResult = qdrantClient.createPayloadIndexAsync(
+                    COLLECTION_NAME,
+                    "userId",
+                    Collections.PayloadSchemaType.Keyword,
+                    null,   // default index params
+                    true,   // wait until ready
+                    null,   // default write ordering
+                    null    // no timeout
+                ).get();
+                log.info("QdrantRagService: payload index on 'userId': status={}", indexResult.getStatus());
+            } catch (Exception e) {
+                log.warn("QdrantRagService: failed to create index on 'userId' (may already exist): {}",
+                    e.getMessage());
             }
             collectionInitialized = true;
             return true;
