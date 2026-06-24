@@ -77,23 +77,88 @@
       <h3>生成结果</h3>
       <div class="result-card">
         <div class="result-header">
-          <span class="result-icon">📄</span>
-          <div>
+          <span class="result-icon">{{ resultIcon }}</span>
+          <div class="result-title-wrap">
             <strong>{{ result.title }}</strong>
-            <span class="result-meta">{{ result.type }} · {{ result.size }}</span>
+            <span class="result-meta">{{ result.typeLabel }}</span>
           </div>
-          <el-button type="primary" plain :icon="Download">下载</el-button>
+          <el-button type="primary" plain :icon="Download" @click="downloadResult">下载</el-button>
         </div>
-        <div class="result-preview" v-html="result.preview"></div>
+
+        <!-- DOC: rendered markdown -->
+        <div v-if="result.type === 'DOC'" class="doc-render markdown-body" v-html="renderedHtml"></div>
+
+        <!-- QUIZ: interactive question cards -->
+        <div v-else-if="result.type === 'QUIZ'" class="quiz-render">
+          <div v-if="quizData">
+            <div class="quiz-toolbar">
+              <el-button size="small" @click="showAnswers = !showAnswers">
+                {{ showAnswers ? '隐藏答案' : '显示答案' }}
+              </el-button>
+            </div>
+            <div v-for="(q, i) in quizData.questions" :key="i" class="quiz-item">
+              <div class="quiz-q">
+                <span class="quiz-num">{{ i + 1 }}</span>
+                <span class="quiz-type-tag">{{ quizTypeLabel(q.type) }}</span>
+                <span class="quiz-text">{{ q.question }}</span>
+              </div>
+              <ul v-if="q.options && q.options.length" class="quiz-options">
+                <li v-for="(opt, j) in q.options" :key="j">{{ opt }}</li>
+              </ul>
+              <div v-if="showAnswers" class="quiz-answer">
+                <div class="quiz-answer-row"><strong>答案：</strong>{{ q.answer }}</div>
+                <div v-if="q.explanation" class="quiz-explain"><strong>解析：</strong>{{ q.explanation }}</div>
+              </div>
+            </div>
+          </div>
+          <pre v-else class="raw-fallback">{{ result.content }}</pre>
+        </div>
+
+        <!-- CODE: code block + copy + execution output -->
+        <div v-else-if="result.type === 'CODE'" class="code-render">
+          <div class="code-toolbar">
+            <span class="code-lang">Python</span>
+            <el-button size="small" :icon="DocumentCopy" @click="copyCode">复制代码</el-button>
+          </div>
+          <pre class="code-block"><code>{{ result.content }}</code></pre>
+          <p class="code-hint">💡 上方代码已在后端沙箱运行，输出以注释形式嵌入在代码顶部。</p>
+        </div>
+
+        <!-- HTML: live interactive iframe -->
+        <div v-else-if="result.type === 'HTML'" class="html-render">
+          <iframe
+            :srcdoc="result.content"
+            sandbox="allow-scripts allow-same-origin"
+            class="html-frame"
+            title="交互课件"
+          ></iframe>
+          <p class="code-hint">💡 这是真实可交互的网页课件，在沙箱中运行。点击下载可保存为 .html 离线打开。</p>
+        </div>
+
+        <!-- MINDMAP / others: formatted text -->
+        <div v-else-if="result.type === 'MINDMAP'" class="mindmap-render">
+          <pre class="code-block">{{ result.content }}</pre>
+          <p class="code-hint">💡 这是 Mermaid mindmap 语法，可粘贴到 mermaid.live 或下载为 .mmd 渲染。</p>
+        </div>
+
+        <!-- PPT / VIDEO: file-based, download only -->
+        <div v-else-if="result.type === 'PPT' || result.type === 'VIDEO'" class="file-render">
+          <el-result icon="success" :title="`${result.typeLabel}已生成`" sub-title="点击上方“下载”按钮保存到本地">
+          </el-result>
+        </div>
+
+        <!-- Fallback -->
+        <pre v-else class="raw-fallback">{{ result.content }}</pre>
       </div>
     </section>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { MagicStick, CircleCheckFilled, Loading, Download } from '@element-plus/icons-vue'
+import { MagicStick, CircleCheckFilled, Loading, Download, DocumentCopy } from '@element-plus/icons-vue'
+import { marked } from 'marked'
 
 const selectedType = ref('doc')
 const topic = ref('')
@@ -102,6 +167,26 @@ const difficulty = ref('intermediate')
 const generating = ref(false)
 const agentSteps = ref([])
 const result = ref(null)
+const quizData = ref(null)
+const showAnswers = ref(false)
+
+const TYPE_LABELS = {
+  DOC: '课程文档 (Markdown)', QUIZ: '练习题库', CODE: '代码案例',
+  HTML: '交互课件', MINDMAP: '思维导图', PPT: '教学PPT', VIDEO: '教学视频'
+}
+const TYPE_ICONS = {
+  DOC: '📄', QUIZ: '📝', CODE: '💻', HTML: '🌐', MINDMAP: '🧩', PPT: '📊', VIDEO: '🎬'
+}
+
+const resultIcon = computed(() => result.value ? (TYPE_ICONS[result.value.type] || '📄') : '📄')
+const renderedHtml = computed(() => {
+  if (!result.value || result.value.type !== 'DOC') return ''
+  try { return marked.parse(result.value.content || '') } catch { return result.value.content }
+})
+
+const quizTypeLabel = (t) => ({
+  MC: '单选', TF: '判断', SHORT_ANSWER: '简答', FILL_BLANK: '填空'
+}[t] || t)
 
 const resourceTypes = [
   { type: 'doc',     icon: '📄', label: '课程文档', desc: '结构化讲解文档' },
@@ -120,7 +205,6 @@ const agents = [
   { name: 'ReviewAgent',   avatar: '🛡️', desc: '质量审核：内容安全过滤与事实核查' }
 ]
 
-/** Map SSE stage to the agent step index */
 const stageToIdx = { INIT: -1, REQUIRE: 0, DESIGN: 1, GENERATING: 2, REVIEWING: 3, DONE: 4, FALLBACK: 4 }
 
 const getStudentId = () => {
@@ -135,6 +219,8 @@ const startGenerate = async () => {
   generating.value = true
   agentSteps.value = []
   result.value = null
+  quizData.value = null
+  showAnswers.value = false
 
   const token = localStorage.getItem('token') || ''
   const body = JSON.stringify({
@@ -167,9 +253,8 @@ const startGenerate = async () => {
       if (done) break
       buffer += decoder.decode(value, { stream: true })
 
-      // Parse SSE lines
       const lines = buffer.split('\n')
-      buffer = lines.pop() // keep incomplete line in buffer
+      buffer = lines.pop()
       for (const line of lines) {
         if (!line.startsWith('data:')) continue
         const json = line.substring(5).trim()
@@ -191,7 +276,6 @@ const handleSseEvent = (evt) => {
   const stage = evt.stage || ''
   const idx = stageToIdx[stage] ?? -1
 
-  // Update agent steps visualization
   if (idx >= 0 && idx < agents.length) {
     agentSteps.value = agents.slice(0, idx + 1).map((a, i) => ({
       name: a.name, avatar: a.avatar, desc: a.desc,
@@ -207,19 +291,26 @@ const handleSseEvent = (evt) => {
     const typeKey = selectedType.value.toUpperCase()
     const payload = evt.payload || {}
     const item = payload[typeKey] || Object.values(payload)[0]
+
     if (item) {
       result.value = {
-        title: item.title || `${topic.value} - 学习资源`,
         type: item.type || typeKey,
-        size: '',
-        preview: `<pre style="white-space:pre-wrap;max-height:400px;overflow:auto;">${escapeHtml(item.content || '生成完成')}</pre>`
+        typeLabel: TYPE_LABELS[item.type || typeKey] || (item.type || typeKey),
+        title: item.title || `${topic.value} - 学习资源`,
+        content: item.content || '',
+        downloadPath: item.downloadPath || null
+      }
+      // Parse quiz JSON
+      if (result.value.type === 'QUIZ') {
+        try { quizData.value = JSON.parse(result.value.content) } catch { quizData.value = null }
       }
     } else {
       result.value = {
-        title: `${topic.value} - 学习资源`,
         type: typeKey,
-        size: '',
-        preview: `<p>✅ ${evt.message || '生成完成'}</p>`
+        typeLabel: TYPE_LABELS[typeKey] || typeKey,
+        title: `${topic.value} - 学习资源`,
+        content: evt.message || '生成完成',
+        downloadPath: null
       }
     }
 
@@ -228,8 +319,50 @@ const handleSseEvent = (evt) => {
   }
 }
 
-const escapeHtml = (s) =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+const copyCode = async () => {
+  try {
+    await navigator.clipboard.writeText(result.value.content)
+    ElMessage.success('代码已复制')
+  } catch {
+    ElMessage.error('复制失败')
+  }
+}
+
+const downloadResult = () => {
+  const r = result.value
+  if (!r) return
+
+  // File-based types → backend download endpoint
+  if (r.type === 'PPT' || r.type === 'VIDEO') {
+    if (r.downloadPath) {
+      window.open(`/api/generate/download/${r.downloadPath}`, '_blank')
+    } else {
+      ElMessage.warning('文件生成失败，无法下载')
+    }
+    return
+  }
+
+  // Text types → client-side Blob download
+  const extMap = { DOC: 'md', QUIZ: 'json', CODE: 'py', HTML: 'html', MINDMAP: 'mmd' }
+  const mimeMap = {
+    DOC: 'text/markdown', QUIZ: 'application/json', CODE: 'text/x-python',
+    HTML: 'text/html', MINDMAP: 'text/plain'
+  }
+  const ext = extMap[r.type] || 'txt'
+  const mime = mimeMap[r.type] || 'text/plain'
+  const safeName = (topic.value || 'resource').replace(/[\\/:*?"<>|]/g, '_')
+
+  const blob = new Blob([r.content], { type: mime })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${safeName}.${ext}`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+  ElMessage.success('已下载')
+}
 </script>
 
 <style scoped>
@@ -294,11 +427,45 @@ const escapeHtml = (s) =>
 }
 .result-header { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
 .result-icon { font-size: 36px; }
+.result-title-wrap { flex: 1; }
 .result-header strong { display: block; font-size: 16px; color: #1a1a2e; }
 .result-meta { font-size: 12px; color: #909399; }
-.result-header .el-button { margin-left: auto; }
-.result-preview { font-size: 14px; color: #4a4f5e; line-height: 1.7; }
-.result-preview :deep(p) { margin: 6px 0; }
+
+/* DOC markdown */
+.doc-render { font-size: 14px; line-height: 1.8; color: #2c3142; max-height: 600px; overflow: auto; }
+.markdown-body :deep(h1), .markdown-body :deep(h2), .markdown-body :deep(h3) { margin: 16px 0 8px; color: #1a1a2e; }
+.markdown-body :deep(p) { margin: 8px 0; }
+.markdown-body :deep(pre) { background: #f6f8fa; padding: 12px; border-radius: 8px; overflow: auto; }
+.markdown-body :deep(code) { background: #f0f2f5; padding: 2px 5px; border-radius: 4px; font-size: 13px; }
+.markdown-body :deep(pre code) { background: none; padding: 0; }
+.markdown-body :deep(table) { border-collapse: collapse; margin: 12px 0; }
+.markdown-body :deep(th), .markdown-body :deep(td) { border: 1px solid #dcdfe6; padding: 6px 12px; }
+.markdown-body :deep(ul), .markdown-body :deep(ol) { padding-left: 24px; }
+
+/* QUIZ */
+.quiz-toolbar { margin-bottom: 12px; text-align: right; }
+.quiz-item { padding: 16px; border: 1px solid #eef0f4; border-radius: 12px; margin-bottom: 12px; }
+.quiz-q { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; font-weight: 600; color: #1a1a2e; }
+.quiz-num { background: #667eea; color: #fff; border-radius: 50%; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
+.quiz-type-tag { background: #eef0ff; color: #667eea; font-size: 11px; padding: 2px 8px; border-radius: 8px; flex-shrink: 0; }
+.quiz-text { flex: 1; }
+.quiz-options { list-style: none; padding: 0; margin: 10px 0 0 30px; }
+.quiz-options li { padding: 6px 0; font-size: 14px; color: #4a4f5e; }
+.quiz-answer { margin: 12px 0 0 30px; padding: 12px; background: #f0f9eb; border-radius: 8px; font-size: 13px; }
+.quiz-answer-row { color: #529b2e; margin-bottom: 6px; }
+.quiz-explain { color: #606266; line-height: 1.6; }
+
+/* CODE */
+.code-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.code-lang { font-size: 12px; color: #909399; font-weight: 600; }
+.code-block { background: #1e1e2e; color: #e0e0e0; padding: 16px; border-radius: 10px; overflow: auto; max-height: 500px; font-family: 'Consolas', 'Monaco', monospace; font-size: 13px; line-height: 1.6; white-space: pre; }
+.code-hint { font-size: 12px; color: #909399; margin: 10px 0 0; }
+
+/* HTML iframe */
+.html-frame { width: 100%; height: 500px; border: 1px solid #eef0f4; border-radius: 10px; background: #fff; }
+
+/* fallback */
+.raw-fallback { white-space: pre-wrap; max-height: 400px; overflow: auto; font-size: 13px; color: #4a4f5e; }
 
 @media (max-width: 800px) {
   .resource-grid { grid-template-columns: repeat(4, 1fr); }

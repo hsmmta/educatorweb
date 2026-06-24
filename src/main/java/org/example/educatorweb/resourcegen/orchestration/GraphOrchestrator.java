@@ -148,6 +148,18 @@ public class GraphOrchestrator {
                 resourceData.put("title", resource.title());
                 resourceData.put("content", resource.content());
                 resourceData.put("metadata", resource.metadata());
+                // For file-based resources (PPT, VIDEO), expose a web-accessible download path
+                String typeName = resource.type().name();
+                if (("PPT".equals(typeName) || "VIDEO".equals(typeName))
+                        && resource.content() != null
+                        && !resource.content().startsWith("Generation failed")) {
+                    try {
+                        String filename = java.nio.file.Path.of(resource.content()).getFileName().toString();
+                        resourceData.put("downloadPath", state.requestId() + "/" + filename);
+                    } catch (Exception e) {
+                        log.warn("Could not derive download path from {}: {}", resource.content(), e.getMessage());
+                    }
+                }
                 payload.put(entry.getKey().name(), resourceData);
             }
             emit(sink, state, "Pipeline completed successfully — " + state.results().size() + " resources generated", 100, payload);
