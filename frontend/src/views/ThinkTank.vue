@@ -92,6 +92,7 @@ const showUpload = ref(false)
 const uploading = ref(false)
 const pendingFiles = ref([])
 const materials = ref([])
+const listLoading = ref(false)
 
 const getStudentId = () => {
   try {
@@ -100,26 +101,30 @@ const getStudentId = () => {
   } catch { return 'anonymous' }
 }
 
-/** Load uploaded files from backend on page mount */
+/** Load uploaded files from backend */
 const loadMaterials = async () => {
+  listLoading.value = true
   try {
     const res = await request.get('/rag/documents', {
       params: { studentId: getStudentId() }
     })
-    materials.value = (res.data || []).map(doc => ({
+    const data = Array.isArray(res.data) ? res.data : []
+    materials.value = data.map(doc => ({
       id: doc.source,
       name: doc.title || doc.source,
       type: (doc.source || '').split('.').pop()?.toLowerCase() || 'pdf',
       size: `${doc.chunks || 0} 个文本块`
     }))
+    console.log(`ThinkTank: loaded ${materials.value.length} document(s) for user ${getStudentId()}`)
   } catch (e) {
     console.warn('Failed to load materials:', e.message)
+    // Don't show error to user on first load — may just be empty
+  } finally {
+    listLoading.value = false
   }
 }
 
-onMounted(() => {
-  loadMaterials()
-})
+onMounted(() => { loadMaterials() })
 
 const fileIcon = (type) => {
   const map = { pdf: '📕', doc: '📘', docx: '📘', ppt: '📊', pptx: '📊', md: '📝', txt: '📄', png: '🖼️', jpg: '🖼️' }
