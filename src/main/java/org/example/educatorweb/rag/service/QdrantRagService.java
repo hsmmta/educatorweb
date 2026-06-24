@@ -172,11 +172,17 @@ public class QdrantRagService implements RagService {
                 .addMust(ConditionFactory.matchKeyword("userId", userId))
                 .build();
 
+            // Only fetch source + title — skip text (500 chars per chunk) to reduce payload
             var scrollResponse = qdrantClient.scrollAsync(
                 Points.ScrollPoints.newBuilder()
                     .setCollectionName(COLLECTION_NAME)
                     .setFilter(filter)
-                    .setWithPayload(Points.WithPayloadSelector.newBuilder().setEnable(true).build())
+                    .setWithPayload(Points.WithPayloadSelector.newBuilder()
+                        .setInclude(Points.PayloadIncludeSelector.newBuilder()
+                            .addFields("source")
+                            .addFields("title")
+                            .build())
+                        .build())
                     .setLimit(1000)
                     .build()
             ).get();

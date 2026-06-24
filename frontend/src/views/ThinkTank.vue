@@ -30,9 +30,13 @@
       <span class="priority-tip">智能辅导将按此优先级依次检索</span>
     </div>
 
-    <!-- 资料列表（空态/有数据） -->
+    <!-- 资料列表（加载中/空态/有数据） -->
     <div class="content-area">
-      <el-empty v-if="materials.length === 0" description="还没有上传任何资料">
+      <div v-if="listLoading" class="loading-state">
+        <el-icon class="is-loading" :size="32"><Loading /></el-icon>
+        <p>正在加载资料列表...</p>
+      </div>
+      <el-empty v-else-if="materials.length === 0" description="还没有上传任何资料">
         <el-button type="primary" @click="showUpload = true">立即上传</el-button>
       </el-empty>
 
@@ -85,7 +89,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Upload, UploadFilled, MoreFilled } from '@element-plus/icons-vue'
+import { Upload, UploadFilled, MoreFilled, Loading } from '@element-plus/icons-vue'
 import request from '@/api/request'
 
 const showUpload = ref(false)
@@ -209,6 +213,11 @@ const formatSize = (bytes) => {
 
 /* 内容区 */
 .content-area { margin-top: 24px; }
+.loading-state {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 48px 0; color: #909399;
+}
+.loading-state p { font-size: 14px; margin: 0; }
 .material-grid { display: flex; flex-direction: column; gap: 10px; }
 .material-card {
   display: flex; align-items: center; gap: 16px;
