@@ -178,14 +178,19 @@ const handleRegister = async () => {
   await formRef.value.validate()
   loading.value = true
   try {
-    await registerApi({
+    const res = await registerApi({
       nickname: form.nickname,
       phone: form.phone,
       email: form.email,
       password: form.password
     })
-    ElMessage.success('注册成功，请登录')
-    router.push('/login')
+    // 后端统一返回 200，需判断 code 字段
+    if (res.data.code === 200) {
+      ElMessage.success('注册成功，请登录')
+      router.push('/login')
+    } else {
+      ElMessage.error(res.data.message || '注册失败')
+    }
   } catch (err) {
     const msg = err?.response?.data?.message || '注册失败，请稍后重试'
     ElMessage.error(msg)
