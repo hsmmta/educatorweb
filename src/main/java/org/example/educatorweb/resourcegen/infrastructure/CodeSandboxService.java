@@ -4,7 +4,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
@@ -63,24 +65,37 @@ public class CodeSandboxService {
             long start = System.currentTimeMillis();
             Process process = pb.start();
 
+            // Read stdout and stderr in separate threads BEFORE waitFor().
+            // On Windows, pipes close when the child process exits; reading
+            // concurrently avoids "管道为空" (pipe has been ended) errors.
+            ByteArrayOutputStream outBuf = new ByteArrayOutputStream();
+            ByteArrayOutputStream errBuf = new ByteArrayOutputStream();
+
+            Thread outThread = drainAsync(process.getInputStream(), outBuf);
+            Thread errThread = drainAsync(process.getErrorStream(), errBuf);
+
             boolean timedOut = !process.waitFor(TIMEOUT_MS, TimeUnit.MILLISECONDS);
             long elapsed = System.currentTimeMillis() - start;
 
+            int exitCode;
             String stdout;
             String stderr;
-            int exitCode;
 
             if (timedOut) {
                 process.destroyForcibly();
-                // Give the process a moment to release handles before reading streams
-                process.waitFor(2, TimeUnit.SECONDS);
-                stdout = new String(process.getInputStream().readAllBytes()).trim();
+                // Wait briefly for threads to finish draining remaining data
+                outThread.join(2000);
+                errThread.join(2000);
+                stdout = outBuf.toString().trim();
                 stderr = "Execution timed out after " + TIMEOUT_MS + " ms.\n"
-                       + new String(process.getErrorStream().readAllBytes()).trim();
+                       + errBuf.toString().trim();
                 exitCode = -1;
             } else {
-                stdout = new String(process.getInputStream().readAllBytes()).trim();
-                stderr = new String(process.getErrorStream().readAllBytes()).trim();
+                // Process completed — wait for reader threads to finish
+                outThread.join(5000);
+                errThread.join(5000);
+                stdout = outBuf.toString().trim();
+                stderr = errBuf.toString().trim();
                 exitCode = process.exitValue();
             }
 
@@ -89,6 +104,9 @@ public class CodeSandboxService {
 
             return new ExecutionResult(stdout, stderr, exitCode, elapsed, timedOut);
         } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             log.error("CodeSandbox execution failed: {}", e.getMessage(), e);
             return new ExecutionResult("",
                 "Sandbox error: " + e.getMessage(), -1, 0, false);
@@ -105,6 +123,28 @@ public class CodeSandboxService {
                 }
             }
         }
+    }
+
+    /**
+     * Drain an InputStream into a ByteArrayOutputStream on a daemon thread.
+     * This runs concurrently with process waitFor() to avoid pipe buffer
+     * deadlocks and Windows "pipe has been ended" errors.
+     */
+    private Thread drainAsync(InputStream in, ByteArrayOutputStream out) {
+        Thread t = new Thread(() -> {
+            byte[] buf = new byte[8192];
+            int n;
+            try {
+                while ((n = in.read(buf)) != -1) {
+                    out.write(buf, 0, n);
+                }
+            } catch (IOException ignored) {
+                // Stream closed or process terminated
+            }
+        }, "sandbox-drain");
+        t.setDaemon(true);
+        t.start();
+        return t;
     }
 
     /**

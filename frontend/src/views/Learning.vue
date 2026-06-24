@@ -93,7 +93,7 @@
           <div v-if="quizData">
             <div class="quiz-toolbar">
               <el-button size="small" @click="showAnswers = !showAnswers">
-                {{ showAnswers ? '隐藏答案' : '显示答案' }}
+                {{ showAnswers ? '隐藏解析' : '显示全部解析' }}
               </el-button>
             </div>
             <div v-for="(q, i) in quizData.questions" :key="i" class="quiz-item">
@@ -102,11 +102,40 @@
                 <span class="quiz-type-tag">{{ quizTypeLabel(q.type) }}</span>
                 <span class="quiz-text">{{ q.question }}</span>
               </div>
-              <ul v-if="q.options && q.options.length" class="quiz-options">
+              <!-- Interactive MC / TF options -->
+              <ul v-if="q.options && q.options.length && (q.type === 'MC' || q.type === 'TF')" class="quiz-options">
+                <li
+                  v-for="(opt, j) in q.options" :key="j"
+                  :class="[
+                    'quiz-option-item',
+                    {
+                      'option-selected': selectedOption[i] === optionLetter(opt),
+                      'option-correct': selectedOption[i] === optionLetter(opt) && optionResult[i] === 'correct',
+                      'option-incorrect': selectedOption[i] === optionLetter(opt) && optionResult[i] === 'incorrect',
+                      'option-reveal-correct': optionResult[i] === 'incorrect' && isCorrectAnswer(q, opt)
+                    }
+                  ]"
+                  @click="selectOption(i, opt)"
+                >
+                  <span class="option-marker">
+                    <span v-if="selectedOption[i] === optionLetter(opt) && optionResult[i] === 'correct'">✅</span>
+                    <span v-else-if="selectedOption[i] === optionLetter(opt) && optionResult[i] === 'incorrect'">❌</span>
+                    <span v-else-if="optionResult[i] === 'incorrect' && isCorrectAnswer(q, opt)">✅</span>
+                    <span v-else>{{ optionLetter(opt) }}</span>
+                  </span>
+                  <span class="option-text">{{ opt.replace(/^[A-Z][.)]\s*/, '') }}</span>
+                </li>
+              </ul>
+              <!-- Non-interactive options for other types -->
+              <ul v-else-if="q.options && q.options.length" class="quiz-options">
                 <li v-for="(opt, j) in q.options" :key="j">{{ opt }}</li>
               </ul>
-              <div v-if="showAnswers" class="quiz-answer">
-                <div class="quiz-answer-row"><strong>答案：</strong>{{ q.answer }}</div>
+              <div v-if="showAnswers || optionResult[i]" class="quiz-answer">
+                <div class="quiz-answer-row">
+                  <strong>答案：</strong>{{ q.answer }}
+                  <span v-if="optionResult[i] === 'correct'" style="color:#67c23a; margin-left:8px;">✓ 正确!</span>
+                  <span v-else-if="optionResult[i] === 'incorrect'" style="color:#f56c6c; margin-left:8px;">✗ 不对</span>
+                </div>
                 <div v-if="q.explanation" class="quiz-explain"><strong>解析：</strong>{{ q.explanation }}</div>
               </div>
             </div>
@@ -135,10 +164,11 @@
           <p class="code-hint">💡 这是真实可交互的网页课件，在沙箱中运行。点击下载可保存为 .html 离线打开。</p>
         </div>
 
-        <!-- MINDMAP / others: formatted text -->
+        <!-- MINDMAP: rendered Mermaid SVG -->
         <div v-else-if="result.type === 'MINDMAP'" class="mindmap-render">
-          <pre class="code-block">{{ result.content }}</pre>
-          <p class="code-hint">💡 这是 Mermaid mindmap 语法，可粘贴到 mermaid.live 或下载为 .mmd 渲染。</p>
+          <div v-if="mindmapSvg" class="mindmap-svg" v-html="mindmapSvg"></div>
+          <pre v-else class="code-block">{{ result.content }}</pre>
+          <p class="code-hint">💡 思维导图由 Mermaid 实时渲染。点击下载可保存为 .mmd 离线使用。</p>
         </div>
 
         <!-- PPT / VIDEO: file-based, download only -->
@@ -155,10 +185,43 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { MagicStick, CircleCheckFilled, Loading, Download, DocumentCopy } from '@element-plus/icons-vue'
 import { marked } from 'marked'
+import katex from 'katex'
+import 'katex/dist/katex.min.css'
+import mermaid from 'mermaid'
+
+mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' })
+
+// Register marked extension for LaTeX math
+marked.use({
+  extensions: [{
+    name: 'math',
+    level: 'inline',
+    start(src) { return src.indexOf('$') },
+    tokenizer(src) {
+      const displayMatch = /^\$\$([\s\S]*?)\$\$/.exec(src)
+      if (displayMatch) {
+        return { type: 'math', raw: displayMatch[0], text: displayMatch[1].trim(), display: true }
+      }
+      const inlineMatch = /^\$([^\n$]+)\$/.exec(src)
+      if (inlineMatch) {
+        return { type: 'math', raw: inlineMatch[0], text: inlineMatch[1].trim(), display: false }
+      }
+    },
+    renderer(token) {
+      try {
+        return katex.renderToString(token.text, {
+          displayMode: token.display,
+          throwOnError: false,
+          trust: true
+        })
+      } catch { return token.raw }
+    }
+  }]
+})
 
 const selectedType = ref('doc')
 const topic = ref('')
@@ -169,6 +232,11 @@ const agentSteps = ref([])
 const result = ref(null)
 const quizData = ref(null)
 const showAnswers = ref(false)
+const mindmapSvg = ref('')
+// Interactive quiz state: { questionIndex: 'A' }
+const selectedOption = ref({})
+// { questionIndex: 'correct' | 'incorrect' }
+const optionResult = ref({})
 
 const TYPE_LABELS = {
   DOC: '课程文档 (Markdown)', QUIZ: '练习题库', CODE: '代码案例',
@@ -183,6 +251,62 @@ const renderedHtml = computed(() => {
   if (!result.value || result.value.type !== 'DOC') return ''
   try { return marked.parse(result.value.content || '') } catch { return result.value.content }
 })
+
+const renderMindmap = async (content) => {
+  mindmapSvg.value = ''
+  if (!content) return
+  try {
+    // Strip markdown fences if present
+    let code = content.trim()
+    if (code.startsWith('```')) {
+      code = code.replace(/^```\w*\n?/, '').replace(/\n?```$/, '')
+    }
+    const id = 'mindmap-' + Math.random().toString(36).slice(2, 8)
+    const { svg } = await mermaid.render(id, code)
+    mindmapSvg.value = svg
+  } catch (e) {
+    console.warn('Mermaid render failed:', e.message)
+    mindmapSvg.value = ''
+  }
+}
+
+const optionLetter = (opt) => {
+  // Extract letter from "A. xxx" or "A) xxx" prefix
+  const m = (opt || '').match(/^([A-Z])[.)]\s/)
+  return m ? m[1] : ''
+}
+
+const resetQuiz = () => {
+  selectedOption.value = {}
+  optionResult.value = {}
+}
+
+const selectOption = (qIndex, optText) => {
+  const q = quizData.value?.questions?.[qIndex]
+  if (!q || q.type === 'SHORT_ANSWER') return
+  const letter = optionLetter(optText)
+  if (!letter) return
+  selectedOption.value = { ...selectedOption.value, [qIndex]: letter }
+  // TF: answer is "True"/"False", map A→True, B→False
+  let correctAnswer = q.answer?.trim() || ''
+  if (q.type === 'TF') {
+    if (letter === 'A') correctAnswer = 'True'
+    else if (letter === 'B') correctAnswer = 'False'
+  }
+  const isCorrect = letter === correctAnswer || letter.toLowerCase() === correctAnswer.toLowerCase()
+  optionResult.value = { ...optionResult.value, [qIndex]: isCorrect ? 'correct' : 'incorrect' }
+}
+
+const isCorrectAnswer = (q, optText) => {
+  if (!q) return false
+  const letter = optionLetter(optText)
+  // TF: answer is "True"/"False"
+  if (q.type === 'TF') {
+    const ans = q.answer?.trim() || ''
+    return (letter === 'A' && ans === 'True') || (letter === 'B' && ans === 'False')
+  }
+  return letter === (q.answer?.trim() || '')
+}
 
 const quizTypeLabel = (t) => ({
   MC: '单选', TF: '判断', SHORT_ANSWER: '简答', FILL_BLANK: '填空'
@@ -221,6 +345,8 @@ const startGenerate = async () => {
   result.value = null
   quizData.value = null
   showAnswers.value = false
+  mindmapSvg.value = ''
+  resetQuiz()
 
   const token = localStorage.getItem('token') || ''
   const body = JSON.stringify({
@@ -303,6 +429,10 @@ const handleSseEvent = (evt) => {
       // Parse quiz JSON
       if (result.value.type === 'QUIZ') {
         try { quizData.value = JSON.parse(result.value.content) } catch { quizData.value = null }
+      }
+      // Render mermaid mindmap
+      if (result.value.type === 'MINDMAP') {
+        nextTick(() => renderMindmap(result.value.content))
       }
     } else {
       result.value = {
@@ -432,7 +562,7 @@ const downloadResult = () => {
 .result-meta { font-size: 12px; color: #909399; }
 
 /* DOC markdown */
-.doc-render { font-size: 14px; line-height: 1.8; color: #2c3142; max-height: 600px; overflow: auto; }
+.doc-render { font-size: 14px; line-height: 1.8; color: #2c3142; }
 .markdown-body :deep(h1), .markdown-body :deep(h2), .markdown-body :deep(h3) { margin: 16px 0 8px; color: #1a1a2e; }
 .markdown-body :deep(p) { margin: 8px 0; }
 .markdown-body :deep(pre) { background: #f6f8fa; padding: 12px; border-radius: 8px; overflow: auto; }
@@ -441,6 +571,9 @@ const downloadResult = () => {
 .markdown-body :deep(table) { border-collapse: collapse; margin: 12px 0; }
 .markdown-body :deep(th), .markdown-body :deep(td) { border: 1px solid #dcdfe6; padding: 6px 12px; }
 .markdown-body :deep(ul), .markdown-body :deep(ol) { padding-left: 24px; }
+/* KaTeX display math */
+.markdown-body :deep(.katex-display) { margin: 16px 0; overflow-x: auto; overflow-y: hidden; }
+.markdown-body :deep(.katex) { font-size: 1.1em; }
 
 /* QUIZ */
 .quiz-toolbar { margin-bottom: 12px; text-align: right; }
@@ -451,6 +584,25 @@ const downloadResult = () => {
 .quiz-text { flex: 1; }
 .quiz-options { list-style: none; padding: 0; margin: 10px 0 0 30px; }
 .quiz-options li { padding: 6px 0; font-size: 14px; color: #4a4f5e; }
+.quiz-option-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 14px; margin: 4px 0;
+  border: 1.5px solid #e4e7ed; border-radius: 10px;
+  cursor: pointer; transition: all 0.2s;
+  font-size: 14px; color: #4a4f5e; list-style: none;
+}
+.quiz-option-item:hover { border-color: #667eea; background: #f8f7ff; }
+.quiz-option-item.option-selected { border-color: #667eea; background: #f0efff; }
+.quiz-option-item.option-correct { border-color: #67c23a; background: #f0f9eb; }
+.quiz-option-item.option-incorrect { border-color: #f56c6c; background: #fef0f0; }
+.quiz-option-item.option-reveal-correct { border-color: #67c23a; background: #f0f9eb; }
+.option-marker {
+  font-weight: 700; font-size: 14px; min-width: 20px;
+  color: #667eea; text-align: center; flex-shrink: 0;
+}
+.option-correct .option-marker { color: #67c23a; }
+.option-incorrect .option-marker { color: #f56c6c; }
+.option-text { flex: 1; }
 .quiz-answer { margin: 12px 0 0 30px; padding: 12px; background: #f0f9eb; border-radius: 8px; font-size: 13px; }
 .quiz-answer-row { color: #529b2e; margin-bottom: 6px; }
 .quiz-explain { color: #606266; line-height: 1.6; }
@@ -458,14 +610,18 @@ const downloadResult = () => {
 /* CODE */
 .code-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .code-lang { font-size: 12px; color: #909399; font-weight: 600; }
-.code-block { background: #1e1e2e; color: #e0e0e0; padding: 16px; border-radius: 10px; overflow: auto; max-height: 500px; font-family: 'Consolas', 'Monaco', monospace; font-size: 13px; line-height: 1.6; white-space: pre; }
+.code-block { background: #1e1e2e; color: #e0e0e0; padding: 16px; border-radius: 10px; font-family: 'Consolas', 'Monaco', monospace; font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
 .code-hint { font-size: 12px; color: #909399; margin: 10px 0 0; }
 
+/* MINDMAP */
+.mindmap-svg { overflow-x: auto; padding: 12px 0; }
+.mindmap-svg :deep(svg) { max-width: 100%; height: auto; }
+
 /* HTML iframe */
-.html-frame { width: 100%; height: 500px; border: 1px solid #eef0f4; border-radius: 10px; background: #fff; }
+.html-frame { width: 100%; min-height: 600px; border: 1px solid #eef0f4; border-radius: 10px; background: #fff; }
 
 /* fallback */
-.raw-fallback { white-space: pre-wrap; max-height: 400px; overflow: auto; font-size: 13px; color: #4a4f5e; }
+.raw-fallback { white-space: pre-wrap; font-size: 13px; color: #4a4f5e; }
 
 @media (max-width: 800px) {
   .resource-grid { grid-template-columns: repeat(4, 1fr); }
