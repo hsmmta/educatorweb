@@ -71,7 +71,7 @@ class RequireAgentTest {
 
         when(profileService.getProfile("student-1")).thenReturn(profile);
         when(kgService.queryContext("SVM")).thenReturn(kgContext);
-        when(ragService.retrieve("SVM", 5)).thenReturn(snippets);
+        when(ragService.retrieve("student-1", "SVM", 5)).thenReturn(snippets);
 
         GenerateRequest req = new GenerateRequest("student-1", "SVM", List.of(ResourceType.DOC));
         GenerationState state = GenerationState.initial(req);
@@ -85,7 +85,7 @@ class RequireAgentTest {
 
         verify(profileService).getProfile("student-1");
         verify(kgService).queryContext("SVM");
-        verify(ragService).retrieve("SVM", 5);
+        verify(ragService).retrieve("student-1", "SVM", 5);
     }
 
     // ---- Test 2: Profile service fails — graceful degradation ----
@@ -96,7 +96,7 @@ class RequireAgentTest {
             .thenThrow(new RuntimeException("DB connection lost"));
         when(kgService.queryContext("SVM"))
             .thenReturn(new KnowledgeContext(List.of(), List.of(), List.of(), 1));
-        when(ragService.retrieve(anyString(), anyInt()))
+        when(ragService.retrieve(anyString(), anyString(), anyInt()))
             .thenReturn(List.of());
 
         GenerateRequest req = new GenerateRequest("student-1", "SVM", List.of(ResourceType.DOC));
@@ -120,7 +120,7 @@ class RequireAgentTest {
         when(profileService.getProfile("student-1")).thenReturn(profile);
         when(kgService.queryContext(anyString()))
             .thenThrow(new RuntimeException("KG unavailable"));
-        when(ragService.retrieve(anyString(), anyInt()))
+        when(ragService.retrieve(anyString(), anyString(), anyInt()))
             .thenReturn(List.of());
 
         GenerateRequest req = new GenerateRequest("student-1", "SVM", List.of(ResourceType.DOC));
@@ -143,7 +143,7 @@ class RequireAgentTest {
 
         when(profileService.getProfile("student-1")).thenReturn(profile);
         when(kgService.queryContext("SVM")).thenReturn(kgContext);
-        when(ragService.retrieve(anyString(), anyInt()))
+        when(ragService.retrieve(anyString(), anyString(), anyInt()))
             .thenThrow(new RuntimeException("RAG index unavailable"));
 
         GenerateRequest req = new GenerateRequest("student-1", "SVM", List.of(ResourceType.DOC));

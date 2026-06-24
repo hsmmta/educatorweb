@@ -53,7 +53,7 @@ public class AiTutorServiceImpl implements AiTutorService {
             studentId, conversationId, question.length());
 
         // 1. RAG — retrieve relevant knowledge from the document store
-        List<DocumentSnippet> ragSnippets = retrieveKnowledge(question);
+        List<DocumentSnippet> ragSnippets = retrieveKnowledge(studentId, question);
 
         // 2. Retrieve conversation history from Chroma (semantic search)
         List<Map<String, Object>> historyRecords = retrieveHistory(question, studentId);
@@ -79,9 +79,9 @@ public class AiTutorServiceImpl implements AiTutorService {
     // Private helpers
     // ---------------------------------------------------------------
 
-    private List<DocumentSnippet> retrieveKnowledge(String question) {
+    private List<DocumentSnippet> retrieveKnowledge(String studentId, String question) {
         try {
-            List<DocumentSnippet> snippets = ragService.retrieve(question, RAG_TOP_K);
+            List<DocumentSnippet> snippets = ragService.retrieve(studentId, question, RAG_TOP_K);
             log.debug("AiTutor: RAG returned {} snippets", snippets.size());
             return snippets;
         } catch (Exception e) {

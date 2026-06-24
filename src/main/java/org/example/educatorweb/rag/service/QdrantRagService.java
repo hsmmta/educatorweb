@@ -1,5 +1,6 @@
 package org.example.educatorweb.rag.service;
 
+import io.qdrant.client.ConditionFactory;
 import io.qdrant.client.QdrantClient;
 import io.qdrant.client.grpc.Collections;
 import io.qdrant.client.grpc.JsonWithInt;
@@ -21,6 +22,7 @@ import static io.qdrant.client.QueryFactory.nearest;
 /**
  * Qdrant-backed implementation of RagService.
  * Stores document chunk vectors and retrieves them via semantic similarity.
+ * Each user's documents are isolated via the "userId" payload field.
  */
 @Service
 @Primary
@@ -41,7 +43,7 @@ public class QdrantRagService implements RagService {
     }
 
     @Override
-    public List<DocumentSnippet> retrieve(String query, int topK) {
+    public List<DocumentSnippet> retrieve(String userId, String query, int topK) {
         if (!ensureCollection()) {
             log.warn("QdrantRagService: collection not available, returning empty");
             return List.of();
@@ -54,14 +56,22 @@ public class QdrantRagService implements RagService {
                 return List.of();
             }
 
+            var queryBuilder = Points.QueryPoints.newBuilder()
+                .setCollectionName(COLLECTION_NAME)
+                .setLimit(topK)
+                .setQuery(nearest(queryVector))
+                .setWithPayload(Points.WithPayloadSelector.newBuilder()
+                    .setEnable(true).build());
+
+            // Filter by userId so each user only sees their own documents
+            if (userId != null && !userId.isBlank()) {
+                queryBuilder.setFilter(Points.Filter.newBuilder()
+                    .addMust(ConditionFactory.matchKeyword("userId", userId))
+                    .build());
+            }
+
             List<Points.ScoredPoint> scoredPoints = qdrantClient.queryAsync(
-                Points.QueryPoints.newBuilder()
-                    .setCollectionName(COLLECTION_NAME)
-                    .setLimit(topK)
-                    .setQuery(nearest(queryVector))
-                    .setWithPayload(Points.WithPayloadSelector.newBuilder()
-                        .setEnable(true).build())
-                    .build()
+                queryBuilder.build()
             ).get();
 
             List<DocumentSnippet> results = new ArrayList<>();
@@ -78,6 +88,8 @@ public class QdrantRagService implements RagService {
                 }
             }
 
+            log.debug("QdrantRagService: retrieved {} results for user={} query={}",
+                results.size(), userId, query.substring(0, Math.min(query.length(), 30)));
             return results;
 
         } catch (InterruptedException | ExecutionException e) {
@@ -88,9 +100,9 @@ public class QdrantRagService implements RagService {
     }
 
     /**
-     * Store document chunks in Qdrant.
+     * Store document chunks in Qdrant, associated with a specific user.
      */
-    public int store(List<DocumentChunk> chunks) {
+    public int store(String userId, List<DocumentChunk> chunks) {
         if (chunks.isEmpty()) return 0;
         if (!ensureCollection()) return 0;
 
@@ -113,6 +125,7 @@ public class QdrantRagService implements RagService {
                     .setVectors(Points.Vectors.newBuilder()
                         .setVector(Points.Vector.newBuilder().addAllData(floatList).build())
                         .build())
+                    .putPayload("userId", JsonWithInt.Value.newBuilder().setStringValue(userId).build())
                     .putPayload("docId", JsonWithInt.Value.newBuilder().setStringValue(chunk.docId()).build())
                     .putPayload("source", JsonWithInt.Value.newBuilder().setStringValue(chunk.source()).build())
                     .putPayload("title", JsonWithInt.Value.newBuilder().setStringValue(chunk.title()).build())
@@ -135,7 +148,7 @@ public class QdrantRagService implements RagService {
                     .build()
             ).get();
 
-            log.info("QdrantRagService: stored {} chunks", pointStructs.size());
+            log.info("QdrantRagService: stored {} chunks for user={}", pointStructs.size(), userId);
             return pointStructs.size();
 
         } catch (InterruptedException | ExecutionException e) {
@@ -163,6 +176,9 @@ public class QdrantRagService implements RagService {
                             .build())
                         .build()
                 ).get();
+
+                // Note: Qdrant auto-indexes keyword payload fields —
+                // no explicit index creation needed for userId filtering
             }
             collectionInitialized = true;
             return true;

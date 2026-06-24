@@ -38,6 +38,7 @@ public class RagController {
     @PostMapping(value = "/documents", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Mono<ResponseEntity<Map<String, Object>>> uploadDocument(
             @RequestPart("file") FilePart filePart,
+            @RequestParam(value = "studentId") String studentId,
             @RequestParam(value = "knowledgePoint", defaultValue = "") String knowledgePoint) {
 
         return Mono.fromCallable(() -> {
@@ -46,7 +47,7 @@ public class RagController {
             try {
                 filePart.transferTo(tempFile.toFile()).block();
                 File file = tempFile.toFile();
-                int chunks = documentIngester.ingest(file);
+                int chunks = documentIngester.ingest(studentId, file);
                 Files.deleteIfExists(tempFile);
 
                 log.info("RagController: ingested {} → {} chunks", filePart.filename(), chunks);
@@ -75,25 +76,27 @@ public class RagController {
         String text = body.get("text");
         String source = body.getOrDefault("source", "manual");
         String knowledgePoint = body.getOrDefault("knowledgePoint", "");
+        String studentId = body.getOrDefault("studentId", "anonymous");
 
         if (text == null || text.isBlank()) {
             return ResponseEntity.badRequest()
                 .body(Map.<String, Object>of("error", "text is required"));
         }
 
-        int chunks = documentIngester.ingestText(text, source, knowledgePoint);
+        int chunks = documentIngester.ingestText(studentId, text, source, knowledgePoint);
         return ResponseEntity.ok(Map.<String, Object>of("chunks", chunks, "status", "ok"));
     }
 
     /**
-     * Semantic search over ingested documents.
+     * Semantic search over a specific user's uploaded documents.
      */
     @GetMapping("/search")
     public ResponseEntity<List<DocumentSnippet>> search(
             @RequestParam("q") String query,
+            @RequestParam("studentId") String studentId,
             @RequestParam(value = "topK", defaultValue = "5") int topK) {
 
-        List<DocumentSnippet> results = ragService.retrieve(query, topK);
+        List<DocumentSnippet> results = ragService.retrieve(studentId, query, topK);
         return ResponseEntity.ok(results);
     }
 }

@@ -93,6 +93,13 @@ const uploading = ref(false)
 const pendingFiles = ref([])
 const materials = ref([])
 
+const getStudentId = () => {
+  try {
+    const info = JSON.parse(localStorage.getItem('userInfo') || '{}')
+    return info.phone || info.studentId || 'anonymous'
+  } catch { return 'anonymous' }
+}
+
 const fileIcon = (type) => {
   const map = { pdf: '📕', doc: '📘', docx: '📘', ppt: '📊', pptx: '📊', md: '📝', txt: '📄', png: '🖼️', jpg: '🖼️' }
   return map[type] || '📎'
@@ -115,6 +122,7 @@ const confirmUpload = async () => {
       formData.append('file', f.raw)
       const res = await request.post('/rag/documents', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        params: { studentId: getStudentId() },
         timeout: 60000
       })
       const data = res.data

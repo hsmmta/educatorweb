@@ -8,7 +8,7 @@ import java.util.List;
 @Service
 public class MockRagService implements RagService {
     @Override
-    public List<DocumentSnippet> retrieve(String query, int topK) {
+    public List<DocumentSnippet> retrieve(String userId, String query, int topK) {
         return List.of(
             new DocumentSnippet("SVM的核心思想是找到一个最优超平面，使得不同类别之间的间隔最大化...",
                 "机器学习教材-第6章", 0.95),
