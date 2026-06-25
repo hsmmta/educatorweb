@@ -148,10 +148,27 @@ public class CodeSandboxService {
     }
 
     /**
-     * Resolve the python command to use. Tries python3 first, falls back to python.
+     * Resolve the python command to use. On Windows, checks known install locations
+     * first (Anaconda, standard Python) to avoid the Microsoft Store stub.
+     * Falls back to python3/python command-line lookup.
      */
     private String pythonCommand() {
-        // Try python3 first (common on Unix/macOS), fall back to python (Windows)
+        // 1. Check known Windows installation paths
+        String[] knownPaths = {
+            "E:\\anaconda\\python.exe",
+            System.getProperty("user.home") + "\\anaconda3\\python.exe",
+            "C:\\ProgramData\\anaconda3\\python.exe",
+            "C:\\Python312\\python.exe",
+            "C:\\Python311\\python.exe",
+        };
+        for (String path : knownPaths) {
+            if (Files.exists(Path.of(path))) {
+                log.info("CodeSandbox: using python at {}", path);
+                return path;
+            }
+        }
+
+        // 2. Try python3 first (Unix/macOS), then python
         try {
             new ProcessBuilder("python3", "--version").start().waitFor(2, TimeUnit.SECONDS);
             return "python3";

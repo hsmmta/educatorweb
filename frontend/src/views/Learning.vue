@@ -472,7 +472,18 @@ const handleSseEvent = (evt) => {
       }
       // Parse quiz JSON
       if (result.value.type === 'QUIZ') {
-        try { quizData.value = JSON.parse(result.value.content) } catch { quizData.value = null }
+        try {
+          const parsed = JSON.parse(result.value.content)
+          // Ensure TF questions always have options
+          if (parsed.questions) {
+            parsed.questions.forEach(q => {
+              if (q.type === 'TF' && (!q.options || q.options.length === 0)) {
+                q.options = ['A. True', 'B. False']
+              }
+            })
+          }
+          quizData.value = parsed
+        } catch { quizData.value = null }
       }
       // Render mermaid mindmap
       if (result.value.type === 'MINDMAP') {
