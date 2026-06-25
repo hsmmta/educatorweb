@@ -137,15 +137,21 @@ public class CodeGenerator extends AbstractGenerator {
         sb.append("\n");
 
         // --- Output requirements ---
-        sb.append("## 输出要求\n\n");
-        sb.append("请生成一份教学用的 Python 代码，要求如下：\n\n");
+        sb.append("## 输出要求（务必严格遵守！）\n\n");
+        sb.append("### ⚠ 库限制（最重要）\n");
+        sb.append("**绝对禁止使用任何第三方库！** 只能使用 Python 内置标准库。\n\n");
+        sb.append("以下库是禁止的：numpy, pandas, matplotlib, scipy, sklearn, seaborn,\n");
+        sb.append("plotly, tensorflow, torch, keras, pillow, PIL, cv2, requests,\n");
+        sb.append("beautifulsoup4, bs4, nltk, spacy, transformers, django, flask,\n");
+        sb.append("fastapi, sqlalchemy, pymongo, redis, 以及所有其他非标准库模块。\n\n");
+        sb.append("如需可视化，请使用 print() 输出文字描述或 ASCII 图表。\n\n");
+        sb.append("### 代码要求\n");
         sb.append("1. **注释丰富**: 每段核心逻辑都要有中文注释说明\n");
         sb.append("2. **docstring**: 每个函数/类都要有 docstring\n");
         sb.append("3. **完整可运行**: 代码必须是完整的、可以直接运行的\n");
         sb.append("4. **包含示例**: 在代码底部用 `if __name__ == '__main__':` 块展示用法\n");
         sb.append("5. **打印结果**: 使用 print() 输出关键结果\n");
-        sb.append("6. **仅使用标准库**: 不使用任何第三方包\n");
-        sb.append("7. **不使用 input()**: 不要使用交互式输入\n\n");
+        sb.append("6. **不使用 input()**: 不要使用交互式输入\n\n");
 
         sb.append("请直接输出 Python 代码，不要包含 ```python 代码块标记，不要包含解释性前言或后记。");
 
