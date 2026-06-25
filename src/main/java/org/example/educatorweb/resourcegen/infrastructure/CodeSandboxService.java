@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
@@ -94,6 +95,9 @@ public class CodeSandboxService {
             ProcessBuilder pb = new ProcessBuilder(pythonCommand(), scriptFile.toString());
             pb.directory(tempDir.toFile());
             pb.redirectErrorStream(false);
+            // Force Python to use UTF-8 for stdout/stderr on Windows (avoids GBK garbling)
+            pb.environment().put("PYTHONIOENCODING", "utf-8");
+            pb.environment().put("PYTHONUTF8", "1");
 
             long start = System.currentTimeMillis();
             Process process = pb.start();
@@ -119,16 +123,16 @@ public class CodeSandboxService {
                 // Wait briefly for threads to finish draining remaining data
                 outThread.join(2000);
                 errThread.join(2000);
-                stdout = outBuf.toString().trim();
+                stdout = outBuf.toString(StandardCharsets.UTF_8).trim();
                 stderr = "Execution timed out after " + TIMEOUT_MS + " ms.\n"
-                       + errBuf.toString().trim();
+                       + errBuf.toString(StandardCharsets.UTF_8).trim();
                 exitCode = -1;
             } else {
                 // Process completed — wait for reader threads to finish
                 outThread.join(5000);
                 errThread.join(5000);
-                stdout = outBuf.toString().trim();
-                stderr = errBuf.toString().trim();
+                stdout = outBuf.toString(StandardCharsets.UTF_8).trim();
+                stderr = errBuf.toString(StandardCharsets.UTF_8).trim();
                 exitCode = process.exitValue();
             }
 
