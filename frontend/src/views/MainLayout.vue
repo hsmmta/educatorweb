@@ -47,6 +47,9 @@
     <main class="layout-main">
       <router-view />
     </main>
+
+    <!-- AI 语音助手 -->
+    <VoiceAssistant />
   </div>
 </template>
 
@@ -55,6 +58,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowDown, Bell, User, UserFilled, SwitchButton } from '@element-plus/icons-vue'
+import VoiceAssistant from '@/components/VoiceAssistant.vue'
 
 const router = useRouter()
 const userInfo = ref({})

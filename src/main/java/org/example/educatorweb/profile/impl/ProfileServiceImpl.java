@@ -5,6 +5,7 @@ import org.example.educatorweb.profile.model.StudentKnowledgeProficiency;
 import org.example.educatorweb.profile.model.StudentProfile;
 import org.example.educatorweb.profile.repository.StudentProfileRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -27,7 +28,7 @@ public class ProfileServiceImpl implements ProfileService {
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void updateProfile(String studentId, StudentProfile profile) {
         // 保证传入对象的 studentId 与路径一致
         profile.setStudentId(studentId);
