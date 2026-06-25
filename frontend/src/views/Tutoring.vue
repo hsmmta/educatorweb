@@ -76,6 +76,14 @@
           <el-button text :icon="RefreshRight">重新生成</el-button>
           <el-button text :icon="CircleCheck">有帮助</el-button>
         </div>
+        <div v-if="answerSources.length > 0" class="answer-refs">
+          <h4>📎 参考来源</h4>
+          <div v-for="(src, i) in answerSources" :key="i" class="ref-item">
+            <span class="ref-idx">[{{ i + 1 }}]</span>
+            <span class="ref-text">{{ (src.text || '').substring(0, 120) }}...</span>
+            <span class="ref-source">{{ src.source }}</span>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -85,77 +93,71 @@
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Promotion, CircleCheckFilled, Loading, DocumentCopy, RefreshRight, CircleCheck } from '@element-plus/icons-vue'
-
-// 接口预留：后续对接后端辅导 API
-const API_BASE = '/api/tutoring'
+import request from '@/api/request'
 
 const question = ref('')
 const asking = ref(false)
 const answer = ref('')
 const answerSourceLabel = ref('')
 const answerSourceType = ref('info')
-const materialCount = ref(0)  // TODO: 从私人智库获取
+const materialCount = ref(0)
 const retrievalSteps = ref([])
+const conversationId = ref(null)
+const answerSources = ref([])
+
+/** Get studentId from login info stored in localStorage */
+const getStudentId = () => {
+  try {
+    const info = JSON.parse(localStorage.getItem('userInfo') || '{}')
+    return info.phone || info.studentId || 'anonymous'
+  } catch { return 'anonymous' }
+}
 
 const askQuestion = async () => {
   if (!question.value.trim()) return
   asking.value = true
   answer.value = ''
-  retrievalSteps.value = []
+  answerSources.value = []
+  retrievalSteps.value = [
+    { id: 1, text: '正在检索知识库并生成回答...', status: 'loading', source: '' }
+  ]
 
   try {
-    // 模拟三级检索过程
-    await simulateRetrieval()
-    // TODO: 对接后端 API
-    // const res = await axios.post(`${API_BASE}/ask`, { question: question.value })
-    // answer.value = res.data.data.answer
-    answer.value = `<p>这是模拟回答。实际将按以下链路检索：</p>
-      <ol>
-        <li><strong>私有智库</strong>：优先检索你上传的资料</li>
-        <li><strong>知识图谱</strong>：私有智库未覆盖时，查询学科知识图谱</li>
-        <li><strong>互联网</strong>：前两者都无结果时，搜索公开学术资源</li>
-      </ol>
-      <p>接口已预留，等待后端接入。</p>`
-    answerSourceLabel.value = '模拟'
-    answerSourceType.value = 'info'
+    const res = await request.post('/tutor/chat', {
+      studentId: getStudentId(),
+      question: question.value,
+      conversationId: conversationId.value
+    })
+
+    const data = res.data
+    conversationId.value = data.conversationId
+
+    // Build answer HTML
+    answer.value = `<p>${(data.answer || '').replace(/\n/g, '<br>')}</p>`
+
+    // Show sources if available
+    answerSources.value = data.sources || []
+    if (answerSources.value.length > 0) {
+      answerSourceLabel.value = `RAG · ${answerSources.value.length} 条参考`
+      answerSourceType.value = 'success'
+    } else {
+      answerSourceLabel.value = 'AI 回答'
+      answerSourceType.value = 'info'
+    }
+
+    retrievalSteps.value = [
+      { id: 1, text: '知识库检索完成', status: 'done', source: `${answerSources.value.length} 条参考文档` }
+    ]
   } catch (e) {
-    ElMessage.error('提问失败，请稍后重试')
+    ElMessage.error('提问失败：' + (e.response?.data?.error || e.message || '请稍后重试'))
+    retrievalSteps.value = [
+      { id: 1, text: '请求失败', status: 'done', source: '' }
+    ]
   } finally {
     asking.value = false
     question.value = ''
   }
 }
-
-const simulateRetrieval = async () => {
-  const steps = [
-    { id: 1, text: '正在检索私有智库...', status: 'loading', source: '' },
-    { id: 2, text: '正在检索知识图谱...', status: 'pending', source: '' },
-    { id: 3, text: '正在检索互联网资源...', status: 'pending', source: '' }
-  ]
-
-  retrievalSteps.value = [steps[0]]
-  await delay(800)
-  steps[0].status = 'done'
-  steps[0].text = '私有智库检索完成'
-  steps[0].source = materialCount.value > 0 ? `找到 ${materialCount.value} 份相关资料` : '无相关资料'
-  retrievalSteps.value = [steps[0], steps[1]]
-  steps[1].status = 'loading'
-
-  await delay(600)
-  steps[1].status = 'done'
-  steps[1].text = '知识图谱检索完成'
-  steps[1].source = '找到 3 个相关知识节点'
-  retrievalSteps.value = [steps[0], steps[1], steps[2]]
-  steps[2].status = 'loading'
-
-  await delay(400)
-  steps[2].status = 'done'
-  steps[2].text = '互联网检索完成'
-  steps[2].source = '找到 5 条参考资源'
-  retrievalSteps.value = [...steps]
-}
-
-const delay = (ms) => new Promise(r => setTimeout(r, ms))
 </script>
 
 <style scoped>
@@ -229,4 +231,10 @@ const delay = (ms) => new Promise(r => setTimeout(r, ms))
   display: flex; gap: 8px; margin-top: 20px;
   padding-top: 16px; border-top: 1px solid #f2f3f7;
 }
+.answer-refs { margin-top: 16px; padding-top: 16px; border-top: 1px solid #f2f3f7; }
+.answer-refs h4 { font-size: 13px; color: #8890a0; margin: 0 0 10px; font-weight: 500; }
+.ref-item { display: flex; gap: 8px; font-size: 12px; color: #606266; margin-bottom: 6px; }
+.ref-idx { color: #667eea; font-weight: 600; flex-shrink: 0; }
+.ref-text { flex: 1; line-height: 1.5; }
+.ref-source { color: #909399; flex-shrink: 0; }
 </style>

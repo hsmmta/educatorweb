@@ -33,9 +33,9 @@ public class DocumentIngester {
     /**
      * Ingest a document file and return the number of chunks created.
      */
-    public int ingest(File file) {
+    public int ingest(String userId, File file) {
         String fileName = file.getName();
-        log.info("DocumentIngester: ingesting {}", fileName);
+        log.info("DocumentIngester: ingesting {} for user={}", fileName, userId);
 
         String text = extractText(file);
         if (text == null || text.isBlank()) {
@@ -46,15 +46,15 @@ public class DocumentIngester {
         String source = fileName.replaceFirst("\\.[^.]+$", "");
         List<DocumentChunk> chunks = chunkText(text, source);
 
-        return ragService.store(chunks);
+        return ragService.store(userId, chunks);
     }
 
     /**
      * Ingests raw text directly (e.g., from API or manual input).
      */
-    public int ingestText(String text, String source, String knowledgePoint) {
+    public int ingestText(String userId, String text, String source, String knowledgePoint) {
         List<DocumentChunk> chunks = chunkText(text, source);
-        return ragService.store(chunks);
+        return ragService.store(userId, chunks);
     }
 
     /**

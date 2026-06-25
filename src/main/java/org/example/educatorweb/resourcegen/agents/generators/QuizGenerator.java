@@ -126,10 +126,9 @@ public class QuizGenerator extends AbstractGenerator {
         // --- Output requirements ---
         sb.append("\n## 输出要求\n");
         sb.append("请生成一份包含 7 道题目的测验，严格输出 JSON 格式。题型分配如下：\n\n");
-        sb.append("- **3 道** 选择题（Multiple Choice, MC）：每题 4 个选项，只有一个正确答案\n");
-        sb.append("- **2 道** 判断题（True/False, T/F）\n");
-        sb.append("- **1 道** 简答题（Short Answer）\n");
-        sb.append("- **1 道** 填空题（Fill-in-the-blank）\n\n");
+        sb.append("- **5 道** 选择题（Multiple Choice, MC）：每题 4 个选项，只有一个正确答案\n");
+        sb.append("- **2 道** 判断题（True/False, TF）：每题 2 个选项（A. True 和 B. False）\n\n");
+        sb.append("注意：不要出简答题、填空题或任何其他题型。\n\n");
 
         sb.append("题目应覆盖不同的认知层次（记忆、理解、应用、分析），难度控制在「").append(difficultyHint).append("」水平。\n\n");
 
@@ -138,10 +137,10 @@ public class QuizGenerator extends AbstractGenerator {
         sb.append("  \"title\": \"测验标题\",\n");
         sb.append("  \"questions\": [\n");
         sb.append("    {\n");
-        sb.append("      \"type\": \"MC\" | \"TF\" | \"SHORT_ANSWER\" | \"FILL_BLANK\",\n");
+        sb.append("      \"type\": \"MC\" | \"TF\",\n");
         sb.append("      \"question\": \"题目内容\",\n");
-        sb.append("      \"options\": [\"A选项\", \"B选项\", \"C选项\", \"D选项\"], // 仅 MC 需要\n");
-        sb.append("      \"answer\": \"正确答案\",\n");
+        sb.append("      \"options\": [\"A. 选项A\", \"B. 选项B\", \"C. 选项C\", \"D. 选项D\"],\n");
+        sb.append("      \"answer\": \"正确答案（MC 用字母如 A/B/C/D，TF 用 True/False）\",\n");
         sb.append("      \"explanation\": \"答案解析\",\n");
         sb.append("      \"difficulty\": \"easy\" | \"medium\" | \"hard\",\n");
         sb.append("      \"relatedConcept\": \"相关知识点名称\"\n");
@@ -169,7 +168,7 @@ public class QuizGenerator extends AbstractGenerator {
 
     private String buildFallbackQuiz(GenerationState state) {
         String topic = state.knowledgePoint();
-        // Build a deterministic fallback JSON with 7 questions
+        // Build a deterministic fallback JSON with 5 MC + 2 TF
         return String.format("""
             {
               "title": "%1$s - 基础测验",
@@ -202,8 +201,27 @@ public class QuizGenerator extends AbstractGenerator {
                   "relatedConcept": "%1$s"
                 },
                 {
+                  "type": "MC",
+                  "question": "学习「%1$s」时最容易犯的错误是什么？",
+                  "options": ["A. 过度依赖记忆而忽视理解", "B. 只关注理论不进行实践", "C. 跳过基础直接学高级内容", "D. 以上都是"],
+                  "answer": "D",
+                  "explanation": "学习任何知识点都需要理解、实践、循序渐进三者结合。",
+                  "difficulty": "medium",
+                  "relatedConcept": "学习方法"
+                },
+                {
+                  "type": "MC",
+                  "question": "以下哪个不属于「%1$s」的相关概念？",
+                  "options": ["A. 基本定义", "B. 核心原理", "C. 量子纠缠", "D. 实际应用"],
+                  "answer": "C",
+                  "explanation": "量子纠缠与「%1$s」无关，其他选项均为该知识点的核心内容。",
+                  "difficulty": "easy",
+                  "relatedConcept": "%1$s"
+                },
+                {
                   "type": "TF",
                   "question": "掌握「%1$s」需要大量的实践经验积累。",
+                  "options": ["A. True", "B. False"],
                   "answer": "True",
                   "explanation": "理论与实践相结合是掌握该知识点的关键。",
                   "difficulty": "easy",
@@ -212,26 +230,11 @@ public class QuizGenerator extends AbstractGenerator {
                 {
                   "type": "TF",
                   "question": "「%1$s」只适用于特定场景，在其他领域完全无用。",
+                  "options": ["A. True", "B. False"],
                   "answer": "False",
                   "explanation": "该知识点具有跨领域的应用价值。",
                   "difficulty": "easy",
                   "relatedConcept": "应用场景"
-                },
-                {
-                  "type": "SHORT_ANSWER",
-                  "question": "请简要说明「%1$s」的三个主要特点。",
-                  "answer": "1. 具有清晰的定义和边界；2. 与其他知识点存在关联；3. 可在实践中验证和应用",
-                  "explanation": "从定义、关联性和实践性三个维度理解该知识点。",
-                  "difficulty": "medium",
-                  "relatedConcept": "%1$s"
-                },
-                {
-                  "type": "FILL_BLANK",
-                  "question": "「%1$s」的核心在于建立____的知识体系，从而提升学习效率。",
-                  "answer": "系统化",
-                  "explanation": "系统化的知识体系是高效学习的基础。",
-                  "difficulty": "medium",
-                  "relatedConcept": "学习方法"
                 }
               ]
             }""", topic);

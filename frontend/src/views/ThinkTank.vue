@@ -30,9 +30,13 @@
       <span class="priority-tip">智能辅导将按此优先级依次检索</span>
     </div>
 
-    <!-- 资料列表（空态/有数据） -->
+    <!-- 资料列表（加载中/空态/有数据） -->
     <div class="content-area">
-      <el-empty v-if="materials.length === 0" description="还没有上传任何资料">
+      <div v-if="listLoading" class="loading-state">
+        <el-icon class="is-loading" :size="32"><Loading /></el-icon>
+        <p>正在加载资料列表...</p>
+      </div>
+      <el-empty v-else-if="materials.length === 0" description="还没有上传任何资料">
         <el-button type="primary" @click="showUpload = true">立即上传</el-button>
       </el-empty>
 
@@ -83,19 +87,48 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Upload, UploadFilled, MoreFilled } from '@element-plus/icons-vue'
-
-// 接口预留：后续对接后端上传 API
-const API_BASE = '/api/thinktank'
+import { Upload, UploadFilled, MoreFilled, Loading } from '@element-plus/icons-vue'
+import request from '@/api/request'
 
 const showUpload = ref(false)
 const uploading = ref(false)
 const pendingFiles = ref([])
-
-// 模拟已上传资料
 const materials = ref([])
+const listLoading = ref(false)
+
+const getStudentId = () => {
+  try {
+    const info = JSON.parse(localStorage.getItem('userInfo') || '{}')
+    return info.phone || info.studentId || 'anonymous'
+  } catch { return 'anonymous' }
+}
+
+/** Load uploaded files from backend */
+const loadMaterials = async () => {
+  listLoading.value = true
+  try {
+    const res = await request.get('/rag/documents', {
+      params: { studentId: getStudentId() }
+    })
+    const data = Array.isArray(res.data) ? res.data : []
+    materials.value = data.map(doc => ({
+      id: doc.source,
+      name: doc.title || doc.source,
+      type: (doc.source || '').split('.').pop()?.toLowerCase() || 'pdf',
+      size: `${doc.chunks || 0} 个文本块`
+    }))
+    console.log(`ThinkTank: loaded ${materials.value.length} document(s) for user ${getStudentId()}`)
+  } catch (e) {
+    console.warn('Failed to load materials:', e.message)
+    // Don't show error to user on first load — may just be empty
+  } finally {
+    listLoading.value = false
+  }
+}
+
+onMounted(() => { loadMaterials() })
 
 const fileIcon = (type) => {
   const map = { pdf: '📕', doc: '📘', docx: '📘', ppt: '📊', pptx: '📊', md: '📝', txt: '📄', png: '🖼️', jpg: '🖼️' }
@@ -112,22 +145,26 @@ const confirmUpload = async () => {
     return
   }
   uploading.value = true
+  let successCount = 0
   try {
-    // TODO: 对接后端上传 API
-    // await axios.post(`${API_BASE}/upload`, formData)
-    pendingFiles.value.forEach(f => {
-      materials.value.push({
-        id: Date.now() + Math.random(),
-        name: f.name,
-        type: f.name.split('.').pop().toLowerCase(),
-        size: formatSize(f.size || 0)
+    for (const f of pendingFiles.value) {
+      const formData = new FormData()
+      formData.append('file', f.raw)
+      const res = await request.post('/rag/documents', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        params: { studentId: getStudentId() },
+        timeout: 60000
       })
-    })
-    ElMessage.success(`成功上传 ${pendingFiles.value.length} 个文件`)
+      // Reload full list from backend to stay consistent
+      await loadMaterials()
+      successCount++
+    }
+    ElMessage.success(`成功上传 ${successCount} 个文件`)
     showUpload.value = false
     pendingFiles.value = []
   } catch (e) {
-    ElMessage.error('上传失败，请稍后重试')
+    const msg = e.response?.data?.error || '上传失败，请稍后重试'
+    ElMessage.error(msg)
   } finally {
     uploading.value = false
   }
@@ -176,6 +213,11 @@ const formatSize = (bytes) => {
 
 /* 内容区 */
 .content-area { margin-top: 24px; }
+.loading-state {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 48px 0; color: #909399;
+}
+.loading-state p { font-size: 14px; margin: 0; }
 .material-grid { display: flex; flex-direction: column; gap: 10px; }
 .material-card {
   display: flex; align-items: center; gap: 16px;

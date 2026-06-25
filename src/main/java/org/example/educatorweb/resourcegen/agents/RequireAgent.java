@@ -35,7 +35,7 @@ public class RequireAgent implements AgentNode {
 
         var profile = fetchProfile(state.studentId());
         var kgContext = fetchKnowledgeContext(state.knowledgePoint());
-        var ragContext = fetchRagContext(state.knowledgePoint());
+        var ragContext = fetchRagContext(state.studentId(), state.knowledgePoint());
 
         return state.withContext(kgContext, ragContext)
                     .withProfile(profile)
@@ -60,9 +60,9 @@ public class RequireAgent implements AgentNode {
         }
     }
 
-    private List<DocumentSnippet> fetchRagContext(String knowledgePoint) {
+    private List<DocumentSnippet> fetchRagContext(String studentId, String knowledgePoint) {
         try {
-            return ragService.retrieve(knowledgePoint, 5);
+            return ragService.retrieve(studentId, knowledgePoint, 5);
         } catch (Exception e) {
             log.warn("RequireAgent: failed to fetch RAG context for topic={}: {}", knowledgePoint, e.getMessage());
             return List.of();

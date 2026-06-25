@@ -36,8 +36,12 @@ public class RagConfig {
 
     @Bean
     public EmbeddingService embeddingService() {
-        String apiKey = System.getProperty("DEEPSEEK_API_KEY",
-            System.getenv().getOrDefault("DEEPSEEK_API_KEY", ""));
+        // Read ZHIPU_API_KEY from .env via Dotenv (system props may not be set yet)
+        String apiKey = io.github.cdimascio.dotenv.Dotenv.configure().ignoreIfMissing().load()
+            .get("ZHIPU_API_KEY", "");
+        if (apiKey.isBlank()) {
+            apiKey = System.getenv().getOrDefault("ZHIPU_API_KEY", "");
+        }
         return new EmbeddingService(apiKey);
     }
 

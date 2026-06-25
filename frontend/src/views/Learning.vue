@@ -77,26 +77,178 @@
       <h3>生成结果</h3>
       <div class="result-card">
         <div class="result-header">
-          <span class="result-icon">📄</span>
-          <div>
+          <span class="result-icon">{{ resultIcon }}</span>
+          <div class="result-title-wrap">
             <strong>{{ result.title }}</strong>
-            <span class="result-meta">{{ result.type }} · {{ result.size }}</span>
+            <span class="result-meta">{{ result.typeLabel }}</span>
           </div>
-          <el-button type="primary" plain :icon="Download">下载</el-button>
+          <el-button type="primary" plain :icon="Download" @click="downloadResult">下载</el-button>
         </div>
-        <div class="result-preview" v-html="result.preview"></div>
+
+        <!-- DOC: rendered markdown -->
+        <div v-if="result.type === 'DOC'" class="doc-render markdown-body" v-html="renderedHtml"></div>
+
+        <!-- QUIZ: interactive question cards -->
+        <div v-else-if="result.type === 'QUIZ'" class="quiz-render">
+          <div v-if="quizData">
+            <div class="quiz-toolbar">
+              <el-button size="small" @click="showAnswers = !showAnswers">
+                {{ showAnswers ? '隐藏解析' : '显示全部解析' }}
+              </el-button>
+            </div>
+            <div v-for="(q, i) in quizData.questions" :key="i" class="quiz-item">
+              <div class="quiz-q">
+                <span class="quiz-num">{{ i + 1 }}</span>
+                <span class="quiz-type-tag">{{ quizTypeLabel(q.type) }}</span>
+                <span class="quiz-text">{{ q.question }}</span>
+              </div>
+              <!-- Interactive MC / TF options -->
+              <ul v-if="q.options && q.options.length && (q.type === 'MC' || q.type === 'TF')" class="quiz-options">
+                <li
+                  v-for="(opt, j) in q.options" :key="j"
+                  :class="[
+                    'quiz-option-item',
+                    {
+                      'option-selected': selectedOption[i] === optionLetter(opt),
+                      'option-correct': selectedOption[i] === optionLetter(opt) && optionResult[i] === 'correct',
+                      'option-incorrect': selectedOption[i] === optionLetter(opt) && optionResult[i] === 'incorrect',
+                      'option-reveal-correct': optionResult[i] === 'incorrect' && isCorrectAnswer(q, opt)
+                    }
+                  ]"
+                  @click="selectOption(i, opt)"
+                >
+                  <span class="option-marker">
+                    <span v-if="selectedOption[i] === optionLetter(opt) && optionResult[i] === 'correct'">✅</span>
+                    <span v-else-if="selectedOption[i] === optionLetter(opt) && optionResult[i] === 'incorrect'">❌</span>
+                    <span v-else-if="optionResult[i] === 'incorrect' && isCorrectAnswer(q, opt)">✅</span>
+                    <span v-else>{{ optionLetter(opt) }}</span>
+                  </span>
+                  <span class="option-text">{{ opt.replace(/^[A-Z][.)]\s*/, '') }}</span>
+                </li>
+              </ul>
+              <!-- Non-interactive SHORT_ANSWER / FILL_BLANK -->
+              <div v-else-if="q.type === 'SHORT_ANSWER' || q.type === 'FILL_BLANK'" class="quiz-written">
+                <div v-if="q.type === 'SHORT_ANSWER'" class="written-area">
+                  <el-input type="textarea" :rows="3" placeholder="请输入你的答案..." disabled />
+                </div>
+                <div v-else class="written-area">
+                  <el-input placeholder="请填空..." disabled />
+                </div>
+                <div v-if="showAnswers" class="quiz-answer">
+                  <div class="quiz-answer-row"><strong>参考答案：</strong>{{ q.answer }}</div>
+                  <div v-if="q.explanation" class="quiz-explain"><strong>解析：</strong>{{ q.explanation }}</div>
+                </div>
+              </div>
+              <div v-if="showAnswers || optionResult[i]" class="quiz-answer">
+                <div class="quiz-answer-row">
+                  <strong>答案：</strong>{{ q.answer }}
+                  <span v-if="optionResult[i] === 'correct'" style="color:#67c23a; margin-left:8px;">✓ 正确!</span>
+                  <span v-else-if="optionResult[i] === 'incorrect'" style="color:#f56c6c; margin-left:8px;">✗ 不对</span>
+                </div>
+                <div v-if="q.explanation" class="quiz-explain"><strong>解析：</strong>{{ q.explanation }}</div>
+              </div>
+            </div>
+          </div>
+          <pre v-else class="raw-fallback">{{ result.content }}</pre>
+        </div>
+
+        <!-- CODE: Jupyter-like interactive editor -->
+        <div v-else-if="result.type === 'CODE'" class="code-render">
+          <div class="code-toolbar">
+            <span class="code-lang">Python</span>
+            <div class="code-toolbar-actions">
+              <el-button size="small" type="primary" :icon="VideoPlay" @click="runCode" :loading="codeRunning">
+                {{ codeRunning ? '运行中…' : '运行' }}
+              </el-button>
+              <el-button size="small" :icon="DocumentCopy" @click="copyCode">复制</el-button>
+            </div>
+          </div>
+          <el-input
+            v-model="editableCode"
+            type="textarea"
+            :rows="14"
+            class="code-editor"
+            placeholder="在此编辑 Python 代码…"
+            :disabled="codeRunning"
+          />
+          <div v-if="codeOutput || codeRunning" class="code-output">
+            <div class="output-header">
+              <span class="output-label">▶ 输出</span>
+              <span class="output-meta" v-if="!codeRunning">{{ codeExecTime }}ms · exit={{ codeExitCode }}</span>
+            </div>
+            <pre class="output-body" :class="{ 'output-error': codeExitCode !== 0 }">{{ codeOutput || '（等待输出…）' }}</pre>
+          </div>
+        </div>
+
+        <!-- HTML: live interactive iframe -->
+        <div v-else-if="result.type === 'HTML'" class="html-render">
+          <iframe
+            :srcdoc="result.content"
+            sandbox="allow-scripts allow-same-origin"
+            class="html-frame"
+            title="交互课件"
+          ></iframe>
+          <p class="code-hint">💡 这是真实可交互的网页课件，在沙箱中运行。点击下载可保存为 .html 离线打开。</p>
+        </div>
+
+        <!-- MINDMAP: rendered Mermaid SVG -->
+        <div v-else-if="result.type === 'MINDMAP'" class="mindmap-render">
+          <div v-if="mindmapSvg" class="mindmap-svg" v-html="mindmapSvg"></div>
+          <pre v-else class="code-block">{{ result.content }}</pre>
+          <p class="code-hint">💡 思维导图由 Mermaid 实时渲染。点击下载可保存为 .mmd 离线使用。</p>
+        </div>
+
+        <!-- PPT / VIDEO: file-based, download only -->
+        <div v-else-if="result.type === 'PPT' || result.type === 'VIDEO'" class="file-render">
+          <el-result icon="success" :title="`${result.typeLabel}已生成`" sub-title="点击上方“下载”按钮保存到本地">
+          </el-result>
+        </div>
+
+        <!-- Fallback -->
+        <pre v-else class="raw-fallback">{{ result.content }}</pre>
       </div>
     </section>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import { MagicStick, CircleCheckFilled, Loading, Download } from '@element-plus/icons-vue'
+import { MagicStick, CircleCheckFilled, Loading, Download, DocumentCopy, VideoPlay } from '@element-plus/icons-vue'
+import { marked } from 'marked'
+import katex from 'katex'
+import 'katex/dist/katex.min.css'
+import mermaid from 'mermaid'
 
-// 接口预留
-const API_BASE = '/api/generate'
+mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' })
+
+// Register marked extension for LaTeX math
+marked.use({
+  extensions: [{
+    name: 'math',
+    level: 'inline',
+    start(src) { return src.indexOf('$') },
+    tokenizer(src) {
+      const displayMatch = /^\$\$([\s\S]*?)\$\$/.exec(src)
+      if (displayMatch) {
+        return { type: 'math', raw: displayMatch[0], text: displayMatch[1].trim(), display: true }
+      }
+      const inlineMatch = /^\$([^\n$]+)\$/.exec(src)
+      if (inlineMatch) {
+        return { type: 'math', raw: inlineMatch[0], text: inlineMatch[1].trim(), display: false }
+      }
+    },
+    renderer(token) {
+      try {
+        return katex.renderToString(token.text, {
+          displayMode: token.display,
+          throwOnError: false,
+          trust: true
+        })
+      } catch { return token.raw }
+    }
+  }]
+})
 
 const selectedType = ref('doc')
 const topic = ref('')
@@ -105,6 +257,104 @@ const difficulty = ref('intermediate')
 const generating = ref(false)
 const agentSteps = ref([])
 const result = ref(null)
+const quizData = ref(null)
+const showAnswers = ref(false)
+const mindmapSvg = ref('')
+// Interactive code state
+const editableCode = ref('')
+const codeRunning = ref(false)
+const codeOutput = ref('')
+const codeExecTime = ref(0)
+const codeExitCode = ref(0)
+// Interactive quiz state: { questionIndex: 'A' }
+const selectedOption = ref({})
+// { questionIndex: 'correct' | 'incorrect' }
+const optionResult = ref({})
+
+const TYPE_LABELS = {
+  DOC: '课程文档 (Markdown)', QUIZ: '练习题库', CODE: '代码案例',
+  HTML: '交互课件', MINDMAP: '思维导图', PPT: '教学PPT', VIDEO: '教学视频'
+}
+const TYPE_ICONS = {
+  DOC: '📄', QUIZ: '📝', CODE: '💻', HTML: '🌐', MINDMAP: '🧩', PPT: '📊', VIDEO: '🎬'
+}
+
+const resultIcon = computed(() => result.value ? (TYPE_ICONS[result.value.type] || '📄') : '📄')
+const renderedHtml = computed(() => {
+  if (!result.value || result.value.type !== 'DOC') return ''
+  try { return marked.parse(result.value.content || '') } catch { return result.value.content }
+})
+
+const renderMindmap = async (content) => {
+  mindmapSvg.value = ''
+  if (!content) return
+  try {
+    // Strip markdown fences if present
+    let code = content.trim()
+    if (code.startsWith('```')) {
+      code = code.replace(/^```\w*\n?/, '').replace(/\n?```$/, '')
+    }
+    const id = 'mindmap-' + Math.random().toString(36).slice(2, 8)
+    const { svg } = await mermaid.render(id, code)
+    mindmapSvg.value = svg
+  } catch (e) {
+    console.warn('Mermaid render failed:', e.message)
+    mindmapSvg.value = ''
+  }
+}
+
+const optionLetter = (opt) => {
+  // Extract letter from "A. xxx" or "A) xxx" prefix
+  const m = (opt || '').match(/^([A-Z])[.)]\s/)
+  return m ? m[1] : ''
+}
+
+const resetQuiz = () => {
+  selectedOption.value = {}
+  optionResult.value = {}
+}
+
+const selectOption = (qIndex, optText) => {
+  const q = quizData.value?.questions?.[qIndex]
+  if (!q || q.type === 'SHORT_ANSWER' || q.type === 'FILL_BLANK') return
+  const letter = optionLetter(optText)
+  if (!letter) return
+  selectedOption.value = { ...selectedOption.value, [qIndex]: letter }
+
+  let isCorrect = false
+  if (q.type === 'TF') {
+    // Compare option content (stripped of letter prefix) with answer using
+    // semantic truth-value matching: True/正确/√ vs False/错误/×
+    const optContent = optText.replace(/^[A-Z][.)]\s*/, '').trim()
+    const ans = q.answer?.trim() || ''
+    const optTrue = /^(true|t|yes|正确|是|√|对)$/i.test(optContent)
+    const ansTrue = /^(true|t|yes|正确|是|√|对)$/i.test(ans)
+    isCorrect = optTrue === ansTrue
+  } else {
+    // MC: letter match (answer is like "C")
+    const correctLetter = q.answer?.trim().toUpperCase() || ''
+    isCorrect = letter.toUpperCase() === correctLetter
+  }
+  optionResult.value = { ...optionResult.value, [qIndex]: isCorrect ? 'correct' : 'incorrect' }
+}
+
+const isCorrectAnswer = (q, optText) => {
+  if (!q) return false
+  if (q.type === 'TF') {
+    const optContent = optText.replace(/^[A-Z][.)]\s*/, '').trim()
+    const ans = q.answer?.trim() || ''
+    const optTrue = /^(true|t|yes|正确|是|√|对)$/i.test(optContent)
+    const ansTrue = /^(true|t|yes|正确|是|√|对)$/i.test(ans)
+    return optTrue === ansTrue
+  }
+  // MC: letter match
+  const letter = optionLetter(optText)
+  return letter.toUpperCase() === (q.answer?.trim()?.toUpperCase() || '')
+}
+
+const quizTypeLabel = (t) => ({
+  MC: '单选', TF: '判断', SHORT_ANSWER: '简答', FILL_BLANK: '填空'
+}[t] || t)
 
 const resourceTypes = [
   { type: 'doc',     icon: '📄', label: '课程文档', desc: '结构化讲解文档' },
@@ -123,40 +373,221 @@ const agents = [
   { name: 'ReviewAgent',   avatar: '🛡️', desc: '质量审核：内容安全过滤与事实核查' }
 ]
 
+const stageToIdx = { INIT: -1, REQUIRE: 0, DESIGN: 1, GENERATING: 2, REVIEWING: 3, DONE: 4, FALLBACK: 4 }
+
+const getStudentId = () => {
+  try {
+    const info = JSON.parse(localStorage.getItem('userInfo') || '{}')
+    return info.phone || info.studentId || 'anonymous'
+  } catch { return 'anonymous' }
+}
+
 const startGenerate = async () => {
   if (!topic.value.trim()) return
   generating.value = true
   agentSteps.value = []
   result.value = null
+  quizData.value = null
+  showAnswers.value = false
+  mindmapSvg.value = ''
+  resetQuiz()
 
-  // 模拟多智能体流程
-  for (const agent of agents) {
-    agentSteps.value = agentSteps.value.map(a => ({ ...a, status: 'done' }))
-    agentSteps.value.push({
-      name: agent.name, avatar: agent.avatar,
-      desc: agent.desc, status: 'loading'
+  const token = localStorage.getItem('token') || ''
+  const body = JSON.stringify({
+    studentId: getStudentId(),
+    knowledgePoint: topic.value,
+    types: [selectedType.value.toUpperCase()]
+  })
+
+  try {
+    const response = await fetch('/api/generate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+        'Authorization': token ? `Bearer ${token}` : ''
+      },
+      body
     })
-    await new Promise(r => setTimeout(r, 800 + Math.random() * 400))
-  }
-  agentSteps.value = agentSteps.value.map(a => ({ ...a, status: 'done' }))
 
-  // 模拟结果
-  const resMap = {
-    doc: { title: `${topic.value} - 学习文档`, type: 'Markdown', size: '12KB' },
-    ppt: { title: `${topic.value} - 教学课件`, type: 'PPTX', size: '2.3MB' },
-    quiz: { title: `${topic.value} - 练习题库`, type: 'JSON', size: '8KB' },
-    mindmap: { title: `${topic.value} - 思维导图`, type: 'XMind', size: '45KB' },
-    video: { title: `${topic.value} - 教学视频`, type: 'MP4', size: '18MB' },
-    code: { title: `${topic.value} - 代码案例`, type: 'ZIP', size: '3.1MB' },
-    html: { title: `${topic.value} - 交互课件`, type: 'HTML', size: '56KB' }
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+
+      const lines = buffer.split('\n')
+      buffer = lines.pop()
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue
+        const json = line.substring(5).trim()
+        if (!json) continue
+        try {
+          const evt = JSON.parse(json)
+          handleSseEvent(evt)
+        } catch { /* skip unparseable */ }
+      }
+    }
+  } catch (e) {
+    ElMessage.error('生成失败：' + (e.message || '请稍后重试'))
+  } finally {
+    generating.value = false
   }
-  result.value = {
-    ...resMap[selectedType.value],
-    preview: `<p>✅ 资源已生成！</p><p>类型：${selectedType.value}</p><p>主题：${topic.value}</p><p>难度：${difficulty.value}</p><p>接口已预留，等待后端接入真实多智能体生成流程。</p>`
+}
+
+const handleSseEvent = (evt) => {
+  const stage = evt.stage || ''
+  const idx = stageToIdx[stage] ?? -1
+
+  if (idx >= 0 && idx < agents.length) {
+    agentSteps.value = agents.slice(0, idx + 1).map((a, i) => ({
+      name: a.name, avatar: a.avatar, desc: a.desc,
+      status: i < idx ? 'done' : 'loading'
+    }))
   }
 
-  ElMessage.success('资源生成完成')
-  generating.value = false
+  if (stage === 'DONE' || stage === 'FALLBACK') {
+    agentSteps.value = agents.map(a => ({
+      name: a.name, avatar: a.avatar, desc: a.desc, status: 'done'
+    }))
+
+    const typeKey = selectedType.value.toUpperCase()
+    const payload = evt.payload || {}
+    const item = payload[typeKey] || Object.values(payload)[0]
+
+    if (item) {
+      result.value = {
+        type: item.type || typeKey,
+        typeLabel: TYPE_LABELS[item.type || typeKey] || (item.type || typeKey),
+        title: item.title || `${topic.value} - 学习资源`,
+        content: item.content || '',
+        downloadPath: item.downloadPath || null
+      }
+      // Parse quiz JSON
+      if (result.value.type === 'QUIZ') {
+        try {
+          const parsed = JSON.parse(result.value.content)
+          // Ensure TF questions always have options
+          if (parsed.questions) {
+            parsed.questions.forEach(q => {
+              if (q.type === 'TF' && (!q.options || q.options.length === 0)) {
+                q.options = ['A. True', 'B. False']
+              }
+            })
+          }
+          quizData.value = parsed
+        } catch { quizData.value = null }
+      }
+      // Render mermaid mindmap
+      if (result.value.type === 'MINDMAP') {
+        nextTick(() => renderMindmap(result.value.content))
+      }
+      // Init editable code for interactive editor
+      if (result.value.type === 'CODE') {
+        editableCode.value = result.value.content || ''
+        codeOutput.value = ''
+        codeExecTime.value = 0
+        codeExitCode.value = 0
+      }
+    } else {
+      result.value = {
+        type: typeKey,
+        typeLabel: TYPE_LABELS[typeKey] || typeKey,
+        title: `${topic.value} - 学习资源`,
+        content: evt.message || '生成完成',
+        downloadPath: null
+      }
+    }
+
+    if (stage === 'DONE') ElMessage.success('资源生成完成')
+    if (stage === 'FALLBACK') ElMessage.warning(evt.message || '生成降级完成')
+  }
+}
+
+const runCode = async () => {
+  if (!editableCode.value.trim()) {
+    ElMessage.warning('代码为空，无法运行')
+    return
+  }
+  codeRunning.value = true
+  codeOutput.value = ''
+  try {
+    const res = await fetch('/api/generate/run-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: editableCode.value })
+    })
+    const data = await res.json()
+    if (res.ok) {
+      codeOutput.value = [data.stdout, data.stderr ? `\n--- stderr ---\n${data.stderr}` : '']
+        .filter(Boolean).join('\n').trim() || '（无输出）'
+      codeExecTime.value = data.executionTimeMs ?? 0
+      codeExitCode.value = data.exitCode ?? 0
+      if (data.timedOut) {
+        codeOutput.value += '\n⚠ 执行超时（30秒）'
+      }
+    } else {
+      codeOutput.value = data.error || '执行失败'
+      codeExitCode.value = -1
+    }
+  } catch (e) {
+    codeOutput.value = '请求失败：' + (e.message || '请稍后重试')
+    codeExitCode.value = -1
+  } finally {
+    codeRunning.value = false
+  }
+}
+
+const copyCode = async () => {
+  try {
+    await navigator.clipboard.writeText(editableCode.value || result.value?.content || '')
+    ElMessage.success('代码已复制')
+  } catch {
+    ElMessage.error('复制失败')
+  }
+}
+
+const downloadResult = () => {
+  const r = result.value
+  if (!r) return
+
+  // File-based types → backend download endpoint
+  if (r.type === 'PPT' || r.type === 'VIDEO') {
+    if (r.downloadPath) {
+      window.open(`/api/generate/download/${r.downloadPath}`, '_blank')
+    } else {
+      ElMessage.warning('文件生成失败，无法下载')
+    }
+    return
+  }
+
+  // Text types → client-side Blob download
+  const extMap = { DOC: 'md', QUIZ: 'json', CODE: 'py', HTML: 'html', MINDMAP: 'mmd' }
+  const mimeMap = {
+    DOC: 'text/markdown', QUIZ: 'application/json', CODE: 'text/x-python',
+    HTML: 'text/html', MINDMAP: 'text/plain'
+  }
+  const ext = extMap[r.type] || 'txt'
+  const mime = mimeMap[r.type] || 'text/plain'
+  const safeName = (topic.value || 'resource').replace(/[\\/:*?"<>|]/g, '_')
+
+  const blob = new Blob([r.content], { type: mime })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${safeName}.${ext}`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+  ElMessage.success('已下载')
 }
 </script>
 
@@ -222,11 +653,96 @@ const startGenerate = async () => {
 }
 .result-header { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
 .result-icon { font-size: 36px; }
+.result-title-wrap { flex: 1; }
 .result-header strong { display: block; font-size: 16px; color: #1a1a2e; }
 .result-meta { font-size: 12px; color: #909399; }
-.result-header .el-button { margin-left: auto; }
-.result-preview { font-size: 14px; color: #4a4f5e; line-height: 1.7; }
-.result-preview :deep(p) { margin: 6px 0; }
+
+/* DOC markdown */
+.doc-render { font-size: 14px; line-height: 1.8; color: #2c3142; }
+.markdown-body :deep(h1), .markdown-body :deep(h2), .markdown-body :deep(h3) { margin: 16px 0 8px; color: #1a1a2e; }
+.markdown-body :deep(p) { margin: 8px 0; }
+.markdown-body :deep(pre) { background: #f6f8fa; padding: 12px; border-radius: 8px; overflow: auto; }
+.markdown-body :deep(code) { background: #f0f2f5; padding: 2px 5px; border-radius: 4px; font-size: 13px; }
+.markdown-body :deep(pre code) { background: none; padding: 0; }
+.markdown-body :deep(table) { border-collapse: collapse; margin: 12px 0; }
+.markdown-body :deep(th), .markdown-body :deep(td) { border: 1px solid #dcdfe6; padding: 6px 12px; }
+.markdown-body :deep(ul), .markdown-body :deep(ol) { padding-left: 24px; }
+/* KaTeX display math */
+.markdown-body :deep(.katex-display) { margin: 16px 0; overflow-x: auto; overflow-y: hidden; }
+.markdown-body :deep(.katex) { font-size: 1.1em; }
+
+/* QUIZ */
+.quiz-toolbar { margin-bottom: 12px; text-align: right; }
+.quiz-item { padding: 16px; border: 1px solid #eef0f4; border-radius: 12px; margin-bottom: 12px; }
+.quiz-q { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; font-weight: 600; color: #1a1a2e; }
+.quiz-num { background: #667eea; color: #fff; border-radius: 50%; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
+.quiz-type-tag { background: #eef0ff; color: #667eea; font-size: 11px; padding: 2px 8px; border-radius: 8px; flex-shrink: 0; }
+.quiz-text { flex: 1; }
+.quiz-options { list-style: none; padding: 0; margin: 10px 0 0 30px; }
+.quiz-options li { padding: 6px 0; font-size: 14px; color: #4a4f5e; }
+.quiz-option-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 14px; margin: 4px 0;
+  border: 1.5px solid #e4e7ed; border-radius: 10px;
+  cursor: pointer; transition: all 0.2s;
+  font-size: 14px; color: #4a4f5e; list-style: none;
+}
+.quiz-option-item:hover { border-color: #667eea; background: #f8f7ff; }
+.quiz-option-item.option-selected { border-color: #667eea; background: #f0efff; }
+.quiz-option-item.option-correct { border-color: #67c23a; background: #f0f9eb; }
+.quiz-option-item.option-incorrect { border-color: #f56c6c; background: #fef0f0; }
+.quiz-option-item.option-reveal-correct { border-color: #67c23a; background: #f0f9eb; }
+.option-marker {
+  font-weight: 700; font-size: 14px; min-width: 20px;
+  color: #667eea; text-align: center; flex-shrink: 0;
+}
+.option-correct .option-marker { color: #67c23a; }
+.option-incorrect .option-marker { color: #f56c6c; }
+.option-text { flex: 1; }
+.quiz-answer { margin: 12px 0 0 30px; padding: 12px; background: #f0f9eb; border-radius: 8px; font-size: 13px; }
+.quiz-answer-row { color: #529b2e; margin-bottom: 6px; }
+.quiz-explain { color: #606266; line-height: 1.6; }
+.quiz-written { margin: 10px 0 0 30px; }
+.written-area { margin-bottom: 10px; opacity: 0.7; }
+
+/* CODE */
+.code-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.code-lang { font-size: 12px; color: #909399; font-weight: 600; }
+.code-toolbar-actions { display: flex; gap: 8px; }
+.code-editor :deep(textarea) {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
+  font-size: 13px !important; line-height: 1.6 !important;
+  background: #1e1e2e !important; color: #e0e0e0 !important;
+  border-radius: 10px !important; border-color: #3a3a5c !important;
+}
+.code-editor :deep(textarea):focus { border-color: #667eea !important; }
+.code-hint { font-size: 12px; color: #909399; margin: 10px 0 0; }
+
+/* Code output panel */
+.code-output { margin-top: 12px; border: 1px solid #e4e7ed; border-radius: 10px; overflow: hidden; }
+.output-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 14px; background: #f5f7fa; border-bottom: 1px solid #e4e7ed;
+}
+.output-label { font-size: 13px; font-weight: 600; color: #303133; }
+.output-meta { font-size: 11px; color: #909399; font-family: monospace; }
+.output-body {
+  margin: 0; padding: 12px 14px; background: #fafbfc;
+  font-family: 'Consolas', 'Monaco', monospace; font-size: 13px; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word;
+  color: #303133; max-height: 400px; overflow: auto;
+}
+.output-body.output-error { color: #f56c6c; background: #fef0f0; }
+
+/* MINDMAP */
+.mindmap-svg { overflow-x: auto; padding: 12px 0; }
+.mindmap-svg :deep(svg) { max-width: 100%; height: auto; }
+
+/* HTML iframe */
+.html-frame { width: 100%; min-height: 600px; border: 1px solid #eef0f4; border-radius: 10px; background: #fff; }
+
+/* fallback */
+.raw-fallback { white-space: pre-wrap; font-size: 13px; color: #4a4f5e; }
 
 @media (max-width: 800px) {
   .resource-grid { grid-template-columns: repeat(4, 1fr); }

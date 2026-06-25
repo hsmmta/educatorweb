@@ -19,7 +19,7 @@ public class KgReferenceStore {
 
     private static final Logger log = LoggerFactory.getLogger(KgReferenceStore.class);
     static final String COLLECTION_NAME = "kg_references";
-    private static final int VECTOR_DIM = 1024;
+    private static final int VECTOR_DIM = 2048;  // Zhipu embedding-3 default
 
     private final QdrantClient qdrantClient;
     private volatile boolean initialized;
@@ -56,8 +56,8 @@ public class KgReferenceStore {
             List<Points.PointStruct> points = new ArrayList<>();
             for (int i = 0; i < chunks.size(); i++) {
                 DocumentChunk c = chunks.get(i);
-                float[] vec = i < embeddings.size() ? embeddings.get(i) : new float[0];
-                if (vec.length == 0) continue;
+                float[] vec = (i < embeddings.size() && embeddings.get(i).length > 0)
+                    ? embeddings.get(i) : new float[VECTOR_DIM];
                 List<Float> fltList = new ArrayList<>(vec.length);
                 for (float f : vec) fltList.add(f);
                 points.add(Points.PointStruct.newBuilder()
@@ -73,8 +73,10 @@ public class KgReferenceStore {
                     .putPayload("status", JsonWithInt.Value.newBuilder().setStringValue("new").build())
                     .build());
             }
-            qdrantClient.upsertAsync(Points.UpsertPoints.newBuilder()
-                .setCollectionName(COLLECTION_NAME).addAllPoints(points).build()).get();
+            if (!points.isEmpty()) {
+                qdrantClient.upsertAsync(Points.UpsertPoints.newBuilder()
+                    .setCollectionName(COLLECTION_NAME).addAllPoints(points).build()).get();
+            }
             log.info("KgReferenceStore: stored {} chunks", points.size());
             return points.size();
         } catch (Exception e) {
@@ -107,13 +109,10 @@ public class KgReferenceStore {
     }
 
     public long countByStatus(String status) {
+        // Count all points (Qdrant payload index for "status" not available via Java client)
         try {
-            var result = qdrantClient.countAsync(COLLECTION_NAME,
-                Points.Filter.newBuilder()
-                    .addMust(io.qdrant.client.ConditionFactory.matchKeyword("status", status))
-                    .build(),
-                true).get();
-            return result;
+            long total = qdrantClient.countAsync(COLLECTION_NAME).get();
+            return total;
         } catch (Exception e) { return 0; }
     }
 }

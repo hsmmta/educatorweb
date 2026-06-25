@@ -1,17 +1,4 @@
-import axios from 'axios'
-
-const request = axios.create({
-  baseURL: '/api',
-  timeout: 10000
-})
-
-request.interceptors.request.use(config => {
-  const token = localStorage.getItem('token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
+import request from './request'
 
 // 认证相关
 export const registerApi = (data) => request.post('/auth/register', data)

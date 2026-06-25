@@ -47,6 +47,12 @@ kg:
       - url: https://github.com/eriklindernoren/ML-From-Scratch
         name: ml-from-scratch
         type: code-repo
+      - url: https://github.com/josephmisiti/awesome-machine-learning
+        name: awesome-ml
+        type: awesome-list
+      - url: https://github.com/ChristosChristofidis/awesome-deep-learning
+        name: awesome-dl
+        type: awesome-list
     web-api:
       enabled: false
       provider: tavily
