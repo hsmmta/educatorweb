@@ -3,6 +3,10 @@ package org.example.educatorweb.aitutor.service;
 import org.example.educatorweb.aitutor.config.ChromaClient;
 import org.example.educatorweb.aitutor.model.ChatRequest;
 import org.example.educatorweb.aitutor.model.ChatResponse;
+import org.example.educatorweb.aitutor.search.WebSearchService;
+import org.example.educatorweb.aitutor.search.WebSearchService.SearchResult;
+import org.example.educatorweb.knowledgegraph.KnowledgeGraphService;
+import org.example.educatorweb.knowledgegraph.model.KnowledgeContext;
 import org.example.educatorweb.rag.RagService;
 import org.example.educatorweb.rag.model.DocumentSnippet;
 import org.example.educatorweb.rag.service.EmbeddingService;
@@ -25,20 +29,29 @@ public class AiTutorServiceImpl implements AiTutorService {
 
     private static final int RAG_TOP_K = 5;
     private static final int HISTORY_TOP_K = 4;
+    private static final int WEB_TOP_K = 3;
+    /** Threshold: launch web search when RAG snippet count is below this */
+    private static final int WEB_FALLBACK_THRESHOLD = 2;
 
     private final ModelRegistry modelRegistry;
     private final RagService ragService;
     private final EmbeddingService embeddingService;
     private final ChromaClient chromaClient;
+    private final KnowledgeGraphService kgService;
+    private final WebSearchService webSearchService;
 
     public AiTutorServiceImpl(ModelRegistry modelRegistry,
                               RagService ragService,
                               EmbeddingService embeddingService,
-                              ChromaClient chromaClient) {
+                              ChromaClient chromaClient,
+                              KnowledgeGraphService kgService,
+                              WebSearchService webSearchService) {
         this.modelRegistry = modelRegistry;
         this.ragService = ragService;
         this.embeddingService = embeddingService;
         this.chromaClient = chromaClient;
+        this.kgService = kgService;
+        this.webSearchService = webSearchService;
     }
 
     @Override
@@ -52,22 +65,31 @@ public class AiTutorServiceImpl implements AiTutorService {
         log.info("AiTutor: student={}, conversation={}, question(len={})",
             studentId, conversationId, question.length());
 
-        // 1. RAG — retrieve relevant knowledge from the document store
+        // 1. RAG — retrieve from private think-tank (Qdrant)
         List<DocumentSnippet> ragSnippets = retrieveKnowledge(studentId, question);
 
-        // 2. Retrieve conversation history from Chroma (semantic search)
+        // 2. KG — query the local knowledge graph (Neo4j) for structural context
+        KnowledgeContext kgContext = queryKnowledgeGraph(question);
+
+        // 3. Web — fallback internet search when private think-tank is sparse
+        List<SearchResult> webResults = List.of();
+        if (ragSnippets.size() < WEB_FALLBACK_THRESHOLD) {
+            webResults = searchWeb(question);
+        }
+
+        // 4. Retrieve conversation history from Chroma (semantic search)
         List<Map<String, Object>> historyRecords = retrieveHistory(question, studentId);
 
-        // 3. Build the prompt
-        String prompt = buildPrompt(question, ragSnippets, historyRecords);
+        // 5. Build the prompt
+        String prompt = buildPrompt(question, ragSnippets, kgContext, webResults, historyRecords);
 
-        // 4. Call the LLM
+        // 6. Call the LLM
         String answer = callLlm(prompt);
 
-        // 5. Store this round in Chroma (fire-and-forget; failures are logged but don't fail the response)
+        // 7. Store this round in Chroma
         storeConversation(conversationId, studentId, question, answer);
 
-        // 6. Build response
+        // 8. Build response
         List<ChatResponse.SourceSnippet> sources = ragSnippets.stream()
             .map(s -> new ChatResponse.SourceSnippet(s.content(), s.source(), s.score()))
             .toList();
@@ -156,37 +178,107 @@ public class AiTutorServiceImpl implements AiTutorService {
     }
 
     // ---------------------------------------------------------------
+    // Additional retrieval sources (KG + Web)
+    // ---------------------------------------------------------------
+
+    private KnowledgeContext queryKnowledgeGraph(String question) {
+        try {
+            KnowledgeContext ctx = kgService.queryContext(question);
+            log.debug("AiTutor: KG returned prerequisites={}, successors={}, related={}",
+                ctx.prerequisites().size(), ctx.successors().size(), ctx.relatedConcepts().size());
+            return ctx;
+        } catch (Exception e) {
+            log.warn("AiTutor: KG query failed: {}", e.getMessage());
+            return new KnowledgeContext(List.of(), List.of(), List.of(), 0);
+        }
+    }
+
+    private List<SearchResult> searchWeb(String question) {
+        try {
+            List<SearchResult> results = webSearchService.search(question, WEB_TOP_K);
+            log.debug("AiTutor: web search returned {} results", results.size());
+            return results;
+        } catch (Exception e) {
+            log.warn("AiTutor: web search failed: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    // ---------------------------------------------------------------
     // Prompt building
     // ---------------------------------------------------------------
 
     private String buildPrompt(String question,
                                List<DocumentSnippet> ragSnippets,
+                               KnowledgeContext kgContext,
+                               List<SearchResult> webResults,
                                List<Map<String, Object>> historyRecords) {
         StringBuilder sb = new StringBuilder();
 
-        // System prompt
+        // System prompt (updated with three-level retrieval awareness)
         sb.append("""
             你是一个专业的 AI 助教，负责帮助学生学习知识、解答疑问。
-            你需要：
-            - 基于提供的知识资料进行回答，引用出处
-            - 如果资料不足以回答问题，诚实说明，不要编造
+
+            【检索优先级说明】每次提问按以下三级检索，优先使用私有智库：
+            1. 私人智库（学生上传的资料）— 最高优先级，最相关
+            2. 知识图谱（课程结构化知识）— 提供前置/后继/关联知识点
+            3. 互联网搜索（实时补充）— 仅在私有资料不足时启用
+
+            回答要求：
+            - 优先基于私人智库资料回答，引用出处
+            - 其次参考知识图谱的结构化知识
+            - 最后参考互联网搜索结果
+            - 诚实说明信息来源级别
             - 使用清晰易懂的语言，适合学生的学习水平
             - 适当举例说明抽象概念
             - 回答控制在 300-800 字，简洁有料
 
             """);
 
-        // RAG context
+        // Level 1: RAG (private think-tank)
         if (!ragSnippets.isEmpty()) {
-            sb.append("【参考资料】\n");
+            sb.append("【① 私人智库 — 学生上传的资料】\n");
             for (int i = 0; i < ragSnippets.size(); i++) {
                 DocumentSnippet s = ragSnippets.get(i);
                 sb.append("[").append(i + 1).append("] ").append(s.content()).append("\n");
                 sb.append("    —来源: ").append(s.source()).append("\n\n");
             }
+        } else {
+            sb.append("【① 私人智库】未找到相关私有资料。\n\n");
         }
 
-        // Conversation history (previous Q&A from Chroma)
+        // Level 2: Knowledge Graph
+        if (kgContext != null && (!kgContext.prerequisites().isEmpty()
+                || !kgContext.successors().isEmpty()
+                || !kgContext.relatedConcepts().isEmpty())) {
+            sb.append("【② 知识图谱 — 结构化课程知识】\n");
+            if (!kgContext.prerequisites().isEmpty()) {
+                sb.append("- 前置知识: ").append(String.join("、", kgContext.prerequisites())).append("\n");
+            }
+            if (!kgContext.successors().isEmpty()) {
+                sb.append("- 后继知识: ").append(String.join("、", kgContext.successors())).append("\n");
+            }
+            if (!kgContext.relatedConcepts().isEmpty()) {
+                sb.append("- 关联概念: ").append(String.join("、", kgContext.relatedConcepts())).append("\n");
+            }
+            if (kgContext.difficultyLevel() > 0) {
+                sb.append("- 难度级别: ").append(kgContext.difficultyLevel()).append(" / 5\n");
+            }
+            sb.append("\n");
+        }
+
+        // Level 3: Web search (internet fallback)
+        if (!webResults.isEmpty()) {
+            sb.append("【③ 互联网搜索 — 实时补充资料】\n");
+            for (int i = 0; i < webResults.size(); i++) {
+                SearchResult r = webResults.get(i);
+                sb.append("[").append(i + 1).append("] ").append(r.title()).append("\n");
+                sb.append("    ").append(r.snippet()).append("\n");
+                sb.append("    —链接: ").append(r.url()).append("\n\n");
+            }
+        }
+
+        // Conversation history
         if (!historyRecords.isEmpty()) {
             sb.append("【对话历史】\n");
             for (Map<String, Object> record : historyRecords) {
