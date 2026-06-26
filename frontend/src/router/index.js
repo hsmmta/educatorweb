@@ -16,7 +16,8 @@ const routes = [
       { path: 'learning',  component: () => import('../views/Learning.vue') },
       { path: 'push',      component: () => import('../views/ResourcePush.vue') },
       { path: 'profile',   component: () => import('../views/Profile.vue') },
-      { path: 'profile/edit', component: () => import('../views/EditProfile.vue') }
+      { path: 'profile/edit', component: () => import('../views/EditProfile.vue') },
+      { path: 'profile/chat', component: () => import('../views/ProfileChat.vue') }
     ]
   }
 ]
