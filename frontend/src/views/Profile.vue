@@ -5,7 +5,12 @@
         <h1>📊 个人中心</h1>
         <p>6维学习画像可视化 · 学习效果评估 · 历史记录</p>
       </div>
-      <el-button plain :icon="Edit" @click="$router.push('/profile/edit')">编辑资料</el-button>
+      <div class="header-actions">
+        <el-button type="primary" :icon="ChatDotRound" @click="$router.push('/profile/chat')">
+          构建/更新画像
+        </el-button>
+        <el-button plain :icon="Edit" @click="$router.push('/profile/edit')">编辑资料</el-button>
+      </div>
     </div>
 
     <!-- 基本信息 -->
@@ -19,15 +24,15 @@
         </div>
         <div class="profile-stats">
           <div class="p-stat">
-            <span class="p-stat-num">0</span>
+            <span class="p-stat-num">{{ stats.learningDays }}</span>
             <span class="p-stat-label">学习天数</span>
           </div>
           <div class="p-stat">
-            <span class="p-stat-num">0</span>
+            <span class="p-stat-num">{{ stats.resourceCount }}</span>
             <span class="p-stat-label">生成资源</span>
           </div>
           <div class="p-stat">
-            <span class="p-stat-num">0</span>
+            <span class="p-stat-num">{{ stats.quizCount }}</span>
             <span class="p-stat-label">练习题目</span>
           </div>
         </div>
@@ -37,22 +42,32 @@
     <div class="two-col">
       <!-- 6维学习画像 -->
       <section class="section">
-        <h3>🧠 6维学习画像</h3>
+        <h3>
+          🧠 6维学习画像
+          <span v-if="!profileExists" class="section-badge">待构建</span>
+          <span v-else class="section-badge ready">已构建</span>
+        </h3>
         <div class="dimension-card">
           <div v-for="dim in dimensions" :key="dim.key" class="dim-item">
             <div class="dim-header">
               <span class="dim-icon">{{ dim.icon }}</span>
               <span class="dim-label">{{ dim.label }}</span>
-              <span class="dim-value">{{ dim.value || '待构建' }}</span>
+              <span :class="['dim-value', { placeholder: !dim.value }]">
+                {{ dim.value || '待构建' }}
+              </span>
             </div>
             <el-progress
-              :percentage="dim.confidence || 0"
+              :percentage="dim.confidence"
               :color="dim.color"
               :stroke-width="6"
             >
-              <span class="dim-confidence">{{ dim.confidence || 0 }}% 置信度</span>
+              <span class="dim-confidence">{{ dim.confidence }}% 置信度</span>
             </el-progress>
           </div>
+        </div>
+        <div v-if="!profileExists" class="card-tip">
+          还没有学习画像？
+          <el-link type="primary" @click="$router.push('/profile/chat')">通过对话构建 →</el-link>
         </div>
       </section>
 
@@ -62,30 +77,20 @@
         <div class="assessment-card">
           <div class="assess-overview">
             <div class="assess-score">
-              <span class="score-num">--</span>
+              <span class="score-num">{{ assessment.compositeScore }}</span>
               <span class="score-label">综合评分</span>
             </div>
             <div class="assess-detail">
-              <div class="assess-row">
-                <span>知识掌握</span>
-                <el-progress :percentage="0" :stroke-width="8" :show-text="false" />
-              </div>
-              <div class="assess-row">
-                <span>练习正确率</span>
-                <el-progress :percentage="0" :stroke-width="8" :show-text="false" color="#67c23a" />
-              </div>
-              <div class="assess-row">
-                <span>学习投入度</span>
-                <el-progress :percentage="0" :stroke-width="8" :show-text="false" color="#e6a23c" />
-              </div>
-              <div class="assess-row">
-                <span>资源利用率</span>
-                <el-progress :percentage="0" :stroke-width="8" :show-text="false" color="#f56c6c" />
+              <div v-for="item in assessment.details" :key="item.label" class="assess-row">
+                <span>{{ item.label }}</span>
+                <el-progress :percentage="item.value" :stroke-width="8" :show-text="false" :color="item.color" />
               </div>
             </div>
           </div>
           <div class="assess-tip">
-            💡 完成首次学习后，系统将自动生成绩效评估报告
+            💡 {{ profileExists
+              ? '在学习过程中评估将实时更新'
+              : '完成首次学习后，系统将自动生成评估报告' }}
           </div>
         </div>
       </section>
@@ -95,26 +100,39 @@
     <section class="section">
       <h3>📋 学习记录</h3>
       <div class="history-card">
-        <el-empty description="还没有学习记录" :image-size="80">
+        <el-empty v-if="stats.resourceCount === 0" description="还没有学习记录" :image-size="80">
           <el-button type="primary" @click="$router.push('/learning')">去生成资源</el-button>
         </el-empty>
+        <div v-else class="history-placeholder">
+          <p>共生成 <strong>{{ stats.resourceCount }}</strong> 项学习资源，完成 <strong>{{ stats.quizCount }}</strong> 道练习题</p>
+        </div>
       </div>
     </section>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Edit, UserFilled } from '@element-plus/icons-vue'
+import { ref, reactive, onMounted } from 'vue'
+import { Edit, UserFilled, ChatDotRound } from '@element-plus/icons-vue'
+import { getProfileSummaryApi } from '../api/index.js'
 
 const userInfo = ref({})
+const profileExists = ref(false)
 
-onMounted(() => {
-  const info = localStorage.getItem('userInfo')
-  if (info) {
-    try { userInfo.value = JSON.parse(info) } catch (e) { userInfo.value = {} }
-  }
+const stats = reactive({
+  learningDays: 0,
+  resourceCount: 0,
+  quizCount: 0
+})
+
+const assessment = reactive({
+  compositeScore: '--',
+  details: [
+    { label: '知识掌握', value: 0, color: '#667eea' },
+    { label: '练习正确率', value: 0, color: '#67c23a' },
+    { label: '学习投入度', value: 0, color: '#e6a23c' },
+    { label: '资源利用率', value: 0, color: '#f56c6c' }
+  ]
 })
 
 const dimensions = ref([
@@ -125,6 +143,55 @@ const dimensions = ref([
   { key: 'preference',  icon: '🎯', label: '内容偏好',   value: '', color: '#ec4899', confidence: 0 },
   { key: 'goal',        icon: '🏆', label: '目标导向',   value: '', color: '#a855f7', confidence: 0 }
 ])
+
+function getStudentId() {
+  try {
+    const info = JSON.parse(localStorage.getItem('userInfo') || '{}')
+    return info.id || info.phone || 'anonymous'
+  } catch { return 'anonymous' }
+}
+
+onMounted(async () => {
+  // 加载用户基本信息
+  const info = localStorage.getItem('userInfo')
+  if (info) {
+    try { userInfo.value = JSON.parse(info) } catch { userInfo.value = {} }
+  }
+
+  // 加载学习画像
+  try {
+    const res = await getProfileSummaryApi(getStudentId())
+    const data = res.data?.data
+    if (data && data.exists) {
+      profileExists.value = true
+      // 映射画像数据到显示维度
+      const confMap = data.confidences || {}
+      const mapDim = (key, val, confField) => ({
+        value: val || '',
+        confidence: Math.round((confMap[confField] || 0) * 100)
+      })
+
+      const km = mapDim('knowledge', data.knowledgeBaseLevel, 'knowledge')
+      const cm = mapDim('cognitive', data.cognitiveStyleType, 'cognitive')
+      const em = mapDim('error',
+        (data.errorPatternTags || []).join('、'), 'error')
+      const pm = mapDim('pace', data.learningPaceType, 'pace')
+      const prm = mapDim('preference', data.contentPreferenceType, 'goal')
+      const gm = mapDim('goal', data.goalOrientationType, 'goal')
+
+      dimensions.value = [
+        { key: 'knowledge',   icon: '📖', label: '知识基础',   ...km, color: '#667eea' },
+        { key: 'cognitive',   icon: '🧩', label: '认知风格',   ...cm, color: '#3b82f6' },
+        { key: 'error',       icon: '⚠️', label: '易错偏好',   ...em, color: '#f97316' },
+        { key: 'pace',        icon: '🏃', label: '学习步调',   ...pm, color: '#22c55e' },
+        { key: 'preference',  icon: '🎯', label: '内容偏好',   ...prm, color: '#ec4899' },
+        { key: 'goal',        icon: '🏆', label: '目标导向',   ...gm, color: '#a855f7' }
+      ]
+    }
+  } catch {
+    // 画像加载失败，使用默认空值
+  }
+})
 </script>
 
 <style scoped>
@@ -137,9 +204,12 @@ const dimensions = ref([
 }
 .header-left h1 { font-size: 26px; font-weight: 700; color: #1a1a2e; margin: 0 0 6px; }
 .header-left p { font-size: 14px; color: #8890a0; margin: 0; }
+.header-actions { display: flex; gap: 10px; flex-shrink: 0; }
 
 .section { margin-top: 24px; }
-.section h3 { font-size: 18px; font-weight: 600; color: #1a1a2e; margin: 0 0 14px; }
+.section h3 { font-size: 18px; font-weight: 600; color: #1a1a2e; margin: 0 0 14px; display: flex; align-items: center; gap: 10px; }
+.section-badge { font-size: 11px; padding: 2px 10px; border-radius: 10px; background: #f2f3f7; color: #909399; font-weight: 400; }
+.section-badge.ready { background: #eef0ff; color: #667eea; }
 
 /* 个人信息卡片 */
 .profile-card {
@@ -167,7 +237,9 @@ const dimensions = ref([
 .dim-icon { font-size: 18px; }
 .dim-label { font-size: 14px; font-weight: 600; color: #1a1a2e; }
 .dim-value { margin-left: auto; font-size: 13px; color: #667eea; font-weight: 500; }
+.dim-value.placeholder { color: #c0c4cc; }
 .dim-confidence { font-size: 11px; color: #909399; }
+.card-tip { text-align: center; font-size: 13px; color: #909399; margin-top: 4px; }
 
 /* 评估 */
 .assessment-card {
@@ -192,10 +264,12 @@ const dimensions = ref([
   background: #fff; padding: 32px; border-radius: 16px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.03);
 }
+.history-placeholder { text-align: center; color: #8890a0; font-size: 14px; }
 
 @media (max-width: 800px) {
   .two-col { grid-template-columns: 1fr; }
   .profile-card { flex-direction: column; text-align: center; }
   .assess-overview { flex-direction: column; }
+  .page-header { flex-direction: column; gap: 12px; }
 }
 </style>

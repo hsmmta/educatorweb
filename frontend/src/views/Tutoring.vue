@@ -3,27 +3,27 @@
     <div class="page-header">
       <div class="header-left">
         <h1>🎓 智能辅导</h1>
-        <p>三级检索链路：私有智库 → 知识图谱 → 互联网，确保答案准确可靠</p>
+        <p>三级检索链路：私有智库 → 知识图谱 → AI大模型，确保答案准确可靠</p>
       </div>
     </div>
 
     <!-- 检索链路可视化 -->
     <div class="retrieval-chain">
-      <div class="chain-node active">
+      <div :class="['chain-node', { active: currentActiveStep === 'L1' }]">
         <div class="node-icon">📚</div>
         <div class="node-label">私有智库</div>
         <div class="node-badge">优先</div>
       </div>
       <div class="chain-line"></div>
-      <div class="chain-node">
+      <div :class="['chain-node', { active: currentActiveStep === 'L2' }]">
         <div class="node-icon">🧩</div>
         <div class="node-label">知识图谱</div>
         <div class="node-badge">次选</div>
       </div>
       <div class="chain-line"></div>
-      <div class="chain-node">
-        <div class="node-icon">🌐</div>
-        <div class="node-label">互联网</div>
+      <div :class="['chain-node', { active: currentActiveStep === 'L3' }]">
+        <div class="node-icon">🤖</div>
+        <div class="node-label">AI大模型</div>
         <div class="node-badge">兜底</div>
       </div>
     </div>
@@ -46,7 +46,13 @@
             <el-tag size="small" v-if="materialCount > 0" type="success">私有智库: {{ materialCount }} 份资料</el-tag>
             <el-tag size="small" v-else type="warning">私有智库为空，将直接检索知识图谱</el-tag>
           </div>
-          <el-button type="primary" :icon="Promotion" :loading="asking" @click="askQuestion" :disabled="!question.trim()">
+          <el-button
+            type="primary"
+            :icon="Promotion"
+            :loading="asking"
+            @click="askQuestion"
+            :disabled="!question.trim()"
+          >
             提问
           </el-button>
         </div>
@@ -57,6 +63,7 @@
         <div v-for="step in retrievalSteps" :key="step.id" :class="['log-item', `log-${step.status}`]">
           <el-icon v-if="step.status === 'done'" class="log-icon"><CircleCheckFilled /></el-icon>
           <el-icon v-else-if="step.status === 'loading'" class="log-icon loading"><Loading /></el-icon>
+          <el-icon v-else-if="step.status === 'error'" class="log-icon error-icon"><WarningFilled /></el-icon>
           <span class="log-text">{{ step.text }}</span>
           <span class="log-source" v-if="step.source">{{ step.source }}</span>
         </div>
@@ -70,11 +77,10 @@
             <el-tag :type="answerSourceType" size="small">{{ answerSourceLabel }}</el-tag>
           </span>
         </div>
-        <div class="answer-body" v-html="answer"></div>
+        <div class="answer-body" v-html="renderedAnswer"></div>
         <div class="answer-footer">
-          <el-button text :icon="DocumentCopy">复制</el-button>
-          <el-button text :icon="RefreshRight">重新生成</el-button>
-          <el-button text :icon="CircleCheck">有帮助</el-button>
+          <el-button text :icon="DocumentCopy" @click="copyAnswer">复制</el-button>
+          <el-button text :icon="RefreshRight" @click="askQuestion">重新生成</el-button>
         </div>
       </div>
     </div>
@@ -84,18 +90,53 @@
 <script setup>
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Promotion, CircleCheckFilled, Loading, DocumentCopy, RefreshRight, CircleCheck } from '@element-plus/icons-vue'
-
-// 接口预留：后续对接后端辅导 API
-const API_BASE = '/api/tutoring'
+import { Promotion, CircleCheckFilled, Loading, WarningFilled, DocumentCopy, RefreshRight } from '@element-plus/icons-vue'
+import axios from 'axios'
 
 const question = ref('')
 const asking = ref(false)
 const answer = ref('')
 const answerSourceLabel = ref('')
 const answerSourceType = ref('info')
-const materialCount = ref(0)  // TODO: 从私人智库获取
+const materialCount = ref(0)
 const retrievalSteps = ref([])
+const currentActiveStep = ref('L1')
+
+function getStudentId() {
+  try {
+    const info = JSON.parse(localStorage.getItem('userInfo') || '{}')
+    return info.id || info.phone || 'anonymous'
+  } catch { return 'anonymous' }
+}
+
+const renderedAnswer = ref('')
+
+function renderMarkdownSimple(content) {
+  if (!content) return ''
+  let html = content
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    // 代码块
+    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="answer-code"><code>$2</code></pre>')
+    .replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
+    // 标题
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    // 加粗/斜体
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // LaTeX 公式 (简单保护)
+    .replace(/\$\$(.+?)\$\$/g, '<span class="latex-block">$$$1$$</span>')
+    .replace(/\$(.+?)\$/g, '<span class="latex-inline">$$$1$$</span>')
+    // 列表
+    .replace(/^- (.+)$/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+    .replace(/^\d+\.\s(.+)$/gm, '<li>$1</li>')
+    // 换行
+    .replace(/\n\n/g, '</p><p>')
+    .replace(/\n/g, '<br>')
+  return '<p>' + html + '</p>'
+}
 
 const askQuestion = async () => {
   if (!question.value.trim()) return
@@ -103,59 +144,55 @@ const askQuestion = async () => {
   answer.value = ''
   retrievalSteps.value = []
 
+  // 初始化检索状态
+  currentActiveStep.value = 'L1'
+
   try {
-    // 模拟三级检索过程
-    await simulateRetrieval()
-    // TODO: 对接后端 API
-    // const res = await axios.post(`${API_BASE}/ask`, { question: question.value })
-    // answer.value = res.data.data.answer
-    answer.value = `<p>这是模拟回答。实际将按以下链路检索：</p>
-      <ol>
-        <li><strong>私有智库</strong>：优先检索你上传的资料</li>
-        <li><strong>知识图谱</strong>：私有智库未覆盖时，查询学科知识图谱</li>
-        <li><strong>互联网</strong>：前两者都无结果时，搜索公开学术资源</li>
-      </ol>
-      <p>接口已预留，等待后端接入。</p>`
-    answerSourceLabel.value = '模拟'
-    answerSourceType.value = 'info'
+    const res = await axios.post('/api/tutoring/ask', {
+      studentId: getStudentId(),
+      question: question.value
+    })
+
+    const data = res.data?.data
+    if (data) {
+      answer.value = data.answer
+      answerSourceLabel.value = data.source || 'AI大模型'
+      answerSourceType.value = data.sourceType || 'info'
+      renderedAnswer.value = renderMarkdownSimple(data.answer || '')
+
+      // 显示检索步骤
+      if (data.retrievalSteps) {
+        retrievalSteps.value = data.retrievalSteps.map(s => ({
+          id: s.id,
+          text: s.text,
+          status: s.status,
+          source: s.source
+        }))
+
+        // 更新活跃步骤高亮
+        const lastDone = [...retrievalSteps.value].reverse().find(s => s.status === 'done')
+        if (lastDone) {
+          if (lastDone.id === 'L3_LLM') currentActiveStep.value = 'L3'
+          else if (lastDone.id === 'L2_KG') currentActiveStep.value = 'L2'
+          else currentActiveStep.value = 'L1'
+        }
+      }
+    }
   } catch (e) {
-    ElMessage.error('提问失败，请稍后重试')
+    ElMessage.error('提问失败: ' + (e.response?.data?.message || e.message))
   } finally {
     asking.value = false
     question.value = ''
   }
 }
 
-const simulateRetrieval = async () => {
-  const steps = [
-    { id: 1, text: '正在检索私有智库...', status: 'loading', source: '' },
-    { id: 2, text: '正在检索知识图谱...', status: 'pending', source: '' },
-    { id: 3, text: '正在检索互联网资源...', status: 'pending', source: '' }
-  ]
-
-  retrievalSteps.value = [steps[0]]
-  await delay(800)
-  steps[0].status = 'done'
-  steps[0].text = '私有智库检索完成'
-  steps[0].source = materialCount.value > 0 ? `找到 ${materialCount.value} 份相关资料` : '无相关资料'
-  retrievalSteps.value = [steps[0], steps[1]]
-  steps[1].status = 'loading'
-
-  await delay(600)
-  steps[1].status = 'done'
-  steps[1].text = '知识图谱检索完成'
-  steps[1].source = '找到 3 个相关知识节点'
-  retrievalSteps.value = [steps[0], steps[1], steps[2]]
-  steps[2].status = 'loading'
-
-  await delay(400)
-  steps[2].status = 'done'
-  steps[2].text = '互联网检索完成'
-  steps[2].source = '找到 5 条参考资源'
-  retrievalSteps.value = [...steps]
+const copyAnswer = () => {
+  if (answer.value) {
+    navigator.clipboard.writeText(answer.value.replace(/<[^>]*>/g, ''))
+      .then(() => ElMessage.success('已复制到剪贴板'))
+      .catch(() => ElMessage.warning('复制失败'))
+  }
 }
-
-const delay = (ms) => new Promise(r => setTimeout(r, ms))
 </script>
 
 <style scoped>
@@ -177,7 +214,7 @@ const delay = (ms) => new Promise(r => setTimeout(r, ms))
 }
 .chain-node {
   display: flex; flex-direction: column; align-items: center; gap: 6px;
-  position: relative;
+  position: relative; transition: all 0.3s;
 }
 .chain-node .node-icon { font-size: 28px; }
 .chain-node .node-label { font-size: 13px; font-weight: 500; color: #4a4f5e; }
@@ -186,6 +223,7 @@ const delay = (ms) => new Promise(r => setTimeout(r, ms))
   background: #f2f3f7; color: #909399;
 }
 .chain-node.active .node-badge { background: #eef0ff; color: #667eea; font-weight: 600; }
+.chain-node.active .node-label { color: #667eea; font-weight: 600; }
 .chain-line {
   width: 60px; height: 2px; background: linear-gradient(90deg, #dcdfe6, #c0c4cc);
   margin: 0 16px 20px;
@@ -209,6 +247,7 @@ const delay = (ms) => new Promise(r => setTimeout(r, ms))
 .log-icon { font-size: 16px; }
 .log-done .log-icon { color: #67c23a; }
 .log-loading .log-icon { color: #667eea; animation: spin 1s linear infinite; }
+.log-error .error-icon { color: #f56c6c; }
 .log-text { font-size: 13px; color: #4a4f5e; }
 .log-source { margin-left: auto; font-size: 12px; color: #909399; }
 .log-pending { opacity: 0.4; }
@@ -223,8 +262,24 @@ const delay = (ms) => new Promise(r => setTimeout(r, ms))
 .answer-header { margin-bottom: 16px; }
 .answer-source { font-size: 13px; color: #8890a0; }
 .answer-body { font-size: 15px; line-height: 1.8; color: #1a1a2e; }
-.answer-body :deep(ol) { padding-left: 20px; }
-.answer-body :deep(li) { margin: 8px 0; }
+.answer-body :deep(h1) { font-size: 20px; margin: 16px 0 10px; color: #1a1a2e; }
+.answer-body :deep(h2) { font-size: 18px; margin: 14px 0 8px; color: #1a1a2e; }
+.answer-body :deep(h3) { font-size: 16px; margin: 12px 0 6px; }
+.answer-body :deep(ul), .answer-body :deep(ol) { padding-left: 20px; }
+.answer-body :deep(li) { margin: 6px 0; }
+.answer-body :deep(.answer-code) {
+  background: #1e1e2e; color: #cdd6f4; padding: 14px 18px;
+  border-radius: 8px; overflow-x: auto; font-size: 13px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  line-height: 1.6; margin: 10px 0;
+}
+.answer-body :deep(.inline-code) {
+  background: #f5f6fa; padding: 2px 6px; border-radius: 4px;
+  font-size: 13px; font-family: 'Consolas', 'Monaco', monospace;
+}
+.answer-body :deep(.latex-block), .answer-body :deep(.latex-inline) {
+  color: #667eea; font-family: 'Georgia', serif;
+}
 .answer-footer {
   display: flex; gap: 8px; margin-top: 20px;
   padding-top: 16px; border-top: 1px solid #f2f3f7;
