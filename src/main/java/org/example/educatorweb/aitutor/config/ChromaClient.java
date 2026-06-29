@@ -131,7 +131,8 @@ public class ChromaClient {
     }
 
     /**
-     * List distinct conversations for a user, grouped by conversationId.
+     * List distinct conversations for a user, grouped by conversationId,
+     * sorted by last-activity timestamp (most recent first).
      *
      * <p>Uses Chroma's POST /api/v1/collections/{name}/get with a metadata
      * filter on {@code userId}. Each returned entry is a map containing
@@ -139,72 +140,60 @@ public class ChromaClient {
      * and {@code timestamp} (latest message time in the conversation).
      */
     public List<Map<String, Object>> listConversations(String userId) {
-        String collId = ensureCollection();
-        if (collId == null) return List.of();
+        ChromaGetResult result = chromaGet(Map.of("userId", userId));
+        if (result == null || result.metadatas() == null) return List.of();
 
-        try {
-            Map<String, Object> body = Map.of(
-                "where", Map.of("userId", userId),
-                "include", List.of("metadatas", "documents")
-            );
-            Map<String, Object> response = restClient.post()
-                .uri("/api/v1/collections/{name}/get", COLLECTION_NAME)
-                .body(body)
-                .retrieve()
-                .body(new ParameterizedTypeReference<Map<String, Object>>() {});
-            if (response == null) return List.of();
+        List<Map<String, Object>> metadatas = result.metadatas();
+        List<String> documents = result.documents();
 
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> metadatas = (List<Map<String, Object>>) response.get("metadatas");
-            @SuppressWarnings("unchecked")
-            List<String> documents = (List<String>) response.get("documents");
-            if (metadatas == null) return List.of();
+        Map<String, Map<String, Object>> convMap = new LinkedHashMap<>();
+        // Earliest user-message timestamp per conversation (drives title selection).
+        Map<String, String> earliestUserTs = new HashMap<>();
 
-            Map<String, Map<String, Object>> convMap = new LinkedHashMap<>();
-            // Earliest user-message timestamp per conversation (drives title selection).
-            Map<String, String> earliestUserTs = new HashMap<>();
+        for (int i = 0; i < metadatas.size(); i++) {
+            Map<String, Object> meta = metadatas.get(i);
+            if (meta == null) continue;
+            String convId = (String) meta.get("conversationId");
+            if (convId == null) continue;
+            String role = (String) meta.get("role");
+            String ts = meta.get("timestamp") != null ? String.valueOf(meta.get("timestamp")) : null;
+            String doc = (documents != null && i < documents.size()) ? documents.get(i) : null;
 
-            for (int i = 0; i < metadatas.size(); i++) {
-                Map<String, Object> meta = metadatas.get(i);
-                if (meta == null) continue;
-                String convId = (String) meta.get("conversationId");
-                if (convId == null) continue;
-                String role = (String) meta.get("role");
-                String ts = meta.get("timestamp") != null ? String.valueOf(meta.get("timestamp")) : null;
-                String doc = (documents != null && i < documents.size()) ? documents.get(i) : null;
+            String tsForLambda = ts;
+            Map<String, Object> entry = convMap.computeIfAbsent(convId, k -> {
+                Map<String, Object> e = new LinkedHashMap<>();
+                e.put("conversationId", k);
+                e.put("title", "");
+                e.put("timestamp", tsForLambda);
+                return e;
+            });
 
-                String tsForLambda = ts;
-                Map<String, Object> entry = convMap.computeIfAbsent(convId, k -> {
-                    Map<String, Object> e = new LinkedHashMap<>();
-                    e.put("conversationId", k);
-                    e.put("title", "");
-                    e.put("timestamp", tsForLambda);
-                    return e;
-                });
-
-                // Track the latest timestamp as the conversation's last-activity time.
-                if (ts != null) {
-                    String existing = (String) entry.get("timestamp");
-                    if (existing == null || ts.compareTo(existing) > 0) {
-                        entry.put("timestamp", ts);
-                    }
-                }
-
-                // Title = earliest user message text, truncated.
-                if ("user".equals(role) && doc != null && !doc.isBlank()) {
-                    String prev = earliestUserTs.get(convId);
-                    String cmp = ts != null ? ts : "";
-                    if (prev == null || cmp.compareTo(prev) < 0) {
-                        earliestUserTs.put(convId, cmp);
-                        entry.put("title", truncate(doc, 50));
-                    }
+            // Track the latest timestamp as the conversation's last-activity time.
+            if (ts != null) {
+                String existing = (String) entry.get("timestamp");
+                if (existing == null || ts.compareTo(existing) > 0) {
+                    entry.put("timestamp", ts);
                 }
             }
-            return new ArrayList<>(convMap.values());
-        } catch (Exception e) {
-            log.warn("ChromaClient: listConversations failed: {}", e.getMessage());
-            return List.of();
+
+            // Title = earliest user message text, truncated.
+            if ("user".equals(role) && doc != null && !doc.isBlank()) {
+                String prev = earliestUserTs.get(convId);
+                String cmp = ts != null ? ts : "";
+                if (prev == null || cmp.compareTo(prev) < 0) {
+                    earliestUserTs.put(convId, cmp);
+                    entry.put("title", truncate(doc, 50));
+                }
+            }
         }
+
+        List<Map<String, Object>> conversations = new ArrayList<>(convMap.values());
+        // Most-recent activity first.
+        conversations.sort(Comparator.comparing((Map<String, Object> c) -> {
+            Object t = c.get("timestamp");
+            return t != null ? t.toString() : "";
+        }).reversed());
+        return conversations;
     }
 
     /**
@@ -214,17 +203,43 @@ public class ChromaClient {
      * assistant reply.
      */
     public List<Map<String, Object>> getConversationMessages(String conversationId, String userId) {
-        String collId = ensureCollection();
-        if (collId == null) return List.of();
+        ChromaGetResult result = chromaGet(Map.of(
+            "$and", List.of(
+                Map.of("userId", userId),
+                Map.of("conversationId", conversationId)
+            )
+        ));
+        if (result == null || result.metadatas() == null || result.documents() == null) return List.of();
 
+        List<Map<String, Object>> metadatas = result.metadatas();
+        List<String> documents = result.documents();
+
+        List<Map<String, Object>> messages = new ArrayList<>();
+        for (int i = 0; i < Math.min(metadatas.size(), documents.size()); i++) {
+            Map<String, Object> msg = new LinkedHashMap<>();
+            msg.put("metadata", metadatas.get(i));
+            msg.put("document", documents.get(i));
+            messages.add(msg);
+        }
+        messages.sort(Comparator
+            .comparing(ChromaClient::timestampOf)
+            .thenComparingInt(ChromaClient::roleRank));
+        return messages;
+    }
+
+    /** Parsed Chroma {@code /get} response: flat metadata + document lists. */
+    private record ChromaGetResult(List<Map<String, Object>> metadatas, List<String> documents) {}
+
+    /**
+     * Run a Chroma POST /get with the given {@code where} filter, requesting
+     * metadatas + documents. Returns the parsed (flat) lists, or {@code null}
+     * if the collection is unavailable or the response is missing/malformed.
+     */
+    private ChromaGetResult chromaGet(Map<String, Object> where) {
+        if (ensureCollection() == null) return null;
         try {
             Map<String, Object> body = Map.of(
-                "where", Map.of(
-                    "$and", List.of(
-                        Map.of("userId", userId),
-                        Map.of("conversationId", conversationId)
-                    )
-                ),
+                "where", where,
                 "include", List.of("metadatas", "documents")
             );
             Map<String, Object> response = restClient.post()
@@ -232,28 +247,16 @@ public class ChromaClient {
                 .body(body)
                 .retrieve()
                 .body(new ParameterizedTypeReference<Map<String, Object>>() {});
-            if (response == null) return List.of();
+            if (response == null) return null;
 
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> metadatas = (List<Map<String, Object>>) response.get("metadatas");
             @SuppressWarnings("unchecked")
             List<String> documents = (List<String>) response.get("documents");
-            if (metadatas == null || documents == null) return List.of();
-
-            List<Map<String, Object>> messages = new ArrayList<>();
-            for (int i = 0; i < Math.min(metadatas.size(), documents.size()); i++) {
-                Map<String, Object> msg = new LinkedHashMap<>();
-                msg.put("metadata", metadatas.get(i));
-                msg.put("document", documents.get(i));
-                messages.add(msg);
-            }
-            messages.sort(Comparator
-                .comparing(ChromaClient::timestampOf)
-                .thenComparingInt(ChromaClient::roleRank));
-            return messages;
+            return new ChromaGetResult(metadatas, documents);
         } catch (Exception e) {
-            log.warn("ChromaClient: getConversationMessages failed: {}", e.getMessage());
-            return List.of();
+            log.warn("ChromaClient: get failed: {}", e.getMessage());
+            return null;
         }
     }
 
