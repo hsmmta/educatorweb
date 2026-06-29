@@ -1,13 +1,14 @@
 <template>
   <aside class="chat-sidebar" :class="{ collapsed }">
     <div class="sidebar-head">
-      <el-button type="primary" size="small" :icon="Plus" @click="$emit('new-conversation')" block>
+      <el-button v-if="!collapsed" type="primary" size="small" :icon="Plus" @click="$emit('new-conversation')" style="width: 100%">
         新对话
       </el-button>
-      <el-button text size="small" :icon="Fold" @click="collapsed = !collapsed" class="collapse-btn" />
+      <el-button text size="small" :icon="collapsed ? Expand : Fold" @click="collapsed = !collapsed" class="collapse-btn" />
     </div>
 
     <el-input
+      v-if="!collapsed"
       v-model="searchText"
       placeholder="搜索历史对话..."
       size="small"
@@ -16,7 +17,7 @@
       :prefix-icon="Search"
     />
 
-    <div class="conv-list">
+    <div v-if="!collapsed" class="conv-list">
       <template v-for="group in groupedConversations" :key="group.label">
         <div class="group-label">{{ group.label }}</div>
         <div
@@ -24,6 +25,8 @@
           :key="conv.conversationId"
           :class="['conv-item', { active: activeId === conv.conversationId }]"
           @click="$emit('select', conv)"
+          @mouseenter="hoveredId = conv.conversationId"
+          @mouseleave="hoveredId = ''"
         >
           <el-icon class="conv-icon"><ChatDotRound /></el-icon>
           <span class="conv-title">{{ conv.title || '新对话' }}</span>
@@ -36,14 +39,14 @@
           />
         </div>
       </template>
-      <el-empty v-if="filteredConversations.length === 0" description="暂无对话" :image-size="60" />
+      <el-empty v-if="filteredConversations.length === 0" :description="searchText.trim() ? '没有匹配的对话' : '暂无对话'" :image-size="60" />
     </div>
   </aside>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
-import { Plus, Fold, Search, ChatDotRound, Delete } from '@element-plus/icons-vue'
+import { Plus, Fold, Expand, Search, ChatDotRound, Delete } from '@element-plus/icons-vue'
 
 const props = defineProps({
   conversations: { type: Array, default: () => [] },
@@ -92,7 +95,7 @@ const groupedConversations = computed(() => {
   background: #fff; border-right: 1px solid #eef0f4;
   height: 100%; transition: width 0.2s;
 }
-.chat-sidebar.collapsed { width: 0; min-width: 0; overflow: hidden; }
+.chat-sidebar.collapsed { width: 48px; min-width: 48px; overflow: hidden; }
 
 .sidebar-head {
   display: flex; align-items: center; gap: 8px;
