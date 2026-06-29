@@ -39,7 +39,7 @@
     </header>
 
     <!-- 子页面内容 -->
-    <main class="layout-main">
+    <main class="layout-main" :class="{ 'is-chat': $route.path === '/chat' }">
       <router-view />
     </main>
 
@@ -116,6 +116,7 @@ const handleCommand = (cmd) => {
 .arrow { color: #909399; font-size: 12px; }
 
 .layout-main { padding-bottom: 60px; }
+.layout-main.is-chat { padding-bottom: 0; }
 
 @media (max-width: 600px) {
   .navbar { padding: 0 16px; }
