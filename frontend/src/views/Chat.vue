@@ -17,7 +17,7 @@
           <p>选择一个模式，输入你的问题或知识点，开始学习之旅</p>
         </div>
 
-        <div v-for="(msg, i) in messages" :key="i" :class="['msg-row', msg.role]">
+        <div v-for="msg in messages" :key="msg.id" :class="['msg-row', msg.role]">
           <!-- Agent progress bubble -->
           <div v-if="msg.type === 'agent-progress'" class="msg-bubble ai agent-progress">
             <div class="agent-flow-inline">
@@ -295,6 +295,12 @@ const currentConversationId = ref(null)
 const conversations = ref([])
 const msgList = ref(null)
 
+// Stable, monotonically increasing message ids — array index keys are fragile
+// for stateful bubbles (CODE editor / QUIZ inputs) since the messages array is
+// spliced and reassigned during navigation.
+let msgIdCounter = 0
+const nextMsgId = () => `m-${Date.now()}-${++msgIdCounter}`
+
 // Resource generation metadata
 const agents = [
   { name: 'RequireAgent', avatar: '🔍' },
@@ -342,12 +348,13 @@ const selectConversation = async (conv) => {
       const meta = m.metadata || {}
       const role = meta.role === 'user' ? 'user' : 'assistant'
       if (role === 'user') {
-        return { role: 'user', type: 'user', content: m.document || '' }
+        return { id: nextMsgId(), role: 'user', type: 'user', content: m.document || '' }
       }
       return {
+        id: nextMsgId(),
         role: 'assistant',
         type: 'text',
-        content: renderMarkdownLine(m.document || ''),
+        content: safeMarkdown(m.document || ''),
         sources: [],
         ragCount: 0
       }
@@ -372,7 +379,7 @@ const sendMessage = async () => {
   if (!text || loading.value) return
 
   inputText.value = ''
-  messages.value.push({ role: 'user', type: 'user', content: text })
+  messages.value.push({ id: nextMsgId(), role: 'user', type: 'user', content: text })
   await scrollToBottom()
 
   if (activeMode.value === 'chat') {
@@ -401,16 +408,16 @@ const sendChatMessage = async (text) => {
 
     const sources = data.sources || []
     messages.value.push({
+      id: nextMsgId(),
       role: 'assistant',
       type: 'text',
-      content: renderMarkdownLine(data.answer || ''),
+      content: safeMarkdown(data.answer || ''),
       sources,
       ragCount: sources.length,
       // ChatResponse has no hasKg/hasWeb fields — decorative defaults per plan
       hasKg: data.hasKg !== undefined ? data.hasKg : true,
       hasWeb: data.hasWeb !== undefined ? data.hasWeb : sources.length < 2,
-      question: text,
-      rawAnswer: data.answer || ''
+      question: text
     })
   } catch (e) {
     ElMessage.error('提问失败：' + (e.response?.data?.error || e.message || '请稍后重试'))
@@ -419,18 +426,29 @@ const sendChatMessage = async (text) => {
   }
 }
 
+// Remove the agent-progress placeholder by stable id (returns true if removed).
+const removeProgressBubble = (progressId) => {
+  const i = messages.value.findIndex(m => m.id === progressId)
+  if (i !== -1 && messages.value[i].type === 'agent-progress') {
+    messages.value.splice(i, 1)
+    return true
+  }
+  return false
+}
+
 // ---- Resource generation (SSE) — ported from Learning.vue startGenerate() ----
 const sendResourceGenerate = async (text) => {
   loading.value = true
   loadingText.value = '🔍 需求分析...'
 
-  // Insert agent-progress placeholder message
+  // Insert agent-progress placeholder message (tracked by stable id, not index)
+  const progressId = nextMsgId()
   messages.value.push({
+    id: progressId,
     role: 'assistant',
     type: 'agent-progress',
     agents: agents.map(a => ({ ...a, status: 'pending' }))
   })
-  const progressIdx = messages.value.length - 1
   await scrollToBottom()
 
   const token = localStorage.getItem('token') || ''
@@ -440,6 +458,7 @@ const sendResourceGenerate = async (text) => {
     types: [activeMode.value.toUpperCase()]
   })
 
+  let reader = null
   try {
     const response = await fetch('/api/generate', {
       method: 'POST',
@@ -453,7 +472,7 @@ const sendResourceGenerate = async (text) => {
 
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
-    const reader = response.body.getReader()
+    reader = response.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
 
@@ -468,30 +487,37 @@ const sendResourceGenerate = async (text) => {
         if (!line.startsWith('data:')) continue
         const json = line.substring(5).trim()
         if (!json) continue
-        try {
-          handleSseEvent(JSON.parse(json), progressIdx, text)
-        } catch { /* skip unparseable */ }
+        // Scope the try to parsing ONLY — a throw inside handleSseEvent must not
+        // be silently swallowed as if the line were unparseable.
+        let parsed
+        try { parsed = JSON.parse(json) } catch { continue }
+        handleSseEvent(parsed, progressId, text)
       }
+    }
+
+    // Stream ended. A terminal DONE/FALLBACK event already removed the progress
+    // bubble; if none arrived (stream closed early), clean up the orphaned
+    // placeholder so the user isn't stuck on a spinner.
+    if (removeProgressBubble(progressId)) {
+      ElMessage.warning('生成中断，请重试')
     }
   } catch (e) {
     ElMessage.error('生成失败：' + (e.message || '请稍后重试'))
-    // Remove the progress placeholder on failure
-    if (messages.value[progressIdx] && messages.value[progressIdx].type === 'agent-progress') {
-      messages.value.splice(progressIdx, 1)
-    }
+    removeProgressBubble(progressId)
   } finally {
+    reader?.cancel().catch(() => {})
     loading.value = false
   }
 }
 
-const handleSseEvent = (evt, progressIdx, text) => {
+const handleSseEvent = (evt, progressId, text) => {
   const stage = evt.stage || ''
   const idx = stageToIdx[stage] ?? -1
 
-  // Update agent progress on the placeholder bubble
-  if (idx >= 0 && idx < agents.length
-      && messages.value[progressIdx] && messages.value[progressIdx].type === 'agent-progress') {
-    messages.value[progressIdx].agents = agents.map((a, i) => ({
+  // Update agent progress on the placeholder bubble (found by stable id)
+  const progressMsg = messages.value.find(m => m.id === progressId)
+  if (idx >= 0 && idx < agents.length && progressMsg && progressMsg.type === 'agent-progress') {
+    progressMsg.agents = agents.map((a, i) => ({
       ...a,
       status: i < idx ? 'done' : i === idx ? 'loading' : 'pending'
     }))
@@ -503,9 +529,7 @@ const handleSseEvent = (evt, progressIdx, text) => {
 
   if (stage === 'DONE' || stage === 'FALLBACK') {
     // Remove the progress placeholder, then append the result bubble
-    if (messages.value[progressIdx] && messages.value[progressIdx].type === 'agent-progress') {
-      messages.value.splice(progressIdx, 1)
-    }
+    removeProgressBubble(progressId)
 
     const typeKey = activeMode.value.toUpperCase()
     const payload = evt.payload || {}
@@ -523,6 +547,7 @@ const handleSseEvent = (evt, progressIdx, text) => {
     }
 
     const resMsg = {
+      id: nextMsgId(),
       role: 'assistant',
       type: 'resource',
       renderType: type,
@@ -552,14 +577,16 @@ const handleSseEvent = (evt, progressIdx, text) => {
       showAnswers: false
     }
     messages.value.push(resMsg)
-    const resIdx = messages.value.length - 1
+    // Capture the reactive PROXY element (returned by indexing the reactive
+    // array), NOT the raw resMsg literal: mutating the proxy triggers re-render
+    // and is stale-safe — if the array is later reassigned (navigation), this
+    // orphaned proxy simply isn't rendered.
+    const target = messages.value[messages.value.length - 1]
 
-    // Async render mermaid mindmap (mutate through the reactive array proxy)
+    // Async render mermaid mindmap
     if (type === 'MINDMAP') {
       nextTick(() => {
-        renderMindmap(content).then(svg => {
-          if (messages.value[resIdx]) messages.value[resIdx].mindmapSvg = svg
-        })
+        renderMindmap(content).then(svg => { target.mindmapSvg = svg })
       })
     }
 
@@ -571,8 +598,6 @@ const handleSseEvent = (evt, progressIdx, text) => {
 }
 
 // ---- Helpers (ported from Learning.vue) ----
-const renderMarkdownLine = (text) => safeMarkdown(text)
-
 const safeMarkdown = (text) => {
   if (!text) return ''
   try { return marked.parse(text) } catch { return text }
