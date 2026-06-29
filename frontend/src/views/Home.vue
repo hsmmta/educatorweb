@@ -7,7 +7,7 @@
           <h1>你好，{{ userInfo?.nickname || '同学' }} 👋</h1>
           <p>你的专属 AI 学习助手已就绪。上传资料构建私人智库，智能辅导优先基于你的知识库作答。</p>
           <div class="hero-actions">
-            <el-button type="primary" size="large" round @click="$router.push('/tutoring')">
+            <el-button type="primary" size="large" round @click="$router.push('/chat')">
               <el-icon><ChatDotRound /></el-icon>开始智能辅导
             </el-button>
             <el-button size="large" round class="btn-outline" @click="$router.push('/thinktank')">
@@ -50,7 +50,7 @@
             </div>
           </div>
 
-          <div class="feature-card card-orange" @click="$router.push('/tutoring')">
+          <div class="feature-card card-orange" @click="$router.push('/chat')">
             <div class="card-shine"></div>
             <div class="card-icon-wrap"><span class="card-icon">🎓</span></div>
             <div class="card-body">
@@ -64,7 +64,7 @@
             </div>
           </div>
 
-          <div class="feature-card card-blue" @click="$router.push('/learning')">
+          <div class="feature-card card-blue" @click="$router.push('/chat')">
             <div class="card-shine"></div>
             <div class="card-icon-wrap"><span class="card-icon">🤖</span></div>
             <div class="card-body">
@@ -113,7 +113,7 @@
         <h2 class="section-title">快速生成资源</h2>
         <p class="section-desc">选择类型，AI 智能体即刻为你生成</p>
         <div class="resource-grid">
-          <div v-for="res in resourceTypes" :key="res.type" class="resource-card" @click="$router.push('/learning')">
+          <div v-for="res in resourceTypes" :key="res.type" class="resource-card" @click="$router.push('/chat')">
             <span class="res-icon">{{ res.icon }}</span>
             <span class="res-name">{{ res.label }}</span>
           </div>
