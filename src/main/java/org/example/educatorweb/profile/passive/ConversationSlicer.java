@@ -22,6 +22,8 @@ import java.util.Map;
 public class ConversationSlicer {
 
     private static final Logger log = LoggerFactory.getLogger(ConversationSlicer.class);
+    /** Each conversation round consists of one user message + one assistant reply. */
+    private static final int MESSAGES_PER_ROUND = 2;
 
     private final ChromaClient chromaClient;
     private final DeepSeekProvider llmProvider;
@@ -57,9 +59,14 @@ public class ConversationSlicer {
                 } else {
                     List<TopicBoundary> boundaries = detectTopicBoundaries(messages);
                     for (TopicBoundary b : boundaries) {
-                        List<Map<String, Object>> segment = messages.subList(
-                            (b.startRound - 1) * 2, // each round = user + assistant = 2 messages
-                            Math.min(b.endRound * 2, messages.size()));
+                        int fromIndex = Math.max(0, (b.startRound - 1) * MESSAGES_PER_ROUND);
+                        int toIndex = Math.min(b.endRound * MESSAGES_PER_ROUND, messages.size());
+                        if (fromIndex >= toIndex) {
+                            log.warn("ConversationSlicer: invalid boundary start={} end={} for conv={} ({} msgs, {} rounds)",
+                                b.startRound, b.endRound, convId, messages.size(), rounds);
+                            continue;
+                        }
+                        List<Map<String, Object>> segment = messages.subList(fromIndex, toIndex);
                         String text = buildConversationText(segment);
                         String segMaxTs = extractMaxTimestamp(segment);
                         slices.add(new Slice(convId, text, b.topic, segMaxTs));
@@ -85,14 +92,14 @@ public class ConversationSlicer {
     }
 
     private String extractMaxTimestamp(List<Map<String, Object>> messages) {
-        String max = "";
+        String max = null;
         for (Map<String, Object> msg : messages) {
             Object meta = msg.get("metadata");
             if (meta instanceof Map<?, ?> m) {
                 Object ts = m.get("timestamp");
                 if (ts != null) {
                     String tsStr = ts.toString();
-                    if (tsStr.compareTo(max) > 0) max = tsStr;
+                    if (max == null || tsStr.compareTo(max) > 0) max = tsStr;
                 }
             }
         }
@@ -100,7 +107,7 @@ public class ConversationSlicer {
     }
 
     private String buildConversationText(List<Map<String, Object>> messages) {
-        StringBuilder sb = new StringBuilder();
+        StringBuilder sb = new StringBuilder(messages.size() * 200);
         int round = 1;
         for (Map<String, Object> msg : messages) {
             Object meta = msg.get("metadata");
@@ -109,8 +116,9 @@ public class ConversationSlicer {
                 String role = (String) m.get("role");
                 String prefix = "user".equals(role) ? "学生" : "助教";
                 sb.append("[").append(round).append("] ").append(prefix).append(": ").append(document).append("\n\n");
-                if ("assistant".equals(role)) round++;
             }
+            // Advance round counter on each assistant message regardless of blank documents
+            if (meta instanceof Map<?, ?> m && "assistant".equals(m.get("role"))) round++;
         }
         return sb.toString();
     }
