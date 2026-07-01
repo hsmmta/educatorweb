@@ -26,10 +26,10 @@ import java.util.Map;
  *
  * <h3>API reference</h3>
  * <ul>
- *   <li>GET  /api/v1/collections/{name}  — collection info (contains UUID)</li>
- *   <li>POST /api/v1/collections           — create collection</li>
- *   <li>POST /api/v1/collections/{id}/add  — insert records</li>
- *   <li>POST /api/v1/collections/{id}/query — semantic search</li>
+ *   <li>GET  /api/v2/tenants/.../collections/{name}  — collection info</li>
+ *   <li>POST /api/v2/tenants/.../collections           — create collection</li>
+ *   <li>POST /api/v2/tenants/.../collections/{id}/add  — insert records</li>
+ *   <li>POST /api/v2/tenants/.../collections/{id}/query — semantic search</li>
  * </ul>
  */
 public class ChromaClient {
@@ -38,6 +38,8 @@ public class ChromaClient {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private static final String COLLECTION_NAME = "ai_tutor_conversations";
+    private static final String COLLECTION_PATH =
+        "/api/v2/tenants/default_tenant/databases/default_database/collections/" + COLLECTION_NAME;
 
     private final RestClient restClient;
     /** Cached collection UUID after first lookup. */
@@ -82,7 +84,7 @@ public class ChromaClient {
             );
             // Chroma accepts either name or UUID in the path
             restClient.post()
-                .uri("/api/v1/collections/{name}/add", COLLECTION_NAME)
+                .uri(COLLECTION_PATH + "/add")
                 .body(body)
                 .retrieve()
                 .toBodilessEntity();
@@ -114,7 +116,7 @@ public class ChromaClient {
                 "where", Map.of("userId", userId)
             );
             String resp = restClient.post()
-                .uri("/api/v1/collections/{name}/query", COLLECTION_NAME)
+                .uri(COLLECTION_PATH + "/query")
                 .body(body)
                 .retrieve()
                 .body(String.class);
@@ -134,7 +136,7 @@ public class ChromaClient {
      * List distinct conversations for a user, grouped by conversationId,
      * sorted by last-activity timestamp (most recent first).
      *
-     * <p>Uses Chroma's POST /api/v1/collections/{name}/get with a metadata
+     * <p>Uses Chroma's POST .../collections/{name}/get with a metadata
      * filter on {@code userId}. Each returned entry is a map containing
      * {@code conversationId}, {@code title} (first user question, truncated)
      * and {@code timestamp} (latest message time in the conversation).
@@ -243,7 +245,7 @@ public class ChromaClient {
                 "include", List.of("metadatas", "documents")
             );
             Map<String, Object> response = restClient.post()
-                .uri("/api/v1/collections/{name}/get", COLLECTION_NAME)
+                .uri(COLLECTION_PATH + "/get")
                 .body(body)
                 .retrieve()
                 .body(new ParameterizedTypeReference<Map<String, Object>>() {});
@@ -297,7 +299,7 @@ public class ChromaClient {
         try {
             // Try to get existing collection
             String resp = restClient.get()
-                .uri("/api/v1/collections/{name}", COLLECTION_NAME)
+                .uri(COLLECTION_PATH)
                 .retrieve()
                 .body(String.class);
 
@@ -318,7 +320,7 @@ public class ChromaClient {
                 "metadata", Map.of("hnsw:space", "cosine")
             );
             String resp = restClient.post()
-                .uri("/api/v1/collections")
+                .uri("/api/v2/tenants/default_tenant/databases/default_database/collections")
                 .body(body)
                 .retrieve()
                 .body(String.class);
