@@ -38,8 +38,8 @@ public class ChromaClient {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private static final String COLLECTION_NAME = "ai_tutor_conversations";
-    private static final String COLLECTION_PATH =
-        "/api/v2/tenants/default_tenant/databases/default_database/collections/" + COLLECTION_NAME;
+    private static final String CHROMA_COLLECTIONS =
+        "/api/v2/tenants/default_tenant/databases/default_database/collections";
 
     private final RestClient restClient;
     /** Cached collection UUID after first lookup. */
@@ -84,7 +84,7 @@ public class ChromaClient {
             );
             // Chroma accepts either name or UUID in the path
             restClient.post()
-                .uri(COLLECTION_PATH + "/add")
+                .uri(CHROMA_COLLECTIONS + "/" + collId + "/add")
                 .body(body)
                 .retrieve()
                 .toBodilessEntity();
@@ -116,7 +116,7 @@ public class ChromaClient {
                 "where", Map.of("userId", userId)
             );
             String resp = restClient.post()
-                .uri(COLLECTION_PATH + "/query")
+                .uri(CHROMA_COLLECTIONS + "/" + collId + "/query")
                 .body(body)
                 .retrieve()
                 .body(String.class);
@@ -238,14 +238,15 @@ public class ChromaClient {
      * if the collection is unavailable or the response is missing/malformed.
      */
     private ChromaGetResult chromaGet(Map<String, Object> where) {
-        if (ensureCollection() == null) return null;
+        String collId = ensureCollection();
+        if (collId == null) return null;
         try {
             Map<String, Object> body = Map.of(
                 "where", where,
                 "include", List.of("metadatas", "documents")
             );
             Map<String, Object> response = restClient.post()
-                .uri(COLLECTION_PATH + "/get")
+                .uri(CHROMA_COLLECTIONS + "/" + collId + "/get")
                 .body(body)
                 .retrieve()
                 .body(new ParameterizedTypeReference<Map<String, Object>>() {});
@@ -299,7 +300,7 @@ public class ChromaClient {
         try {
             // Try to get existing collection
             String resp = restClient.get()
-                .uri(COLLECTION_PATH)
+                .uri(CHROMA_COLLECTIONS + "/" + COLLECTION_NAME)
                 .retrieve()
                 .body(String.class);
 
@@ -320,7 +321,7 @@ public class ChromaClient {
                 "metadata", Map.of("hnsw:space", "cosine")
             );
             String resp = restClient.post()
-                .uri("/api/v2/tenants/default_tenant/databases/default_database/collections")
+                .uri(CHROMA_COLLECTIONS)
                 .body(body)
                 .retrieve()
                 .body(String.class);
