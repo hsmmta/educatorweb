@@ -4,11 +4,16 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -21,10 +26,10 @@ import java.util.Map;
  *
  * <h3>API reference</h3>
  * <ul>
- *   <li>GET  /api/v1/collections/{name}  — collection info (contains UUID)</li>
- *   <li>POST /api/v1/collections           — create collection</li>
- *   <li>POST /api/v1/collections/{id}/add  — insert records</li>
- *   <li>POST /api/v1/collections/{id}/query — semantic search</li>
+ *   <li>GET  /api/v2/tenants/.../collections/{name}  — collection info</li>
+ *   <li>POST /api/v2/tenants/.../collections           — create collection</li>
+ *   <li>POST /api/v2/tenants/.../collections/{id}/add  — insert records</li>
+ *   <li>POST /api/v2/tenants/.../collections/{id}/query — semantic search</li>
  * </ul>
  */
 public class ChromaClient {
@@ -33,6 +38,8 @@ public class ChromaClient {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private static final String COLLECTION_NAME = "ai_tutor_conversations";
+    private static final String CHROMA_COLLECTIONS =
+        "/api/v2/tenants/default_tenant/databases/default_database/collections";
 
     private final RestClient restClient;
     /** Cached collection UUID after first lookup. */
@@ -77,7 +84,7 @@ public class ChromaClient {
             );
             // Chroma accepts either name or UUID in the path
             restClient.post()
-                .uri("/api/v1/collections/{name}/add", COLLECTION_NAME)
+                .uri(CHROMA_COLLECTIONS + "/" + collId + "/add")
                 .body(body)
                 .retrieve()
                 .toBodilessEntity();
@@ -109,7 +116,7 @@ public class ChromaClient {
                 "where", Map.of("userId", userId)
             );
             String resp = restClient.post()
-                .uri("/api/v1/collections/{name}/query", COLLECTION_NAME)
+                .uri(CHROMA_COLLECTIONS + "/" + collId + "/query")
                 .body(body)
                 .retrieve()
                 .body(String.class);
@@ -125,6 +132,163 @@ public class ChromaClient {
         }
     }
 
+    /**
+     * List distinct conversations for a user, grouped by conversationId,
+     * sorted by last-activity timestamp (most recent first).
+     *
+     * <p>Uses Chroma's POST .../collections/{name}/get with a metadata
+     * filter on {@code userId}. Each returned entry is a map containing
+     * {@code conversationId}, {@code title} (first user question, truncated)
+     * and {@code timestamp} (latest message time in the conversation).
+     */
+    public List<Map<String, Object>> listConversations(String userId) {
+        ChromaGetResult result = chromaGet(Map.of("userId", userId));
+        if (result == null || result.metadatas() == null) return List.of();
+
+        List<Map<String, Object>> metadatas = result.metadatas();
+        List<String> documents = result.documents();
+
+        Map<String, Map<String, Object>> convMap = new LinkedHashMap<>();
+        // Earliest user-message timestamp per conversation (drives title selection).
+        Map<String, String> earliestUserTs = new HashMap<>();
+
+        for (int i = 0; i < metadatas.size(); i++) {
+            Map<String, Object> meta = metadatas.get(i);
+            if (meta == null) continue;
+            String convId = (String) meta.get("conversationId");
+            if (convId == null) continue;
+            String role = (String) meta.get("role");
+            String ts = meta.get("timestamp") != null ? String.valueOf(meta.get("timestamp")) : null;
+            String doc = (documents != null && i < documents.size()) ? documents.get(i) : null;
+
+            String tsForLambda = ts;
+            Map<String, Object> entry = convMap.computeIfAbsent(convId, k -> {
+                Map<String, Object> e = new LinkedHashMap<>();
+                e.put("conversationId", k);
+                e.put("title", "");
+                e.put("timestamp", tsForLambda);
+                return e;
+            });
+
+            // Track the latest timestamp as the conversation's last-activity time.
+            if (ts != null) {
+                String existing = (String) entry.get("timestamp");
+                if (existing == null || ts.compareTo(existing) > 0) {
+                    entry.put("timestamp", ts);
+                }
+            }
+
+            // Title = earliest user message text, truncated.
+            if ("user".equals(role) && doc != null && !doc.isBlank()) {
+                String prev = earliestUserTs.get(convId);
+                String cmp = ts != null ? ts : "";
+                if (prev == null || cmp.compareTo(prev) < 0) {
+                    earliestUserTs.put(convId, cmp);
+                    entry.put("title", truncate(doc, 50));
+                }
+            }
+        }
+
+        List<Map<String, Object>> conversations = new ArrayList<>(convMap.values());
+        // Most-recent activity first.
+        conversations.sort(Comparator.comparing((Map<String, Object> c) -> {
+            Object t = c.get("timestamp");
+            return t != null ? t.toString() : "";
+        }).reversed());
+        return conversations;
+    }
+
+    /**
+     * Get all messages for a specific conversation, ordered chronologically.
+     * Each entry is a map with keys {@code metadata} and {@code document}.
+     * Within an identical timestamp the user message is placed before the
+     * assistant reply.
+     */
+    public List<Map<String, Object>> getConversationMessages(String conversationId, String userId) {
+        ChromaGetResult result = chromaGet(Map.of(
+            "$and", List.of(
+                Map.of("userId", userId),
+                Map.of("conversationId", conversationId)
+            )
+        ));
+        if (result == null || result.metadatas() == null || result.documents() == null) return List.of();
+
+        List<Map<String, Object>> metadatas = result.metadatas();
+        List<String> documents = result.documents();
+
+        List<Map<String, Object>> messages = new ArrayList<>();
+        for (int i = 0; i < Math.min(metadatas.size(), documents.size()); i++) {
+            Map<String, Object> msg = new LinkedHashMap<>();
+            msg.put("metadata", metadatas.get(i));
+            msg.put("document", documents.get(i));
+            messages.add(msg);
+        }
+        messages.sort(Comparator
+            .comparing(ChromaClient::timestampOf)
+            .thenComparingInt(ChromaClient::roleRank));
+        return messages;
+    }
+
+    /** Parsed Chroma {@code /get} response: flat metadata + document lists. */
+    private record ChromaGetResult(List<Map<String, Object>> metadatas, List<String> documents) {}
+
+    /**
+     * Run a Chroma POST /get with the given {@code where} filter, requesting
+     * metadatas + documents. Returns the parsed (flat) lists, or {@code null}
+     * if the collection is unavailable or the response is missing/malformed.
+     */
+    private ChromaGetResult chromaGet(Map<String, Object> where) {
+        String collId = ensureCollection();
+        if (collId == null) return null;
+        try {
+            Map<String, Object> body = Map.of(
+                "where", where,
+                "include", List.of("metadatas", "documents")
+            );
+            Map<String, Object> response = restClient.post()
+                .uri(CHROMA_COLLECTIONS + "/" + collId + "/get")
+                .body(body)
+                .retrieve()
+                .body(new ParameterizedTypeReference<Map<String, Object>>() {});
+            if (response == null) return null;
+
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> metadatas = (List<Map<String, Object>>) response.get("metadatas");
+            @SuppressWarnings("unchecked")
+            List<String> documents = (List<String>) response.get("documents");
+            return new ChromaGetResult(metadatas, documents);
+        } catch (Exception e) {
+            log.warn("ChromaClient: get failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /** Truncate text to {@code max} characters, appending an ellipsis when cut. */
+    private static String truncate(String s, int max) {
+        if (s == null) return "";
+        String t = s.strip();
+        return t.length() <= max ? t : t.substring(0, max) + "...";
+    }
+
+    /** Extract the timestamp string from a {metadata, document} message map. */
+    private static String timestampOf(Map<String, Object> message) {
+        Object meta = message.get("metadata");
+        if (meta instanceof Map<?, ?> m) {
+            Object ts = m.get("timestamp");
+            return ts != null ? ts.toString() : "";
+        }
+        return "";
+    }
+
+    /** Order user messages (0) before assistant replies (1) on timestamp ties. */
+    private static int roleRank(Map<String, Object> message) {
+        Object meta = message.get("metadata");
+        if (meta instanceof Map<?, ?> m) {
+            return "user".equals(m.get("role")) ? 0 : 1;
+        }
+        return 1;
+    }
+
     // ---------------------------------------------------------------
     // Internals
     // ---------------------------------------------------------------
@@ -136,7 +300,7 @@ public class ChromaClient {
         try {
             // Try to get existing collection
             String resp = restClient.get()
-                .uri("/api/v1/collections/{name}", COLLECTION_NAME)
+                .uri(CHROMA_COLLECTIONS + "/" + COLLECTION_NAME)
                 .retrieve()
                 .body(String.class);
 
@@ -157,7 +321,7 @@ public class ChromaClient {
                 "metadata", Map.of("hnsw:space", "cosine")
             );
             String resp = restClient.post()
-                .uri("/api/v1/collections")
+                .uri(CHROMA_COLLECTIONS)
                 .body(body)
                 .retrieve()
                 .body(String.class);
