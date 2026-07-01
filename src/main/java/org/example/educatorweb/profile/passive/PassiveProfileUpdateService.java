@@ -128,46 +128,83 @@ public class PassiveProfileUpdateService {
     }
 
     /**
-     * Normalize LLM output values to DB CHECK constraint enums.
+     * Normalize LLM output (Chinese labels) to DB CHECK constraint enums.
+     * Step 1: Chinese → English mapping
+     * Step 2: Fallback validation against CHECK constraints
+     * Step 3: Clamp confidences to [0, 1]
      */
     private void sanitizeProfileForDb(StudentProfile p) {
-        String kl = p.getKnowledgeBaseLevel();
-        if (kl == null || kl.isBlank()
-            || (!kl.equals("beginner") && !kl.equals("intermediate")
-                && !kl.equals("advanced") && !kl.equals("master"))) {
-            p.setKnowledgeBaseLevel("beginner");
-        }
+        // ---- Step 1: Chinese → English mapping ----
 
+        // knowledge: 入门/薄弱 → beginner, 一般 → intermediate, 熟练 → advanced, 优秀/专家 → master
+        p.setKnowledgeBaseLevel(normalizeKnowledgeLevel(p.getKnowledgeBaseLevel()));
+
+        // cognitive: 视觉型/直觉型 → visual, 言语型/分析型 → auditory
         String cs = p.getCognitiveStyleType();
-        if (cs == null || cs.isBlank()
-            || (!cs.equals("visual") && !cs.equals("auditory"))) {
-            p.setCognitiveStyleType("visual");
+        if (cs != null) {
+            if (cs.contains("视觉") || cs.contains("直觉")) p.setCognitiveStyleType("visual");
+            else if (cs.contains("言语") || cs.contains("分析")) p.setCognitiveStyleType("auditory");
         }
 
+        // pace: 稳扎稳打型 → slow, 快速推进型/跳跃型 → fast
         String lp = p.getLearningPaceType();
-        if (lp == null || lp.isBlank()
-            || (!lp.equals("slow") && !lp.equals("normal") && !lp.equals("fast"))) {
-            p.setLearningPaceType("normal");
+        if (lp != null) {
+            if (lp.contains("稳扎稳打")) p.setLearningPaceType("slow");
+            else if (lp.contains("快速") || lp.contains("跳跃")) p.setLearningPaceType("fast");
         }
 
+        // goal: 求职准备 → career, 学术深造 → research, 兴趣探索 → interest, 考证通关/课程考试 → exam
         String go = p.getGoalOrientationType();
-        if (go == null || go.isBlank()
-            || (!go.equals("exam") && !go.equals("research")
-                && !go.equals("career") && !go.equals("interest"))) {
-            p.setGoalOrientationType("exam");
+        if (go != null) {
+            if (go.contains("求职")) p.setGoalOrientationType("career");
+            else if (go.contains("学术")) p.setGoalOrientationType("research");
+            else if (go.contains("兴趣")) p.setGoalOrientationType("interest");
+            else if (go.contains("考证") || go.contains("考试") || go.contains("exam")) p.setGoalOrientationType("exam");
         }
 
-        Set<String> validTypes = Set.of("text", "video", "audio", "interactive", "graph", "ppt");
+        // preference: 视频优先 → video, 文档优先 → text, 混合学习 → text
         String cp = p.getContentPreferenceType();
-        if (cp == null || cp.isBlank() || !validTypes.contains(cp)) {
-            p.setContentPreferenceType("text");
+        if (cp != null) {
+            if (cp.contains("视频")) p.setContentPreferenceType("video");
+            else if (cp.contains("文档")) p.setContentPreferenceType("text");
+            else if (cp.contains("混合")) p.setContentPreferenceType("text");
         }
 
+        // ---- Step 2: Fallback validation (ensure enums match CHECK constraints) ----
+
+        Set<String> validPace = Set.of("slow", "normal", "fast");
+        Set<String> validGoal = Set.of("exam", "research", "career", "interest");
+        Set<String> validCognitive = Set.of("visual", "auditory");
+        Set<String> validKnowledge = Set.of("beginner", "intermediate", "advanced", "master");
+        Set<String> validContent = Set.of("text", "video", "audio", "interactive", "graph", "ppt");
+
+        if (p.getKnowledgeBaseLevel() == null || !validKnowledge.contains(p.getKnowledgeBaseLevel()))
+            p.setKnowledgeBaseLevel("beginner");
+        if (p.getCognitiveStyleType() == null || !validCognitive.contains(p.getCognitiveStyleType()))
+            p.setCognitiveStyleType("visual");
+        if (p.getLearningPaceType() == null || !validPace.contains(p.getLearningPaceType()))
+            p.setLearningPaceType("normal");
+        if (p.getGoalOrientationType() == null || !validGoal.contains(p.getGoalOrientationType()))
+            p.setGoalOrientationType("exam");
+        if (p.getContentPreferenceType() == null || !validContent.contains(p.getContentPreferenceType()))
+            p.setContentPreferenceType("text");
+
+        // ---- Step 3: Clamp confidences to [0, 1] ----
         p.setKnowledgeBaseConfidence(clamp(p.getKnowledgeBaseConfidence()));
         p.setCognitiveStyleConfidence(clamp(p.getCognitiveStyleConfidence()));
         p.setErrorPatternConfidence(clamp(p.getErrorPatternConfidence()));
         p.setLearningPaceConfidence(clamp(p.getLearningPaceConfidence()));
         p.setGoalOrientationConfidence(clamp(p.getGoalOrientationConfidence()));
+    }
+
+    private String normalizeKnowledgeLevel(String llmOutput) {
+        if (llmOutput == null || llmOutput.isBlank()) return "beginner";
+        String s = llmOutput.trim();
+        if (s.contains("入门") || s.contains("薄弱") || s.contains("beginner")) return "beginner";
+        if (s.contains("一般") || s.contains("intermediate")) return "intermediate";
+        if (s.contains("熟练") || s.contains("advanced")) return "advanced";
+        if (s.contains("优秀") || s.contains("master") || s.contains("专家")) return "master";
+        return "beginner";
     }
 
     private BigDecimal clamp(BigDecimal bd) {
