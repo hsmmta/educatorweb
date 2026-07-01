@@ -33,6 +33,7 @@ public class PassiveProfileUpdateAgent {
     private static final BigDecimal FLIP_CONFIDENCE  = new BigDecimal("0.15");
     private static final BigDecimal MAX_CONFIDENCE   = new BigDecimal("0.95");
     private static final BigDecimal ZERO             = BigDecimal.ZERO;
+    private static final List<String> DIM_KEYS = List.of("knowledge","cognitive","error","pace","preference","goal");
 
     private final DeepSeekProvider llmProvider;
     private final ObjectMapper objectMapper;
@@ -119,11 +120,13 @@ public class PassiveProfileUpdateAgent {
                     confSetter.accept(newConf);
                     // confidence still positive, keep old value
                 } else {
-                    // flipped: adopt new value with flip confidence
+                    // flipped: adopt new value with flip confidence, or reset to zero if no replacement
                     if (dj.value() != null && !dj.value().isBlank()) {
                         valueSetter.accept(dj.value());
+                        confSetter.accept(FLIP_CONFIDENCE);
+                    } else {
+                        confSetter.accept(ZERO);
                     }
-                    confSetter.accept(FLIP_CONFIDENCE);
                 }
             }
             case "new" -> {
@@ -154,8 +157,10 @@ public class PassiveProfileUpdateAgent {
                 } else {
                     if (dj.tags() != null && !dj.tags().isEmpty()) {
                         profile.setErrorPatternTags(new ArrayList<>(dj.tags()));
+                        profile.setErrorPatternConfidence(FLIP_CONFIDENCE);
+                    } else {
+                        profile.setErrorPatternConfidence(ZERO);
                     }
-                    profile.setErrorPatternConfidence(FLIP_CONFIDENCE);
                 }
             }
             case "new" -> {
@@ -253,7 +258,7 @@ public class PassiveProfileUpdateAgent {
             Map<String, Object> raw = objectMapper.readValue(json, Map.class);
             Map<String, DimensionJudgment> dims = new LinkedHashMap<>();
 
-            for (String dimKey : List.of("knowledge","cognitive","error","pace","preference","goal")) {
+            for (String dimKey : DIM_KEYS) {
                 Object dimData = raw.get(dimKey);
                 if (!(dimData instanceof Map<?, ?> dimMap)) {
                     dims.put(dimKey, new DimensionJudgment(null, null, null, "insufficient"));
@@ -312,7 +317,7 @@ public class PassiveProfileUpdateAgent {
     public record UpdateResult(Map<String, DimensionJudgment> dimensions) {
         public static UpdateResult empty() {
             Map<String, DimensionJudgment> dims = new LinkedHashMap<>();
-            for (String key : List.of("knowledge","cognitive","error","pace","preference","goal")) {
+            for (String key : DIM_KEYS) {
                 dims.put(key, new DimensionJudgment(null, null, null, "insufficient"));
             }
             return new UpdateResult(dims);
