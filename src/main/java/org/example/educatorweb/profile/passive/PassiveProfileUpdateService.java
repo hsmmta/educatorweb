@@ -25,6 +25,12 @@ public class PassiveProfileUpdateService {
 
     private static final Logger log = LoggerFactory.getLogger(PassiveProfileUpdateService.class);
 
+    private static final Set<String> VALID_PACE = Set.of("slow", "normal", "fast");
+    private static final Set<String> VALID_GOAL = Set.of("exam", "research", "career", "interest");
+    private static final Set<String> VALID_COGNITIVE = Set.of("visual", "auditory");
+    private static final Set<String> VALID_KNOWLEDGE = Set.of("beginner", "intermediate", "advanced", "master");
+    private static final Set<String> VALID_CONTENT = Set.of("text", "video", "audio", "interactive", "graph", "ppt");
+
     private final ProcessedConversationTracker tracker;
     private final ConversationSlicer slicer;
     private final PassiveProfileUpdateAgent agent;
@@ -172,22 +178,29 @@ public class PassiveProfileUpdateService {
 
         // ---- Step 2: Fallback validation (ensure enums match CHECK constraints) ----
 
-        Set<String> validPace = Set.of("slow", "normal", "fast");
-        Set<String> validGoal = Set.of("exam", "research", "career", "interest");
-        Set<String> validCognitive = Set.of("visual", "auditory");
-        Set<String> validKnowledge = Set.of("beginner", "intermediate", "advanced", "master");
-        Set<String> validContent = Set.of("text", "video", "audio", "interactive", "graph", "ppt");
 
-        if (p.getKnowledgeBaseLevel() == null || !validKnowledge.contains(p.getKnowledgeBaseLevel()))
+        if (p.getKnowledgeBaseLevel() == null || !VALID_KNOWLEDGE.contains(p.getKnowledgeBaseLevel()))
             p.setKnowledgeBaseLevel("beginner");
-        if (p.getCognitiveStyleType() == null || !validCognitive.contains(p.getCognitiveStyleType()))
+        if (p.getCognitiveStyleType() == null || !VALID_COGNITIVE.contains(p.getCognitiveStyleType()))
             p.setCognitiveStyleType("visual");
-        if (p.getLearningPaceType() == null || !validPace.contains(p.getLearningPaceType()))
+        if (p.getLearningPaceType() == null || !VALID_PACE.contains(p.getLearningPaceType()))
             p.setLearningPaceType("normal");
-        if (p.getGoalOrientationType() == null || !validGoal.contains(p.getGoalOrientationType()))
+        if (p.getGoalOrientationType() == null || !VALID_GOAL.contains(p.getGoalOrientationType()))
             p.setGoalOrientationType("exam");
-        if (p.getContentPreferenceType() == null || !validContent.contains(p.getContentPreferenceType()))
+        if (p.getContentPreferenceType() == null || !VALID_CONTENT.contains(p.getContentPreferenceType()))
             p.setContentPreferenceType("text");
+
+        // Clean ratio keys to valid content types only
+        Map<String, Double> ratio = p.getContentPreferenceRatio();
+        if (ratio != null && !ratio.isEmpty()) {
+            Map<String, Double> cleaned = new LinkedHashMap<>();
+            for (var entry : ratio.entrySet()) {
+                if (VALID_CONTENT.contains(entry.getKey())) {
+                    cleaned.put(entry.getKey(), entry.getValue());
+                }
+            }
+            p.setContentPreferenceRatio(cleaned.isEmpty() ? new LinkedHashMap<>() : cleaned);
+        }
 
         // ---- Step 3: Clamp confidences to [0, 1] ----
         p.setKnowledgeBaseConfidence(clamp(p.getKnowledgeBaseConfidence()));
