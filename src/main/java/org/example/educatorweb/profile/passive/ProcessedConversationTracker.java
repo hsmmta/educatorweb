@@ -6,7 +6,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
 
-import java.time.Duration;
 import java.util.List;
 
 /**
@@ -36,9 +35,7 @@ public class ProcessedConversationTracker {
      * Count distinct unprocessed conversations for a student.
      */
     public int countUnprocessed(String studentId) {
-        String cursor = getCursor(studentId);
-        List<String> convIds = chromaClient.getConversationIdsAfterCursor(studentId, cursor);
-        return convIds.size();
+        return getUnprocessedConversationIds(studentId).size();
     }
 
     /**
