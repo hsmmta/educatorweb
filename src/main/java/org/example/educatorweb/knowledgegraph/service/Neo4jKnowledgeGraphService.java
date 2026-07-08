@@ -35,9 +35,14 @@ public class Neo4jKnowledgeGraphService implements KnowledgeGraphService {
     @Override
     public KnowledgeContext queryContext(String knowledgePoint) {
         // Try exact ID match first, then name match
-        Optional<KnowledgePoint> nodeOpt = repo.findById(knowledgePoint);
-        if (nodeOpt.isEmpty()) {
-            nodeOpt = repo.findByName(knowledgePoint);
+        Optional<KnowledgePoint> nodeOpt = Optional.empty();
+        try {
+            nodeOpt = repo.findById(knowledgePoint);
+            if (nodeOpt.isEmpty()) {
+                nodeOpt = repo.findByName(knowledgePoint);
+            }
+        } catch (Exception e) {
+            log.debug("Neo4jKnowledgeGraphService: repo lookup failed for '{}': {}", knowledgePoint, e.getMessage());
         }
 
         if (nodeOpt.isPresent()) {

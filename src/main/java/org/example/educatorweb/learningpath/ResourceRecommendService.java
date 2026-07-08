@@ -6,6 +6,8 @@ import org.example.educatorweb.learningpath.model.PathNode.PathNodeStatus;
 import org.example.educatorweb.learningpath.model.RecommendedResource;
 import org.example.educatorweb.profile.ProfileService;
 import org.example.educatorweb.profile.model.StudentProfile;
+import org.example.educatorweb.profile.model.StudentKnowledgeProficiency;
+import org.example.educatorweb.profile.repository.StudentKnowledgeProficiencyRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -23,10 +25,13 @@ public class ResourceRecommendService {
 
     private final ProfileService profileService;
     private final LearningPathService pathService;
+    private final StudentKnowledgeProficiencyRepository kpProficiencyRepo;
 
-    public ResourceRecommendService(ProfileService profileService, LearningPathService pathService) {
+    public ResourceRecommendService(ProfileService profileService, LearningPathService pathService,
+                                     StudentKnowledgeProficiencyRepository kpProficiencyRepo) {
         this.profileService = profileService;
         this.pathService = pathService;
+        this.kpProficiencyRepo = kpProficiencyRepo;
     }
 
     /**
@@ -93,11 +98,14 @@ public class ResourceRecommendService {
      */
     private List<RecommendedResource> buildWeaknessBasedRecommendations(
             String studentId, StudentProfile profile) {
-        if (profile == null || profile.getKnowledgeDetails() == null) return List.of();
+        // 直接查 StudentKnowledgeProficiency 表，不碰 StudentProfile 的懒加载集合。
+        // WebFlux 下 Lazy 集合在 Session 关闭后是不可用的代理 —— 独立查询根治。
+        List<StudentKnowledgeProficiency> details = kpProficiencyRepo.findByStudentId(studentId);
+        if (details == null || details.isEmpty()) return List.of();
 
         List<RecommendedResource> resources = new ArrayList<>();
         // 找出熟练度最低的3个知识点
-        profile.getKnowledgeDetails().stream()
+        details.stream()
             .filter(d -> d.getProficiency() != null && d.getProficiency().doubleValue() < 0.6)
             .sorted(Comparator.comparing(d -> d.getProficiency() != null ? d.getProficiency().doubleValue() : 1.0))
             .limit(3)
@@ -171,5 +179,45 @@ public class ResourceRecommendService {
         public boolean isEmpty() {
             return allRecommendations.isEmpty() && learningPath == null;
         }
+    }
+
+    /**
+     * Generate resource recommendations for a single topic label.
+     * Used by topic-push to generate resources per cached topic.
+     */
+    public List<RecommendedResource> recommendByTopic(String studentId,
+                                                        String topicLabel,
+                                                        String contextText) {
+        StudentProfile profile = profileService.getProfile(studentId);
+
+        List<RecommendedResource> resources = new ArrayList<>();
+
+        // Generate resources for this topic
+        resources.add(new RecommendedResource(
+            topicLabel + " 系统讲解", "DOC",
+            "基于你的学习画像推荐", 9));
+        resources.add(new RecommendedResource(
+            topicLabel + " 巩固练习", "QUIZ",
+            "巩固知识点的针对性练习", 8));
+        resources.add(new RecommendedResource(
+            topicLabel + " 思维导图", "MINDMAP",
+            "梳理" + topicLabel + "的知识框架", 7));
+
+        // Add profile-based recommendations if profile exists
+        if (profile != null) {
+            String pref = profile.getContentPreferenceType();
+            if ("video".equals(pref)) {
+                resources.add(new RecommendedResource(
+                    topicLabel + " 视频讲解", "VIDEO",
+                    "匹配你的视频优先偏好", 10));
+            }
+            if ("interactive".equals(pref)) {
+                resources.add(new RecommendedResource(
+                    topicLabel + " 实战代码", "CODE",
+                    "匹配你的交互式学习偏好", 8));
+            }
+        }
+
+        return resources;
     }
 }

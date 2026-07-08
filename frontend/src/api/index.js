@@ -62,6 +62,24 @@ export const getRecommendationsApi = (studentId, target) =>
 export const updateProgressApi = (studentId, data) =>
   request.post(`/push/progress/${studentId}`, data)
 
+// ==================== 话题推送 (Topic Push) ====================
+/** SSE 订阅推送通知 */
+export const subscribePushApi = (studentId) => {
+  return new EventSource(`/api/push/subscribe?studentId=${encodeURIComponent(studentId)}`)
+}
+
+/** 获取推送历史 */
+export const getPushResultsApi = (studentId) =>
+  request.get('/push/results', { params: { studentId } })
+
+/** 获取最新推送 */
+export const getLatestPushApi = (studentId) =>
+  request.get('/push/latest', { params: { studentId } })
+
+/** 获取页面上下文（最近学过 + 薄弱点 + 搜索补全） */
+export const getPushContextApi = (studentId, q) =>
+  request.get('/push/context', { params: { studentId, q } })
+
 // ==================== 资源生成 (SSE) ====================
 /**
  * 通过 SSE 流式生成资源。

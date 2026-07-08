@@ -25,6 +25,10 @@
           <span class="btn-icon">💬</span>
           智能辅导
         </button>
+        <button class="btn-primary" @click="$router.push('/push')" style="background: linear-gradient(135deg, #764ba2, #667eea);">
+          <span class="btn-icon">📬</span>
+          资源推送
+        </button>
         <button class="btn-secondary" @click="$router.push('/profile')">
           <span class="btn-icon">👤</span>
           个人中心

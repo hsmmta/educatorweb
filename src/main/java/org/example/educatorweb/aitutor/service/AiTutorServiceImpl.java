@@ -12,6 +12,8 @@ import org.example.educatorweb.rag.model.DocumentSnippet;
 import org.example.educatorweb.rag.service.EmbeddingService;
 import org.example.educatorweb.resourcegen.config.ModelRegistry;
 import org.example.educatorweb.resourcegen.infrastructure.ModelProvider;
+import org.example.educatorweb.topicpush.service.TopicDetector;
+import org.example.educatorweb.topicpush.service.PushTriggerService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -39,19 +41,25 @@ public class AiTutorServiceImpl implements AiTutorService {
     private final ChromaClient chromaClient;
     private final KnowledgeGraphService kgService;
     private final WebSearchService webSearchService;
+    private final TopicDetector topicDetector;
+    private final PushTriggerService pushTrigger;
 
     public AiTutorServiceImpl(ModelRegistry modelRegistry,
                               RagService ragService,
                               EmbeddingService embeddingService,
                               ChromaClient chromaClient,
                               KnowledgeGraphService kgService,
-                              WebSearchService webSearchService) {
+                              WebSearchService webSearchService,
+                              TopicDetector topicDetector,
+                              PushTriggerService pushTrigger) {
         this.modelRegistry = modelRegistry;
         this.ragService = ragService;
         this.embeddingService = embeddingService;
         this.chromaClient = chromaClient;
         this.kgService = kgService;
         this.webSearchService = webSearchService;
+        this.topicDetector = topicDetector;
+        this.pushTrigger = pushTrigger;
     }
 
     @Override
@@ -64,6 +72,9 @@ public class AiTutorServiceImpl implements AiTutorService {
 
         log.info("AiTutor: student={}, conversation={}, question(len={})",
             studentId, conversationId, question.length());
+
+        // 0. Topic shift detection — before processing this question
+        topicDetector.detectAndCache(studentId, question, conversationId);
 
         // 1. RAG — retrieve from private think-tank (Qdrant)
         List<DocumentSnippet> ragSnippets = retrieveKnowledge(studentId, question);
@@ -86,8 +97,14 @@ public class AiTutorServiceImpl implements AiTutorService {
         // 6. Call the LLM
         String answer = callLlm(prompt);
 
+        // Update answer in topic detector for next shift check
+        topicDetector.updateAnswer(studentId, answer);
+
         // 7. Store this round in Chroma
         storeConversation(conversationId, studentId, question, answer);
+
+        // Check if enough topics accumulated for count-based push
+        pushTrigger.checkAndPush(studentId);
 
         // 8. Build response
         List<ChatResponse.SourceSnippet> sources = ragSnippets.stream()
