@@ -174,6 +174,11 @@
             <div class="history-layout">
               <div class="history-list">
                 <div v-if="!pushHistory.length" class="empty-state"><p>暂无推送记录</p></div>
+                <div v-else class="history-list-actions">
+                  <el-button size="small" type="danger" text @click="clearHistory">
+                    🗑 清空全部历史
+                  </el-button>
+                </div>
                 <div
                   v-for="record in pushHistory" :key="record.id"
                   :class="['history-item', { active: selectedHistoryId === record.id }]"
@@ -223,7 +228,8 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, Close } from '@element-plus/icons-vue'
 import {
-  getRecommendationsApi, getPushResultsApi, getLatestPushApi, getPushContextApi
+  getRecommendationsApi, getPushResultsApi, getLatestPushApi, getPushContextApi,
+  clearPushHistoryApi
 } from '../api/index.js'
 
 // ---------- state ----------
@@ -373,6 +379,19 @@ async function refreshAll() {
   ElMessage.success('已刷新')
 }
 
+async function clearHistory() {
+  try {
+    await clearPushHistoryApi(getStudentId())
+    pushHistory.value = []
+    latestPush.value = null
+    selectedHistoryId.value = null
+    panelMode.value = null
+    ElMessage.success('推送历史已清空')
+  } catch (e) {
+    ElMessage.error('清空失败: ' + (e.response?.data?.message || e.message))
+  }
+}
+
 // ---------- SSE push-refresh handler ----------
 const refreshHandler = () => { loadLatestPush() }
 
@@ -487,6 +506,7 @@ onUnmounted(() => {
 /* ---- history ---- */
 .history-layout { display: grid; grid-template-columns: 260px 1fr; gap: 24px; min-height: 280px; }
 .history-list { border-right: 1px solid #f0f2f5; padding-right: 12px; overflow-y: auto; max-height: 420px; }
+.history-list-actions { text-align: right; margin-bottom: 8px; }
 .history-item {
   padding: 10px 14px; border-radius: 10px; cursor: pointer;
   border: 1px solid #f0f2f5; margin-bottom: 6px; transition: all 0.15s;
