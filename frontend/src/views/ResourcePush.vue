@@ -294,9 +294,9 @@ function formatTime(ts) {
 function goLearn(res, topic) {
   const t = topic || searchText.value
   const title = res.title || res.resourceTypeLabel || res.resourceType || ''
-  // 临时：跳转到 AI 对话，预填资源主题供 AI 辅导处理
-  // 等资源消费页（文档阅读/练习/代码/视频/导图）设计完成后替换
-  window.location.href = '/chat?q=' + encodeURIComponent(t + ' - ' + title)
+  // 临时：跳转到资源生成页，多智能体管道生成实际内容
+  // TODO: 等资源消费页设计完成（文档阅读/练习/代码/视频/导图）后替换
+  window.location.href = '/learning?topic=' + encodeURIComponent(t + ' - ' + title)
 }
 
 // ---------- search ----------
