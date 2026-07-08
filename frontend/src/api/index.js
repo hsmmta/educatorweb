@@ -84,6 +84,14 @@ export const getPushContextApi = (studentId, q) =>
 export const clearPushHistoryApi = (studentId) =>
   request.delete('/push/history', { params: { studentId } })
 
+// ==================== 预生成资源 ====================
+/** 获取预生成资源详情（含完整内容） */
+export const getResourceApi = (id) =>
+  request.get(`/resources/${id}`)
+/** 检查资源生成状态（轻量，不含内容） */
+export const checkResourceStatusApi = (id) =>
+  request.get(`/resources/status-check/${id}`)
+
 // ==================== 资源生成 (SSE) ====================
 /**
  * 通过 SSE 流式生成资源。

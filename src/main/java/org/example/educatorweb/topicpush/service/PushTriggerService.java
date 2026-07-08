@@ -3,6 +3,8 @@ package org.example.educatorweb.topicpush.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.educatorweb.learningpath.ResourceRecommendService;
 import org.example.educatorweb.learningpath.model.RecommendedResource;
+import org.example.educatorweb.resourcegen.api.ResourcePreGenerateService;
+import org.example.educatorweb.resourcegen.model.PreGeneratedResource;
 import org.example.educatorweb.topicpush.model.PushResult;
 import org.example.educatorweb.topicpush.model.TopicCache;
 import org.example.educatorweb.topicpush.repository.PushResultRepository;
@@ -15,6 +17,7 @@ import reactor.core.publisher.Sinks;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -27,6 +30,7 @@ public class PushTriggerService {
     private final PushResultRepository resultRepo;
     private final PushPriorityCalculator calculator;
     private final ResourceRecommendService recommendService;
+    private final ResourcePreGenerateService preGenerateService;
     private final ObjectMapper objectMapper;
 
     /** SSE sink for broadcasting push notifications to connected clients. */
@@ -36,11 +40,13 @@ public class PushTriggerService {
     public PushTriggerService(TopicCacheRepository cacheRepo,
                                PushResultRepository resultRepo,
                                PushPriorityCalculator calculator,
-                               ResourceRecommendService recommendService) {
+                               ResourceRecommendService recommendService,
+                               ResourcePreGenerateService preGenerateService) {
         this.cacheRepo = cacheRepo;
         this.resultRepo = resultRepo;
         this.calculator = calculator;
         this.recommendService = recommendService;
+        this.preGenerateService = preGenerateService;
         this.objectMapper = new ObjectMapper();
     }
 
@@ -80,13 +86,36 @@ public class PushTriggerService {
         List<Map<String, Object>> resources = new ArrayList<>();
         for (var pt : prioritized) {
             try {
+                // 1. Create pre-generation records (sync, returns immediately with IDs)
+                List<PreGeneratedResource> preGenRecords =
+                    preGenerateService.createRecords(userId, pt.topicLabel(), "TOPIC_PUSH");
+
+                // Build type → preGeneratedId map
+                Map<String, Long> typeToId = new HashMap<>();
+                for (PreGeneratedResource pgr : preGenRecords) {
+                    typeToId.put(pgr.getResourceType(), pgr.getId());
+                }
+
+                // 2. Get resource recommendations
                 List<RecommendedResource> recs = recommendService.recommendByTopic(
                     userId, pt.topicLabel(), pt.qaText());
+
+                // 3. Annotate each recommendation with preGeneratedId
+                for (RecommendedResource rec : recs) {
+                    Long pgrId = typeToId.get(rec.getResourceType());
+                    if (pgrId != null) {
+                        rec.setPreGeneratedId(pgrId);
+                    }
+                }
+
                 resources.add(Map.of(
                     "topic", pt.topicLabel(),
                     "isWeakness", pt.isSynthetic(),
                     "resources", recs
                 ));
+
+                // 4. Kick off async generation (non-blocking)
+                preGenerateService.startGeneration(preGenRecords, userId, pt.topicLabel(), "TOPIC_PUSH");
             } catch (Exception e) {
                 log.warn("PushTriggerService: failed to recommend for topic '{}': {}",
                     pt.topicLabel(), e.getMessage());

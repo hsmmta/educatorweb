@@ -298,11 +298,15 @@ function formatTime(ts) {
 }
 
 function goLearn(res, topic) {
-  const t = topic || searchText.value
-  const title = res.title || res.resourceTypeLabel || res.resourceType || ''
-  // 临时：跳转到资源生成页，多智能体管道生成实际内容
-  // TODO: 等资源消费页设计完成（文档阅读/练习/代码/视频/导图）后替换
-  window.location.href = '/learning?topic=' + encodeURIComponent(t + ' - ' + title)
+  if (res.preGeneratedId) {
+    // Navigate to pre-generated resource content
+    window.location.href = '/resource/' + res.preGeneratedId
+  } else {
+    // Fallback: go to generation page if no pre-generated content
+    const t = topic || searchText.value
+    const title = res.title || res.resourceTypeLabel || res.resourceType || ''
+    window.location.href = '/learning?topic=' + encodeURIComponent(t + ' - ' + title)
+  }
 }
 
 // ---------- search ----------
