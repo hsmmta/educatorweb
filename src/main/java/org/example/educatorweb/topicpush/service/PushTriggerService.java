@@ -12,6 +12,7 @@ import org.example.educatorweb.topicpush.repository.TopicCacheRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Sinks;
 
@@ -54,7 +55,7 @@ public class PushTriggerService {
      * Check and trigger count-based push for a specific user.
      * Called after each topic cache insertion.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void checkAndPush(String userId) {
         long count = cacheRepo.countByUserIdAndPushedFalse(userId);
         if (count >= 3) {

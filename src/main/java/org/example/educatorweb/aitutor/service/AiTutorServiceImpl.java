@@ -104,7 +104,12 @@ public class AiTutorServiceImpl implements AiTutorService {
         storeConversation(conversationId, studentId, question, answer);
 
         // Check if enough topics accumulated for count-based push
-        pushTrigger.checkAndPush(studentId);
+        // Run in its own transaction — failures here must never break the chat response
+        try {
+            pushTrigger.checkAndPush(studentId);
+        } catch (Exception e) {
+            log.warn("AiTutor: push check failed (non-critical): {}", e.getMessage());
+        }
 
         // 8. Build response
         List<ChatResponse.SourceSnippet> sources = ragSnippets.stream()

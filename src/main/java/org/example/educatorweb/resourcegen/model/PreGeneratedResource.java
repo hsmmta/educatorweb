@@ -2,6 +2,7 @@ package org.example.educatorweb.resourcegen.model;
 
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 /**
  * Persisted generated resource — actual content (not just metadata).
@@ -24,8 +25,8 @@ public class PreGeneratedResource {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** Unique request ID from the generation pipeline. */
-    @Column(length = 64, nullable = false, unique = true)
+    /** Request ID from the generation pipeline (set after generation starts). */
+    @Column(length = 64)
     private String requestId;
 
     @Column(name = "user_id", length = 64, nullable = false)
@@ -83,7 +84,7 @@ public class PreGeneratedResource {
     public PreGeneratedResource(String requestId, String userId, String topic,
                                  String resourceType, String title,
                                  String pushType) {
-        this.requestId = requestId;
+        this.requestId = requestId != null ? requestId : UUID.randomUUID().toString();
         this.userId = userId;
         this.topic = topic;
         this.resourceType = resourceType;
