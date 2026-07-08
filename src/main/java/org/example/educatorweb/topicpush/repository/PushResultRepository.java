@@ -14,4 +14,7 @@ public interface PushResultRepository extends JpaRepository<PushResult, Long> {
 
     /** Get latest push for a user. */
     PushResult findFirstByUserIdOrderByCreatedAtDesc(String userId);
+
+    /** Delete all push results for a user. */
+    void deleteAllByUserId(String userId);
 }

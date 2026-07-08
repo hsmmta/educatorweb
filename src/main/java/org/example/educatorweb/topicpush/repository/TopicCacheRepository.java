@@ -31,4 +31,9 @@ public interface TopicCacheRepository extends JpaRepository<TopicCache, Long> {
     /** Find distinct topic labels for a user matching a query string (用于搜索补全). */
     @Query("SELECT DISTINCT t.topicLabel FROM TopicCache t WHERE t.userId = :userId AND LOWER(t.topicLabel) LIKE LOWER(CONCAT('%', :q, '%'))")
     List<String> findTopicLabelsByUserIdAndQuery(@Param("userId") String userId, @Param("q") String q);
+
+    /** Reset pushed flag for all cached topics of a user (used when clearing push history). */
+    @Modifying
+    @Query("UPDATE TopicCache t SET t.pushed = false WHERE t.userId = :userId")
+    void resetPushedByUserId(@Param("userId") String userId);
 }

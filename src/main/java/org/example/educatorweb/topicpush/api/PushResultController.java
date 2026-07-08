@@ -5,8 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.educatorweb.dto.ResponseResult;
 import org.example.educatorweb.topicpush.model.PushResult;
 import org.example.educatorweb.topicpush.repository.PushResultRepository;
+import org.example.educatorweb.topicpush.repository.TopicCacheRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.LinkedHashMap;
@@ -20,10 +22,13 @@ public class PushResultController {
     private static final Logger log = LoggerFactory.getLogger(PushResultController.class);
 
     private final PushResultRepository resultRepo;
+    private final TopicCacheRepository cacheRepo;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public PushResultController(PushResultRepository resultRepo) {
+    public PushResultController(PushResultRepository resultRepo,
+                                TopicCacheRepository cacheRepo) {
         this.resultRepo = resultRepo;
+        this.cacheRepo = cacheRepo;
     }
 
     /** GET /api/push/results?studentId=xxx — push history, newest first */
@@ -51,6 +56,17 @@ public class PushResultController {
             }
         }).toList();
         return ResponseResult.success(parsed);
+    }
+
+    /** DELETE /api/push/history?studentId=xxx — clear all push history for a user */
+    @DeleteMapping("/history")
+    @Transactional
+    public ResponseResult<String> deleteHistory(@RequestParam String studentId) {
+        resultRepo.deleteAllByUserId(studentId);
+        // Also reset pushed flag on cached topics so they can be re-pushed
+        cacheRepo.resetPushedByUserId(studentId);
+        log.info("PushResultController: cleared push history for user={}", studentId);
+        return ResponseResult.success("Cleared push history for " + studentId);
     }
 
     /** GET /api/push/latest?studentId=xxx — latest push only */

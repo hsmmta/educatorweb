@@ -80,6 +80,10 @@ export const getLatestPushApi = (studentId) =>
 export const getPushContextApi = (studentId, q) =>
   request.get('/push/context', { params: { studentId, q } })
 
+/** 清空推送历史 */
+export const clearPushHistoryApi = (studentId) =>
+  request.delete('/push/history', { params: { studentId } })
+
 // ==================== 资源生成 (SSE) ====================
 /**
  * 通过 SSE 流式生成资源。
