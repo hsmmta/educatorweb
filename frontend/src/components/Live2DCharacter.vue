@@ -5,9 +5,8 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import * as PIXI from 'pixi.js'
-// 维护中的 fork（兼容 PIXI7，修复了 beta 版 Cubism2 首帧裁剪蒙版竞态）。
-// rem 是 Cubism2 模型，用 /cubism2 子入口：更小、只依赖已加载的 window.Live2D 运行时。
-import { Live2DModel } from 'pixi-live2d-display-lipsyncpatch/cubism2'
+// stable 0.4.0 + PIXI 6 — Cubism2 裁剪蒙版久经考验无首帧竞态
+import { Live2DModel } from 'pixi-live2d-display'
 
 const props = defineProps({
   modelPath: { type: String, default: '/live2d/rem/model.json' }

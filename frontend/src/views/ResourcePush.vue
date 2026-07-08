@@ -293,11 +293,10 @@ function formatTime(ts) {
 
 function goLearn(res, topic) {
   const t = topic || searchText.value
-  if (res.resourceType === 'HTML') {
-    window.open('/learning?topic=' + encodeURIComponent(t), '_blank')
-  } else {
-    window.location.href = '/learning?topic=' + encodeURIComponent(t)
-  }
+  const title = res.title || res.resourceTypeLabel || res.resourceType || ''
+  // 临时：跳转到 AI 对话，预填资源主题供 AI 辅导处理
+  // 等资源消费页（文档阅读/练习/代码/视频/导图）设计完成后替换
+  window.location.href = '/chat?q=' + encodeURIComponent(t + ' - ' + title)
 }
 
 // ---------- search ----------
