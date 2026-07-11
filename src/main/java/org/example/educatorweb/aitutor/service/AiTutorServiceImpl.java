@@ -7,6 +7,7 @@ import org.example.educatorweb.aitutor.search.WebSearchService;
 import org.example.educatorweb.aitutor.search.WebSearchService.SearchResult;
 import org.example.educatorweb.knowledgegraph.KnowledgeGraphService;
 import org.example.educatorweb.knowledgegraph.model.KnowledgeContext;
+import org.example.educatorweb.profile.ProfileUpdateTrigger;
 import org.example.educatorweb.rag.RagService;
 import org.example.educatorweb.rag.model.DocumentSnippet;
 import org.example.educatorweb.rag.service.EmbeddingService;
@@ -17,7 +18,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -39,19 +39,25 @@ public class AiTutorServiceImpl implements AiTutorService {
     private final ChromaClient chromaClient;
     private final KnowledgeGraphService kgService;
     private final WebSearchService webSearchService;
+    private final ConversationMemoryService memoryService;
+    private final ProfileUpdateTrigger profileUpdateTrigger;
 
     public AiTutorServiceImpl(ModelRegistry modelRegistry,
                               RagService ragService,
                               EmbeddingService embeddingService,
                               ChromaClient chromaClient,
                               KnowledgeGraphService kgService,
-                              WebSearchService webSearchService) {
+                              WebSearchService webSearchService,
+                              ConversationMemoryService memoryService,
+                              ProfileUpdateTrigger profileUpdateTrigger) {
         this.modelRegistry = modelRegistry;
         this.ragService = ragService;
         this.embeddingService = embeddingService;
         this.chromaClient = chromaClient;
         this.kgService = kgService;
         this.webSearchService = webSearchService;
+        this.memoryService = memoryService;
+        this.profileUpdateTrigger = profileUpdateTrigger;
     }
 
     @Override
@@ -77,11 +83,11 @@ public class AiTutorServiceImpl implements AiTutorService {
             webResults = searchWeb(question);
         }
 
-        // 4. Retrieve conversation history from Chroma (semantic search)
-        List<Map<String, Object>> historyRecords = retrieveHistory(question, studentId);
+        // 4. Sliding-window conversation memory (recent N full text + old summaries)
+        String memoryContext = memoryService.buildMemoryContext(studentId);
 
         // 5. Build the prompt
-        String prompt = buildPrompt(question, ragSnippets, kgContext, webResults, historyRecords);
+        String prompt = buildPrompt(question, ragSnippets, kgContext, webResults, memoryContext);
 
         // 6. Call the LLM
         String answer = callLlm(prompt);
@@ -89,7 +95,10 @@ public class AiTutorServiceImpl implements AiTutorService {
         // 7. Store this round in Chroma
         storeConversation(conversationId, studentId, question, answer);
 
-        // 8. Build response
+        // 8. Track conversation round → may trigger profile update
+        profileUpdateTrigger.onInteraction(studentId);
+
+        // 9. Build response
         List<ChatResponse.SourceSnippet> sources = ragSnippets.stream()
             .map(s -> new ChatResponse.SourceSnippet(s.content(), s.source(), s.score()))
             .toList();
@@ -108,27 +117,6 @@ public class AiTutorServiceImpl implements AiTutorService {
             return snippets;
         } catch (Exception e) {
             log.warn("AiTutor: RAG retrieval failed: {}", e.getMessage());
-            return List.of();
-        }
-    }
-
-    private List<Map<String, Object>> retrieveHistory(String question, String userId) {
-        try {
-            float[] raw = embeddingService.embed(question);
-            if (raw.length == 0) return List.of();
-            List<Float> embedding = new java.util.ArrayList<>(raw.length);
-            for (float f : raw) embedding.add(f);
-
-            List<Map<String, Object>> records = chromaClient.query(embedding, userId, HISTORY_TOP_K);
-            log.debug("AiTutor: retrieved {} history records for user {}", records.size(), userId);
-            // Sort by timestamp ascending (oldest first for chronological context)
-            records.sort(Comparator.comparing(r -> {
-                Object ts = ((Map<String, Object>) r.get("metadata")).get("timestamp");
-                return ts != null ? ts.toString() : "";
-            }));
-            return records;
-        } catch (Exception e) {
-            log.warn("AiTutor: history retrieval failed: {}", e.getMessage());
             return List.of();
         }
     }
@@ -212,7 +200,7 @@ public class AiTutorServiceImpl implements AiTutorService {
                                List<DocumentSnippet> ragSnippets,
                                KnowledgeContext kgContext,
                                List<SearchResult> webResults,
-                               List<Map<String, Object>> historyRecords) {
+                               String memoryContext) {
         StringBuilder sb = new StringBuilder();
 
         // System prompt (updated with three-level retrieval awareness)
@@ -278,17 +266,10 @@ public class AiTutorServiceImpl implements AiTutorService {
             }
         }
 
-        // Conversation history
-        if (!historyRecords.isEmpty()) {
-            sb.append("【对话历史】\n");
-            for (Map<String, Object> record : historyRecords) {
-                String doc = (String) record.getOrDefault("document", "");
-                @SuppressWarnings("unchecked")
-                Map<String, Object> meta = (Map<String, Object>) record.get("metadata");
-                String role = meta != null ? String.valueOf(meta.getOrDefault("role", "")) : "";
-                String prefix = role.contains("user") ? "学生" : "助教";
-                sb.append(prefix).append(": ").append(doc).append("\n\n");
-            }
+        // Conversation memory (sliding window: recent full + old summaries)
+        if (memoryContext != null && !memoryContext.isBlank()) {
+            sb.append(memoryContext);
+            sb.append("\n");
         }
 
         // Current question

@@ -56,6 +56,14 @@ public class StudentProfile {
     @Column(name = "goal_orientation_confidence", precision = 3, scale = 2, nullable = false)
     private BigDecimal goalOrientationConfidence;
 
+    /** 累计对话轮数，用于画像更新触发（达到阈值后重置为0） */
+    @Column(name = "total_conversation_rounds", nullable = false)
+    private int totalConversationRounds = 0;
+
+    /** 上次画像更新时间，用于 3 天间隔触发 */
+    @Column(name = "last_profile_update_at")
+    private LocalDateTime lastProfileUpdateAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -107,6 +115,12 @@ public class StudentProfile {
 
     public BigDecimal getGoalOrientationConfidence() { return goalOrientationConfidence; }
     public void setGoalOrientationConfidence(BigDecimal goalOrientationConfidence) { this.goalOrientationConfidence = goalOrientationConfidence; }
+
+    public int getTotalConversationRounds() { return totalConversationRounds; }
+    public void setTotalConversationRounds(int totalConversationRounds) { this.totalConversationRounds = totalConversationRounds; }
+
+    public LocalDateTime getLastProfileUpdateAt() { return lastProfileUpdateAt; }
+    public void setLastProfileUpdateAt(LocalDateTime lastProfileUpdateAt) { this.lastProfileUpdateAt = lastProfileUpdateAt; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

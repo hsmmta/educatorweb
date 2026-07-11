@@ -314,7 +314,7 @@ const resetQuiz = () => {
   optionResult.value = {}
 }
 
-const selectOption = (qIndex, optText) => {
+const selectOption = async (qIndex, optText) => {
   const q = quizData.value?.questions?.[qIndex]
   if (!q || q.type === 'SHORT_ANSWER' || q.type === 'FILL_BLANK') return
   const letter = optionLetter(optText)
@@ -323,19 +323,35 @@ const selectOption = (qIndex, optText) => {
 
   let isCorrect = false
   if (q.type === 'TF') {
-    // Compare option content (stripped of letter prefix) with answer using
-    // semantic truth-value matching: True/正确/√ vs False/错误/×
     const optContent = optText.replace(/^[A-Z][.)]\s*/, '').trim()
     const ans = q.answer?.trim() || ''
     const optTrue = /^(true|t|yes|正确|是|√|对)$/i.test(optContent)
     const ansTrue = /^(true|t|yes|正确|是|√|对)$/i.test(ans)
     isCorrect = optTrue === ansTrue
   } else {
-    // MC: letter match (answer is like "C")
     const correctLetter = q.answer?.trim().toUpperCase() || ''
     isCorrect = letter.toUpperCase() === correctLetter
   }
   optionResult.value = { ...optionResult.value, [qIndex]: isCorrect ? 'correct' : 'incorrect' }
+
+  // Submit quiz result to backend
+  try {
+    await fetch('/api/quiz/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        studentId: getStudentId(),
+        knowledgePoint: topic.value,
+        results: [{
+          questionIndex: qIndex,
+          correct: isCorrect,
+          relatedConcept: q.relatedConcept || topic.value
+        }]
+      })
+    })
+  } catch (e) {
+    console.warn('Quiz submit failed:', e)
+  }
 }
 
 const isCorrectAnswer = (q, optText) => {
