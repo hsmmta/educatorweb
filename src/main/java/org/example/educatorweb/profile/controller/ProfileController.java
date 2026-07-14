@@ -1,5 +1,6 @@
 package org.example.educatorweb.profile.controller;
 
+import org.example.educatorweb.profile.LearningReportService;
 import org.example.educatorweb.profile.ProfileAnalysisService;
 import org.example.educatorweb.profile.ProfileService;
 import org.example.educatorweb.profile.model.ProfileAnalysisResult;
@@ -22,11 +23,14 @@ public class ProfileController {
 
     private final ProfileService profileService;
     private final ProfileAnalysisService analysisService;
+    private final LearningReportService reportService;
 
     public ProfileController(ProfileService profileService,
-                             ProfileAnalysisService analysisService) {
+                             ProfileAnalysisService analysisService,
+                             LearningReportService reportService) {
         this.profileService = profileService;
         this.analysisService = analysisService;
+        this.reportService = reportService;
     }
 
     /**
@@ -68,6 +72,25 @@ public class ProfileController {
             log.info("ProfileController: analyze student={}", studentId);
             ProfileAnalysisResult result = analysisService.analyzeAndUpdate(studentId);
             return ResponseEntity.ok(result);
+        }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /**
+     * 画像概览与学习评估摘要。
+     *
+     * <p>返回前端个人中心所需的完整数据：六维画像取值与置信度、学习统计、
+     * 综合评分、强弱项分析、学习建议。
+     *
+     * <pre>
+     * GET /api/profile/{studentId}/summary
+     * </pre>
+     */
+    @GetMapping(value = "/{studentId}/summary", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<Map<String, Object>>> getProfileSummary(@PathVariable String studentId) {
+        return Mono.fromCallable(() -> {
+            log.info("ProfileController: summary for student={}", studentId);
+            Map<String, Object> summary = reportService.generateProfileSummary(studentId);
+            return ResponseEntity.ok(summary);
         }).subscribeOn(Schedulers.boundedElastic());
     }
 }
