@@ -153,59 +153,79 @@ const askQuestion = async () => {
   if (!question.value.trim()) return
   asking.value = true
   answer.value = ''
+  renderedAnswer.value = ''
   answerSources.value = []
   retrievalSteps.value = [
-    { id: 1, text: '正在检索知识库并生成回答...', status: 'loading', source: '' }
+    { id: 1, text: '正在检索知识库...', status: 'loading', source: '' }
   ]
-
-  // 初始化检索状态
   currentActiveStep.value = 'L1'
 
   try {
-    const res = await request.post('/tutor/chat', {
-      studentId: getStudentId(),
-      question: question.value,
-      conversationId: conversationId.value
+    const response = await fetch('/api/tutor/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+      body: JSON.stringify({
+        studentId: getStudentId(),
+        question: question.value,
+        conversationId: conversationId.value
+      })
     })
 
-    const data = res.data
-    conversationId.value = data.conversationId
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
-    // Build answer HTML
-    answer.value = `<p>${(data.answer || '').replace(/\n/g, '<br>')}</p>`
-    renderedAnswer.value = renderMarkdownSimple(data.answer || '')
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let rawAnswer = ''
 
-    // Show sources if available
-    answerSources.value = data.sources || []
-    if (answerSources.value.length > 0) {
-      answerSourceLabel.value = `RAG · ${answerSources.value.length} 条参考`
-      answerSourceType.value = 'success'
-    } else {
-      answerSourceLabel.value = 'AI 回答'
-      answerSourceType.value = 'info'
-    }
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
 
-    // Show retrieval steps with level highlighting (from feature/patch2)
-    if (data.retrievalSteps) {
-      retrievalSteps.value = data.retrievalSteps.map(s => ({
-        id: s.id, text: s.text, status: s.status, source: s.source
-      }))
-      const lastDone = [...retrievalSteps.value].reverse().find(s => s.status === 'done')
-      if (lastDone) {
-        if (lastDone.id === 'L3_LLM') currentActiveStep.value = 'L3'
-        else if (lastDone.id === 'L2_KG') currentActiveStep.value = 'L2'
-        else currentActiveStep.value = 'L1'
+      const lines = buffer.split('\n')
+      buffer = lines.pop()
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue
+        const json = line.substring(5).trim()
+        if (!json) continue
+        try {
+          const evt = JSON.parse(json)
+
+          if (evt.type === 'status') {
+            if (evt.content && evt.content.includes('智库')) {
+              retrievalSteps.value = [{ id: 'L1_PRIVATE_KB', text: evt.content, status: 'loading', source: '' }]
+              currentActiveStep.value = 'L1'
+            } else if (evt.content && evt.content.includes('知识图谱')) {
+              const prev = retrievalSteps.value.filter(s => s.id !== 'L2_KG')
+              retrievalSteps.value = [...prev, { id: 'L2_KG', text: evt.content, status: 'loading', source: '' }]
+              currentActiveStep.value = 'L2'
+            } else if (evt.content && evt.content.includes('生成')) {
+              retrievalSteps.value = retrievalSteps.value.map(s =>
+                s.status === 'loading' ? { ...s, status: 'done' } : s)
+              retrievalSteps.value.push({ id: 'L3_LLM', text: evt.content, status: 'loading', source: '' })
+              currentActiveStep.value = 'L3'
+            }
+          } else if (evt.type === 'token') {
+            rawAnswer += (evt.content || '')
+            renderedAnswer.value = renderMarkdownSimple(rawAnswer)
+            retrievalSteps.value = retrievalSteps.value.map(s =>
+              s.id === 'L3_LLM' ? { ...s, text: 'AI 生成回答中...', status: 'done' } : s)
+          } else if (evt.type === 'done') {
+            conversationId.value = evt.conversationId
+            answerSources.value = evt.sources || []
+            answerSourceLabel.value = answerSources.value.length > 0
+              ? `RAG · ${answerSources.value.length} 条参考` : 'AI 回答'
+            answerSourceType.value = answerSources.value.length > 0 ? 'success' : 'info'
+            retrievalSteps.value = retrievalSteps.value.map(s =>
+              ({ ...s, status: 'done' }))
+          }
+        } catch { /* skip */ }
       }
-    } else {
-      retrievalSteps.value = [
-        { id: 1, text: '知识库检索完成', status: 'done', source: `${answerSources.value.length} 条参考文档` }
-      ]
     }
   } catch (e) {
-    ElMessage.error('提问失败：' + (e.response?.data?.error || e.message || '请稍后重试'))
-    retrievalSteps.value = [
-      { id: 1, text: '请求失败', status: 'done', source: '' }
-    ]
+    ElMessage.error('提问失败：' + (e.message || '请稍后重试'))
+    retrievalSteps.value = [{ id: 1, text: '请求失败', status: 'done', source: '' }]
   } finally {
     asking.value = false
     question.value = ''

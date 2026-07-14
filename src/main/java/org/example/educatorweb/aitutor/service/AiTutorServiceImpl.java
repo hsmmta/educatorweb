@@ -16,8 +16,11 @@ import org.example.educatorweb.resourcegen.infrastructure.ModelProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Sinks;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -104,6 +107,89 @@ public class AiTutorServiceImpl implements AiTutorService {
             .toList();
 
         return new ChatResponse(conversationId, answer, sources, Instant.now());
+    }
+
+    @Override
+    public Flux<StreamEvent> chatStream(ChatRequest request) {
+        String studentId = request.studentId();
+        String question = request.question();
+        String conversationId = request.conversationId() != null
+            ? request.conversationId()
+            : UUID.randomUUID().toString();
+
+        log.info("AiTutor stream: student={}, conversation={}, question(len={})",
+            studentId, conversationId, question.length());
+
+        Sinks.Many<StreamEvent> sink = Sinks.many().multicast().onBackpressureBuffer();
+
+        Thread.startVirtualThread(() -> {
+            try {
+                // 1. RAG
+                sink.tryEmitNext(StreamEvent.status("正在检索你的私人智库..."));
+                List<DocumentSnippet> ragSnippets = retrieveKnowledge(studentId, question);
+
+                // 2. KG
+                sink.tryEmitNext(StreamEvent.status("正在查询知识图谱..."));
+                KnowledgeContext kgContext = queryKnowledgeGraph(question);
+
+                // 3. Web fallback
+                List<SearchResult> webResults = List.of();
+                if (ragSnippets.size() < WEB_FALLBACK_THRESHOLD) {
+                    sink.tryEmitNext(StreamEvent.status("正在联网搜索补充资料..."));
+                    webResults = searchWeb(question);
+                }
+
+                // 4. Memory
+                sink.tryEmitNext(StreamEvent.status("正在回顾历史对话..."));
+                String memoryContext = memoryService.buildMemoryContext(studentId);
+
+                // 5. Build prompt
+                String prompt = buildPrompt(question, ragSnippets, kgContext, webResults, memoryContext);
+
+                // 6. Stream LLM tokens
+                sink.tryEmitNext(StreamEvent.status("正在生成回答..."));
+                ModelProvider provider = modelRegistry.resolve(
+                    org.example.educatorweb.common.model.ResourceType.DOC);
+
+                StringBuilder fullAnswer = new StringBuilder();
+                provider.chatStream(prompt)
+                    .doOnNext(token -> {
+                        if (token != null) {
+                            fullAnswer.append(token);
+                            sink.tryEmitNext(StreamEvent.token(token));
+                        }
+                    })
+                    .doOnComplete(() -> {
+                        String answer = fullAnswer.toString();
+                        // 7. Store in Chroma
+                        storeConversation(conversationId, studentId, question, answer);
+                        // 8. Profile update trigger
+                        profileUpdateTrigger.onInteraction(studentId);
+                        // 9. Done event
+                        List<ChatResponse.SourceSnippet> sources = ragSnippets.stream()
+                            .map(s -> new ChatResponse.SourceSnippet(s.content(), s.source(), s.score()))
+                            .toList();
+                        sink.tryEmitNext(StreamEvent.done(conversationId, sources));
+                        sink.tryEmitComplete();
+                    })
+                    .doOnError(err -> {
+                        log.error("AiTutor stream: LLM error: {}", err.getMessage());
+                        String fallback = "抱歉，AI 助教暂时无法回答，请稍后再试。";
+                        sink.tryEmitNext(StreamEvent.token(fallback));
+                        sink.tryEmitNext(StreamEvent.done(conversationId, List.of()));
+                        sink.tryEmitComplete();
+                    })
+                    .subscribe();
+            } catch (Exception e) {
+                log.error("AiTutor stream: preparation failed: {}", e.getMessage());
+                sink.tryEmitNext(StreamEvent.status("检索异常：" + e.getMessage()));
+                sink.tryEmitNext(StreamEvent.token("抱歉，系统遇到了问题，请稍后再试。"));
+                sink.tryEmitNext(StreamEvent.done(conversationId, List.of()));
+                sink.tryEmitComplete();
+            }
+        });
+
+        return sink.asFlux();
     }
 
     // ---------------------------------------------------------------

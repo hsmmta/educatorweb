@@ -397,32 +397,85 @@ const sendChatMessage = async (text) => {
   loading.value = true
   loadingText.value = '检索中...'
 
-  try {
-    const res = await request.post('/tutor/chat', {
-      studentId: getStudentId(),
-      question: text,
-      conversationId: currentConversationId.value
-    })
-    const data = res.data
-    currentConversationId.value = data.conversationId
+  // Create a placeholder message that will be updated as tokens arrive
+  const answerId = nextMsgId()
+  const answerMsg = {
+    id: answerId,
+    role: 'assistant',
+    type: 'text',
+    content: '',
+    rawText: '',
+    sources: [],
+    ragCount: 0,
+    hasKg: false,
+    hasWeb: false,
+    question: text
+  }
+  messages.value.push(answerMsg)
+  await scrollToBottom()
 
-    const sources = data.sources || []
-    messages.value.push({
-      id: nextMsgId(),
-      role: 'assistant',
-      type: 'text',
-      content: safeMarkdown(data.answer || ''),
-      sources,
-      ragCount: sources.length,
-      // ChatResponse has no hasKg/hasWeb fields — decorative defaults per plan
-      hasKg: data.hasKg !== undefined ? data.hasKg : true,
-      hasWeb: data.hasWeb !== undefined ? data.hasWeb : sources.length < 2,
-      question: text
+  try {
+    const response = await fetch('/api/tutor/chat/stream', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream'
+      },
+      body: JSON.stringify({
+        studentId: getStudentId(),
+        question: text,
+        conversationId: currentConversationId.value
+      })
     })
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+
+      const lines = buffer.split('\n')
+      buffer = lines.pop()
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue
+        const json = line.substring(5).trim()
+        if (!json) continue
+        try {
+          const evt = JSON.parse(json)
+          const msg = messages.value.find(m => m.id === answerId)
+          if (!msg) continue
+
+          if (evt.type === 'status') {
+            loadingText.value = evt.content || '处理中...'
+          } else if (evt.type === 'token') {
+            msg.rawText += (evt.content || '')
+            msg.content = safeMarkdown(msg.rawText)
+            loading.value = false
+            await scrollToBottom()
+          } else if (evt.type === 'done') {
+            currentConversationId.value = evt.conversationId
+            const sources = evt.sources || []
+            msg.sources = sources
+            msg.ragCount = sources.length
+            loadingText.value = ''
+          }
+        } catch { /* skip unparseable lines */ }
+      }
+    }
   } catch (e) {
-    ElMessage.error('提问失败：' + (e.response?.data?.error || e.message || '请稍后重试'))
+    // Remove the placeholder and show error
+    const idx = messages.value.findIndex(m => m.id === answerId)
+    if (idx !== -1) messages.value.splice(idx, 1)
+    ElMessage.error('提问失败：' + (e.message || '请稍后重试'))
   } finally {
     loading.value = false
+    loadingText.value = ''
+    loadConversations()
   }
 }
 
