@@ -12,15 +12,33 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * 知识点掌握度服务。
- * 管理知识点粒度的 proficiency（掌握度）和 confidence（置信度）。
+ * 管理知识点粒度的 rawProficiency（原始正确率）、effectiveProficiency（艾宾浩斯衰减后）
+ * 和 confidence（置信度）。
  *
- * <p>proficiency = correctQuestions / totalQuestions（实时计算，0~1）
- * <p>confidence = 1 - e^(-k * totalQuestions)（函数计算，快速上升后渐近于1）
+ * <h3>三维评估模型</h3>
+ * <ul>
+ *   <li><b>rawProficiency</b> = correctQuestions / totalQuestions — 存储在 DB，每次答题后更新</li>
+ *   <li><b>effectiveProficiency</b> = rawProficiency × retention — 反映遗忘后的当前真实水平</li>
+ *   <li><b>confidence</b> = 1 - e^(-k × totalQuestions) — 基于答题数量的可信度，不受时间影响</li>
+ * </ul>
+ *
+ * <h3>艾宾浩斯遗忘衰减</h3>
+ * retention = e^(-daysSinceLastStudy / halfLife)
+ * <p>halfLife 根据原始掌握度分级设定，符合"掌握越牢固遗忘越慢"的记忆规律：
+ * <pre>
+ *   rawProficiency ≥ 0.8  → halfLife = 30天
+ *   0.6 ≤ raw < 0.8       → halfLife = 21天
+ *   0.4 ≤ raw < 0.6       → halfLife = 14天
+ *   0.2 ≤ raw < 0.4       → halfLife = 7天
+ *   raw < 0.2             → halfLife = 3天
+ * </pre>
+ * 每次重新答题/学习后，lastStudyTime 更新，衰减重置。
  */
 @Service
 public class ProficiencyService {
@@ -39,13 +57,11 @@ public class ProficiencyService {
         this.profileService = profileService;
     }
 
+    // ======================== 写入：答题更新 ========================
+
     /**
      * 根据单次答题结果更新知识点掌握度。
-     *
-     * @param studentId      学生ID
-     * @param concept         知识点名称（中文名，与 Neo4j KnowledgePoint.name 对应）
-     * @param correct         本次答题是否正确
-     * @return 更新后的掌握度结果
+     * 答对/答错均更新 lastStudyTime，重置遗忘衰减。
      */
     @Transactional
     public ProficiencyResult recordAnswer(String studentId, String concept, boolean correct) {
@@ -84,32 +100,76 @@ public class ProficiencyService {
         prof.setTotalQuestions(prof.getTotalQuestions() + addTotal);
         prof.setCorrectQuestions(prof.getCorrectQuestions() + addCorrect);
 
-        // proficiency = correct / total
-        BigDecimal proficiency = BigDecimal.ZERO;
+        // rawProficiency = correct / total
+        BigDecimal rawProficiency = BigDecimal.ZERO;
         if (prof.getTotalQuestions() > 0) {
-            proficiency = BigDecimal.valueOf(prof.getCorrectQuestions())
+            rawProficiency = BigDecimal.valueOf(prof.getCorrectQuestions())
                 .divide(BigDecimal.valueOf(prof.getTotalQuestions()), 4, RoundingMode.HALF_UP);
         }
-        prof.setProficiency(proficiency);
+        prof.setProficiency(rawProficiency);
+
+        // 答题行为重置遗忘时钟
         prof.setLastStudyTime(LocalDateTime.now());
 
         proficiencyRepo.save(prof);
 
-        double confidence = confidence(prof.getTotalQuestions());
+        double raw = rawProficiency.doubleValue();
+        double effective = effectiveProficiency(raw, prof.getLastStudyTime());
+        double conf = confidence(prof.getTotalQuestions());
 
-        log.info("ProficiencyService: student={}, concept={}, proficiency={}, confidence={:.4f}, total={}, correct={}",
-            studentId, concept, proficiency, confidence, prof.getTotalQuestions(), prof.getCorrectQuestions());
+        log.info("ProficiencyService: student={}, concept={}, raw={:.4f}, effective={:.4f}, confidence={:.4f}, total={}, correct={}",
+            studentId, concept, raw, effective, conf, prof.getTotalQuestions(), prof.getCorrectQuestions());
 
-        // 同步到 StudentProfile.knowledgeDetails
         syncToProfile(studentId, prof);
 
-        return new ProficiencyResult(concept, proficiency.doubleValue(), confidence,
-            prof.getTotalQuestions(), prof.getCorrectQuestions());
+        return buildResult(concept, raw, prof.getTotalQuestions(), prof.getCorrectQuestions(),
+            prof.getLastStudyTime());
+    }
+
+    // ======================== 读取：含遗忘衰减 ========================
+
+    /**
+     * 获取学生在指定知识点上的有效掌握度（含遗忘衰减）。
+     * 从未答过题返回 proficiency=0, confidence=0。
+     */
+    @Transactional(readOnly = true)
+    public ProficiencyResult getProficiency(String studentId, String concept) {
+        StudentKnowledgeProficiencyId id = new StudentKnowledgeProficiencyId(studentId, concept);
+        return proficiencyRepo.findById(id)
+            .map(p -> buildResult(concept,
+                p.getProficiency() != null ? p.getProficiency().doubleValue() : 0.0,
+                p.getTotalQuestions(), p.getCorrectQuestions(), p.getLastStudyTime()))
+            .orElse(new ProficiencyResult(concept, 0.0, 0.0, 0.0, 0, 0, null, 0));
     }
 
     /**
-     * 计算置信度。不存数据库，每次实时计算。
-     * confidence(n) = 1 - e^(-k * n)，k = 0.4
+     * 获取学生在所有已练习知识点上的有效掌握度列表。
+     */
+    @Transactional(readOnly = true)
+    public List<ProficiencyResult> getAllProficiencies(String studentId) {
+        return proficiencyRepo.findByStudentId(studentId).stream()
+            .map(p -> buildResult(p.getConcept(),
+                p.getProficiency() != null ? p.getProficiency().doubleValue() : 0.0,
+                p.getTotalQuestions(), p.getCorrectQuestions(), p.getLastStudyTime()))
+            .toList();
+    }
+
+    private ProficiencyResult buildResult(String concept, double rawProficiency,
+                                           int totalQuestions, int correctQuestions,
+                                           LocalDateTime lastStudyTime) {
+        double effective = effectiveProficiency(rawProficiency, lastStudyTime);
+        double conf = confidence(totalQuestions);
+        long daysSinceStudy = lastStudyTime != null
+            ? ChronoUnit.DAYS.between(lastStudyTime, LocalDateTime.now()) : 0;
+        return new ProficiencyResult(concept, rawProficiency, effective, conf,
+            totalQuestions, correctQuestions, lastStudyTime, daysSinceStudy);
+    }
+
+    // ======================== 静态公式 ========================
+
+    /**
+     * 计算置信度。不存数据库，每次基于答题总数实时计算。
+     * confidence(n) = 1 - e^(-k × n)，k = 0.4
      *
      * <pre>
      * n=1  → 0.33     n=3  → 0.70     n=5  → 0.86
@@ -122,18 +182,47 @@ public class ProficiencyService {
     }
 
     /**
-     * 获取学生在指定知识点上的掌握度。如果从未答过题，返回默认值（proficiency=0, confidence=0）。
+     * 应用艾宾浩斯遗忘衰减，计算有效掌握度。
+     *
+     * <p>effectiveProficiency = rawProficiency × e^(-daysSince / halfLife)
+     *
+     * <p>halfLife 分级：
+     * <pre>
+     *   raw ≥ 0.8  → 30天（牢固，慢遗忘）
+     *   raw ≥ 0.6  → 21天
+     *   raw ≥ 0.4  → 14天
+     *   raw ≥ 0.2  →  7天
+     *   raw < 0.2  →  3天（薄弱，快遗忘）
+     * </pre>
+     *
+     * @param rawProficiency 原始正确率 (0~1)
+     * @param lastStudyTime  最近学习时间，null 表示从未学习
+     * @return 衰减后的有效掌握度 (0~1)
      */
-    @Transactional(readOnly = true)
-    public ProficiencyResult getProficiency(String studentId, String concept) {
-        StudentKnowledgeProficiencyId id = new StudentKnowledgeProficiencyId(studentId, concept);
-        return proficiencyRepo.findById(id)
-            .map(p -> new ProficiencyResult(concept,
-                p.getProficiency() != null ? p.getProficiency().doubleValue() : 0.0,
-                confidence(p.getTotalQuestions()),
-                p.getTotalQuestions(), p.getCorrectQuestions()))
-            .orElse(new ProficiencyResult(concept, 0.0, 0.0, 0, 0));
+    public static double effectiveProficiency(double rawProficiency, LocalDateTime lastStudyTime) {
+        if (lastStudyTime == null) return rawProficiency;
+        if (rawProficiency <= 0) return 0;
+
+        long daysSince = Math.max(0, ChronoUnit.DAYS.between(lastStudyTime, LocalDateTime.now()));
+        double halfLife = estimateHalfLife(rawProficiency);
+        double retention = Math.exp(-daysSince / halfLife);
+
+        return rawProficiency * retention;
     }
+
+    /**
+     * 根据原始掌握度估计记忆半衰期。
+     * 掌握越牢固 → 半衰期越长 → 遗忘越慢。
+     */
+    private static double estimateHalfLife(double rawProficiency) {
+        if (rawProficiency >= 0.8) return 30.0;
+        if (rawProficiency >= 0.6) return 21.0;
+        if (rawProficiency >= 0.4) return 14.0;
+        if (rawProficiency >= 0.2) return 7.0;
+        return 3.0;
+    }
+
+    // ======================== 内部方法 ========================
 
     private void syncToProfile(String studentId, StudentKnowledgeProficiency prof) {
         try {
@@ -163,12 +252,31 @@ public class ProficiencyService {
         }
     }
 
-    // ============ 数据类型 ============
+    // ======================== 数据类型 ========================
 
     /** 单次答题结果 */
     public record AnswerResult(int questionIndex, boolean correct, String relatedConcept) {}
 
-    /** 掌握度更新结果 */
-    public record ProficiencyResult(String concept, double proficiency, double confidence,
-                                     int totalQuestions, int correctQuestions) {}
+    /**
+     * 掌握度结果（三维评估）。
+     *
+     * @param concept           知识点名称
+     * @param rawProficiency    原始正确率 (correct/total)，存储在 DB
+     * @param effectiveProficiency 经艾宾浩斯衰减后的有效掌握度
+     * @param confidence        置信度 (1-e^(-kn))，基于答题数
+     * @param totalQuestions    总答题数
+     * @param correctQuestions  正确答题数
+     * @param lastStudyTime     最近学习时间
+     * @param daysSinceStudy    距上次学习天数
+     */
+    public record ProficiencyResult(
+        String concept,
+        double rawProficiency,
+        double effectiveProficiency,
+        double confidence,
+        int totalQuestions,
+        int correctQuestions,
+        LocalDateTime lastStudyTime,
+        long daysSinceStudy
+    ) {}
 }
