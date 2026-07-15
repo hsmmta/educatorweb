@@ -8,6 +8,7 @@ import org.example.educatorweb.learningpath.model.LearningPath.PushStrategy;
 import org.example.educatorweb.learningpath.model.PathNode;
 import org.example.educatorweb.learningpath.model.PathNode.PathNodeStatus;
 import org.example.educatorweb.learningpath.model.RecommendedResource;
+import org.example.educatorweb.profile.ProficiencyService;
 import org.example.educatorweb.profile.ProfileService;
 import org.example.educatorweb.profile.model.StudentKnowledgeProficiency;
 import org.example.educatorweb.profile.model.StudentProfile;
@@ -175,23 +176,29 @@ public class LearningPathService {
 
     /**
      * 标记节点状态：已掌握/当前学习/待学习。
+     * 使用有效掌握度（含艾宾浩斯遗忘衰减），同时满足 effectiveProficiency >= 0.8 且
+     * confidence >= 0.5 才标记为 COMPLETED。超过 30 天未复习的节点即使曾经满分也会因衰减降级。
      */
     private void markNodeStatuses(List<PathNode> nodes, Map<String, StudentKnowledgeProficiency> profMap) {
         boolean foundCurrent = false;
         for (PathNode node : nodes) {
             StudentKnowledgeProficiency prof = profMap.get(node.getKnowledgePointId());
-            if (prof != null && prof.getProficiency() != null
-                && prof.getProficiency().doubleValue() >= 0.8) {
+            double rawProficiency = prof != null && prof.getProficiency() != null
+                ? prof.getProficiency().doubleValue() : 0.0;
+            double effectiveProficiency = ProficiencyService.effectiveProficiency(
+                rawProficiency, prof != null ? prof.getLastStudyTime() : null);
+            double confidence = ProficiencyService.confidence(
+                prof != null ? prof.getTotalQuestions() : 0);
+
+            if (effectiveProficiency >= 0.8 && confidence >= 0.5) {
                 node.setStatus(PathNodeStatus.COMPLETED);
-            } else if (!foundCurrent && (prof == null || prof.getProficiency() == null
-                || prof.getProficiency().doubleValue() < 0.8)) {
+            } else if (!foundCurrent) {
                 node.setStatus(PathNodeStatus.CURRENT);
                 foundCurrent = true;
             } else {
                 node.setStatus(PathNodeStatus.PENDING);
             }
         }
-        // 如果所有节点都已掌握，标记第一个为当前
         if (!foundCurrent && !nodes.isEmpty()) {
             nodes.get(0).setStatus(PathNodeStatus.CURRENT);
         }

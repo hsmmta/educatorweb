@@ -11,6 +11,8 @@ import org.example.educatorweb.learninglog.service.LearningBehaviorService;
 import org.example.educatorweb.rag.RagService;
 import org.example.educatorweb.rag.model.DocumentSnippet;
 import org.example.educatorweb.rag.service.EmbeddingService;
+import org.example.educatorweb.learninglog.service.LearningBehaviorService;
+import org.example.educatorweb.profile.passive.PassiveProfileUpdateService;
 import org.example.educatorweb.resourcegen.config.ModelRegistry;
 import org.example.educatorweb.resourcegen.infrastructure.ModelProvider;
 import org.example.educatorweb.topicpush.service.TopicDetector;
@@ -46,6 +48,7 @@ public class AiTutorServiceImpl implements AiTutorService {
     private final TopicDetector topicDetector;
     private final PushTriggerService pushTrigger;
     private final LearningBehaviorService behaviorService;
+    private final PassiveProfileUpdateService passiveProfileUpdateService;
 
     public AiTutorServiceImpl(ModelRegistry modelRegistry,
                               RagService ragService,
@@ -55,7 +58,8 @@ public class AiTutorServiceImpl implements AiTutorService {
                               WebSearchService webSearchService,
                               TopicDetector topicDetector,
                               PushTriggerService pushTrigger,
-                              LearningBehaviorService behaviorService) {
+                              LearningBehaviorService behaviorService,
+                              PassiveProfileUpdateService passiveProfileUpdateService) {
         this.modelRegistry = modelRegistry;
         this.ragService = ragService;
         this.embeddingService = embeddingService;
@@ -65,6 +69,7 @@ public class AiTutorServiceImpl implements AiTutorService {
         this.topicDetector = topicDetector;
         this.pushTrigger = pushTrigger;
         this.behaviorService = behaviorService;
+        this.passiveProfileUpdateService = passiveProfileUpdateService;
     }
 
     @Override
@@ -118,12 +123,14 @@ public class AiTutorServiceImpl implements AiTutorService {
         storeConversation(conversationId, studentId, question, answer);
 
         // Check if enough topics accumulated for count-based push
-        // Run in its own transaction — failures here must never break the chat response
         try {
             pushTrigger.checkAndPush(studentId);
         } catch (Exception e) {
             log.warn("AiTutor: push check failed (non-critical): {}", e.getMessage());
         }
+
+        // Async trigger for passive profile update
+        passiveProfileUpdateService.checkAndTrigger(studentId);
 
         // 8. Build response
         List<ChatResponse.SourceSnippet> sources = ragSnippets.stream()

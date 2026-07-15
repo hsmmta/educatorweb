@@ -229,6 +229,43 @@ public class ChromaClient {
         return messages;
     }
 
+    /**
+     * Get distinct conversation IDs for a user whose messages have timestamp
+     * strictly after {@code cursor}. Used to discover unprocessed conversations
+     * for passive profile update.
+     *
+     * @param userId the student ID
+     * @param cursor ISO-8601 timestamp string (e.g. "2026-07-01T00:00:00Z")
+     * @return distinct conversation IDs, sorted by earliest timestamp ascending
+     */
+    public List<String> getConversationIdsAfterCursor(String userId, String cursor) {
+        ChromaGetResult result = chromaGet(Map.of(
+            "$and", List.of(
+                Map.of("userId", userId),
+                Map.of("timestamp", Map.of("$gt", cursor))
+            )
+        ));
+        if (result == null || result.metadatas() == null) return List.of();
+
+        // Collect distinct conversation IDs, sorted by their earliest timestamp
+        Map<String, String> convEarliestTs = new LinkedHashMap<>();
+        for (Map<String, Object> meta : result.metadatas()) {
+            if (meta == null) continue;
+            String convId = (String) meta.get("conversationId");
+            String ts = meta.get("timestamp") != null ? String.valueOf(meta.get("timestamp")) : "";
+            if (convId == null) continue;
+            String existing = convEarliestTs.get(convId);
+            if (existing == null || ts.compareTo(existing) < 0) {
+                convEarliestTs.put(convId, ts);
+            }
+        }
+
+        return convEarliestTs.entrySet().stream()
+            .sorted(Map.Entry.comparingByValue())
+            .map(Map.Entry::getKey)
+            .toList();
+    }
+
     /** Parsed Chroma {@code /get} response: flat metadata + document lists. */
     private record ChromaGetResult(List<Map<String, Object>> metadatas, List<String> documents) {}
 

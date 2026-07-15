@@ -129,6 +129,12 @@ review:
     - "violence"
     - "hate speech"
 
+# 被动画像更新配置
+profile:
+  passive:
+    threshold: 8              # 触发阈值（未处理对话数）
+    long-conversation: 20     # 长对话判定阈值（轮数）
+
 # --- Topic-based Resource Push ---
 topic:
   push:

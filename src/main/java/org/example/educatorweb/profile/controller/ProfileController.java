@@ -1,5 +1,6 @@
 package org.example.educatorweb.profile.controller;
 
+import org.example.educatorweb.profile.LearningReportService;
 import org.example.educatorweb.profile.ProfileAnalysisService;
 import org.example.educatorweb.profile.ProfileService;
 import org.example.educatorweb.profile.model.ProfileAnalysisResult;
@@ -27,11 +28,14 @@ public class ProfileController {
 
     private final ProfileService profileService;
     private final ProfileAnalysisService analysisService;
+    private final LearningReportService reportService;
 
     public ProfileController(ProfileService profileService,
-                             ProfileAnalysisService analysisService) {
+                             ProfileAnalysisService analysisService,
+                             LearningReportService reportService) {
         this.profileService = profileService;
         this.analysisService = analysisService;
+        this.reportService = reportService;
     }
 
     /**
@@ -53,72 +57,6 @@ public class ProfileController {
      * 获取学生画像概览摘要（含统计数据）。
      * GET /api/profile/{studentId}/summary
      */
-    @GetMapping(value = "/{studentId}/summary", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<?>> getProfileSummary(@PathVariable String studentId) {
-        return Mono.<ResponseEntity<?>>fromCallable(() -> {
-            log.info("ProfileController: getProfileSummary student={}", studentId);
-            StudentProfile profile = profileService.getProfile(studentId);
-
-            Map<String, Object> summary = new LinkedHashMap<>();
-            summary.put("exists", profile != null);
-
-            if (profile != null) {
-                long learningDays = profile.getCreatedAt() != null
-                    ? Math.max(1, ChronoUnit.DAYS.between(profile.getCreatedAt(), LocalDateTime.now()))
-                    : 1;
-                summary.put("learningDays", (int) learningDays);
-                summary.put("resourceCount", 0);
-                summary.put("quizCount", 0);
-
-                double avg = averageConfidence(profile);
-                summary.put("compositeScore", Math.round(avg * 100));
-
-                summary.put("details", List.of(
-                    Map.of("label", "知识掌握", "value", pct(profile.getKnowledgeBaseConfidence()), "color", "#667eea"),
-                    Map.of("label", "练习正确率", "value", 0, "color", "#67c23a"),
-                    Map.of("label", "学习投入度", "value", pct(profile.getLearningPaceConfidence()), "color", "#e6a23c"),
-                    Map.of("label", "资源利用率", "value", 0, "color", "#f56c6c")
-                ));
-
-                summary.put("confidences", Map.of(
-                    "knowledge", profile.getKnowledgeBaseConfidence().doubleValue(),
-                    "cognitive", profile.getCognitiveStyleConfidence().doubleValue(),
-                    "error", profile.getErrorPatternConfidence().doubleValue(),
-                    "pace", profile.getLearningPaceConfidence().doubleValue(),
-                    "goal", profile.getGoalOrientationConfidence().doubleValue()
-                ));
-
-                summary.put("knowledgeBaseLevel", profile.getKnowledgeBaseLevel());
-                summary.put("cognitiveStyleType", profile.getCognitiveStyleType());
-                summary.put("errorPatternTags", profile.getErrorPatternTags());
-                summary.put("learningPaceType", profile.getLearningPaceType());
-                summary.put("contentPreferenceType", profile.getContentPreferenceType());
-                summary.put("goalOrientationType", profile.getGoalOrientationType());
-            }
-
-            return ResponseEntity.ok(summary);
-        }).subscribeOn(Schedulers.boundedElastic());
-    }
-
-    private static int pct(BigDecimal bd) {
-        if (bd == null) return 0;
-        return (int) (bd.doubleValue() * 100);
-    }
-
-    private static double averageConfidence(StudentProfile p) {
-        double sum = 0;
-        int count = 0;
-        BigDecimal[] vals = {
-            p.getKnowledgeBaseConfidence(), p.getCognitiveStyleConfidence(),
-            p.getErrorPatternConfidence(), p.getLearningPaceConfidence(),
-            p.getGoalOrientationConfidence()
-        };
-        for (BigDecimal v : vals) {
-            if (v != null) { sum += v.doubleValue(); count++; }
-        }
-        return count > 0 ? sum / count : 0;
-    }
-
     /**
      * AI 画像分析接口。
      *
@@ -143,6 +81,25 @@ public class ProfileController {
             log.info("ProfileController: analyze student={}", studentId);
             ProfileAnalysisResult result = analysisService.analyzeAndUpdate(studentId);
             return ResponseEntity.ok(result);
+        }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /**
+     * 画像概览与学习评估摘要。
+     *
+     * <p>返回前端个人中心所需的完整数据：六维画像取值与置信度、学习统计、
+     * 综合评分、强弱项分析、学习建议。
+     *
+     * <pre>
+     * GET /api/profile/{studentId}/summary
+     * </pre>
+     */
+    @GetMapping(value = "/{studentId}/summary", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<Map<String, Object>>> getProfileSummary(@PathVariable String studentId) {
+        return Mono.fromCallable(() -> {
+            log.info("ProfileController: summary for student={}", studentId);
+            Map<String, Object> summary = reportService.generateProfileSummary(studentId);
+            return ResponseEntity.ok(summary);
         }).subscribeOn(Schedulers.boundedElastic());
     }
 }
