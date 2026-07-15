@@ -3,6 +3,7 @@ package org.example.educatorweb.learninglog.service;
 import org.example.educatorweb.learninglog.model.LearningBehaviorLog;
 import org.example.educatorweb.learninglog.repository.LearningBehaviorLogRepository;
 import org.example.educatorweb.learningpath.ProfileUpdatedEvent;
+import org.example.educatorweb.topicpush.api.PushNotifyController;
 import org.example.educatorweb.profile.model.StudentKnowledgeProficiency;
 import org.example.educatorweb.profile.model.StudentKnowledgeProficiencyId;
 import org.example.educatorweb.profile.model.StudentProfile;
@@ -44,15 +45,18 @@ public class LearningBehaviorService {
     private final StudentKnowledgeProficiencyRepository proficiencyRepo;
     private final StudentProfileRepository profileRepo;
     private final ApplicationEventPublisher eventPublisher;
+    private final PushNotifyController pushNotifyController;
 
     public LearningBehaviorService(LearningBehaviorLogRepository logRepo,
                                    StudentKnowledgeProficiencyRepository proficiencyRepo,
                                    StudentProfileRepository profileRepo,
-                                   ApplicationEventPublisher eventPublisher) {
+                                   ApplicationEventPublisher eventPublisher,
+                                   PushNotifyController pushNotifyController) {
         this.logRepo = logRepo;
         this.proficiencyRepo = proficiencyRepo;
         this.profileRepo = profileRepo;
         this.eventPublisher = eventPublisher;
+        this.pushNotifyController = pushNotifyController;
     }
 
     // ─── Public API ───────────────────────────────────────────
@@ -111,6 +115,13 @@ public class LearningBehaviorService {
 
         // Bidirectional feedback: quiz performance → profile adjustment
         maybeAdjustProfile(userId, concept, correctQuestions, totalQuestions);
+
+        // Notify report subscribers to refresh
+        try {
+            pushNotifyController.notifyReportUpdated(userId);
+        } catch (Exception e) {
+            log.debug("LearningBehavior: report update notify skipped: {}", e.getMessage());
+        }
     }
 
     @Transactional

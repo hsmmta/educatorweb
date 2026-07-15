@@ -1,13 +1,21 @@
 package org.example.educatorweb.profile;
 
 import org.example.educatorweb.profile.model.StudentProfile;
+import org.example.educatorweb.profile.model.StudentKnowledgeProficiency;
+import org.example.educatorweb.profile.model.ProficiencySnapshot;
+import org.example.educatorweb.profile.repository.ProficiencySnapshotRepository;
+import org.example.educatorweb.learninglog.model.LearningBehaviorLog;
+import org.example.educatorweb.learninglog.repository.LearningBehaviorLogRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.time.temporal.WeekFields;
 import java.util.*;
 
 /**
@@ -44,11 +52,17 @@ public class LearningReportService {
 
     private final ProficiencyService proficiencyService;
     private final ProfileService profileService;
+    private final ProficiencySnapshotRepository snapshotRepo;
+    private final LearningBehaviorLogRepository behaviorLogRepo;
 
     public LearningReportService(ProficiencyService proficiencyService,
-                                  ProfileService profileService) {
+                                  ProfileService profileService,
+                                  ProficiencySnapshotRepository snapshotRepo,
+                                  LearningBehaviorLogRepository behaviorLogRepo) {
         this.proficiencyService = proficiencyService;
         this.profileService = profileService;
+        this.snapshotRepo = snapshotRepo;
+        this.behaviorLogRepo = behaviorLogRepo;
     }
 
     /**
@@ -157,9 +171,101 @@ public class LearningReportService {
             "confidence", sp.confidence()
         )).toList());
         result.put("summary", generateSummary(stats, weakPoints, strongPoints));
+        result.put("knowledgeRadar", buildKnowledgeRadar(studentId));
+        result.put("learningProgress", buildLearningProgress(studentId));
+        result.put("learningInput", buildLearningInput(studentId));
+        result.put("growthTrend", buildGrowthTrend(studentId));
 
         return result;
     }
+
+    // ======================== 新增：可视化数据 ========================
+
+    private List<Map<String, Object>> buildKnowledgeRadar(String studentId) {
+        List<ProficiencyService.ProficiencyResult> all = proficiencyService.getAllProficiencies(studentId);
+        if (all.isEmpty()) return List.of();
+
+        List<ProficiencyService.ProficiencyResult> sorted = all.stream()
+            .sorted(Comparator.comparingInt(ProficiencyService.ProficiencyResult::totalQuestions).reversed())
+            .limit(8)
+            .toList();
+
+        Set<String> included = new HashSet<>();
+        sorted.forEach(r -> included.add(r.concept()));
+        List<ProficiencyService.ProficiencyResult> weak = all.stream()
+            .filter(r -> !included.contains(r.concept()))
+            .sorted(Comparator.comparingDouble(ProficiencyService.ProficiencyResult::effectiveProficiency))
+            .limit(4)
+            .toList();
+
+        List<Map<String, Object>> radar = new ArrayList<>();
+        for (var r : sorted) radar.add(Map.of("concept", r.concept(), "proficiency", round2(r.effectiveProficiency())));
+        for (var r : weak) radar.add(Map.of("concept", r.concept(), "proficiency", round2(r.effectiveProficiency())));
+        return radar;
+    }
+
+    private Map<String, Object> buildLearningProgress(String studentId) {
+        List<ProficiencyService.ProficiencyResult> all = proficiencyService.getAllProficiencies(studentId);
+        int total = all.size();
+        long completed = all.stream()
+            .filter(r -> r.effectiveProficiency() >= 0.8 && r.confidence() >= 0.5)
+            .count();
+        return Map.of("totalNodes", total, "completedNodes", (int) completed, "currentNode", "");
+    }
+
+    private Map<String, Object> buildLearningInput(String studentId) {
+        long activeDays = behaviorLogRepo.countActiveDaysByUserId(studentId);
+        long resourceViews = behaviorLogRepo.countByUserIdAndEventType(studentId, "RESOURCE_VIEW");
+        long chatRounds = behaviorLogRepo.countByUserIdAndEventType(studentId, "CHAT_INTERACTION");
+        long quizTotal = behaviorLogRepo.countByUserIdAndEventType(studentId, "QUIZ_ANSWER");
+
+        List<Map<String, Object>> weeklyTrend = new ArrayList<>();
+        LocalDate now = LocalDate.now();
+        WeekFields wf = WeekFields.of(DayOfWeek.MONDAY, 1);
+        for (int i = 3; i >= 0; i--) {
+            LocalDate ws = now.minusWeeks(i).with(wf.dayOfWeek(), 1);
+            LocalDate we = ws.plusDays(6);
+            List<LearningBehaviorLog> logs = behaviorLogRepo.findByUserIdAndCreatedAtBetween(
+                studentId, ws.atStartOfDay(), we.atTime(23, 59, 59));
+            long wq = logs.stream().filter(l -> "QUIZ_ANSWER".equals(l.getEventType())).count();
+            long wv = logs.stream().filter(l -> "RESOURCE_VIEW".equals(l.getEventType())).count();
+            weeklyTrend.add(Map.of("week", "W" + (now.get(wf.weekOfYear()) - i), "quizzes", wq, "views", wv));
+        }
+
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("activeDays", (int) activeDays);
+        input.put("totalDurationMin", 0);
+        input.put("resourceViews", (int) resourceViews);
+        input.put("chatRounds", (int) chatRounds);
+        input.put("quizTotal", (int) quizTotal);
+        input.put("weeklyTrend", weeklyTrend);
+        return input;
+    }
+
+    private List<Map<String, Object>> buildGrowthTrend(String studentId) {
+        LocalDate today = LocalDate.now();
+        List<ProficiencySnapshot> snapshots = snapshotRepo.findByStudentIdAndSnapshotDateBetween(
+            studentId, today.minusWeeks(8), today);
+
+        WeekFields wf = WeekFields.of(DayOfWeek.MONDAY, 1);
+        int currentWeek = today.get(wf.weekOfYear());
+        Map<Integer, List<Double>> byWeek = new LinkedHashMap<>();
+        for (var s : snapshots) {
+            int week = s.getSnapshotDate().get(wf.weekOfYear());
+            byWeek.computeIfAbsent(week, k -> new ArrayList<>())
+                .add(s.getEffectiveProficiency().doubleValue());
+        }
+
+        List<Map<String, Object>> trend = new ArrayList<>();
+        for (int w = currentWeek - 7; w <= currentWeek; w++) {
+            List<Double> vals = byWeek.getOrDefault(w, List.of());
+            double avg = vals.isEmpty() ? 0.0 : vals.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+            trend.add(Map.of("week", "W" + w, "avgProficiency", round2(avg)));
+        }
+        return trend;
+    }
+
+    private static double round2(double v) { return Math.round(v * 100.0) / 100.0; }
 
     // ======================== 私有计算方法 ========================
 

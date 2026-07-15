@@ -3,7 +3,9 @@ package org.example.educatorweb.profile;
 import org.example.educatorweb.profile.model.StudentKnowledgeProficiency;
 import org.example.educatorweb.profile.model.StudentKnowledgeProficiencyId;
 import org.example.educatorweb.profile.model.StudentProfile;
+import org.example.educatorweb.profile.model.ProficiencySnapshot;
 import org.example.educatorweb.profile.repository.StudentKnowledgeProficiencyRepository;
+import org.example.educatorweb.profile.repository.ProficiencySnapshotRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -12,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -50,11 +53,14 @@ public class ProficiencyService {
 
     private final StudentKnowledgeProficiencyRepository proficiencyRepo;
     private final ProfileService profileService;
+    private final ProficiencySnapshotRepository snapshotRepo;
 
     public ProficiencyService(StudentKnowledgeProficiencyRepository proficiencyRepo,
-                              ProfileService profileService) {
+                              ProfileService profileService,
+                              ProficiencySnapshotRepository snapshotRepo) {
         this.proficiencyRepo = proficiencyRepo;
         this.profileService = profileService;
+        this.snapshotRepo = snapshotRepo;
     }
 
     // ======================== 写入：答题更新 ========================
@@ -115,6 +121,24 @@ public class ProficiencyService {
 
         double raw = rawProficiency.doubleValue();
         double effective = effectiveProficiency(raw, prof.getLastStudyTime());
+
+        // Save daily proficiency snapshot for trend tracking
+        try {
+            LocalDate today = LocalDate.now();
+            snapshotRepo.findByStudentIdAndConceptAndSnapshotDate(studentId, concept, today)
+                .ifPresentOrElse(
+                    existing -> {
+                        existing.setProficiency(rawProficiency);
+                        existing.setEffectiveProficiency(BigDecimal.valueOf(effective));
+                        snapshotRepo.save(existing);
+                    },
+                    () -> snapshotRepo.save(new ProficiencySnapshot(
+                        studentId, concept, rawProficiency,
+                        BigDecimal.valueOf(effective), today))
+                );
+        } catch (Exception e) {
+            log.debug("ProficiencyService: snapshot save skipped: {}", e.getMessage());
+        }
         double conf = confidence(prof.getTotalQuestions());
 
         log.info("ProficiencyService: student={}, concept={}, raw={:.4f}, effective={:.4f}, confidence={:.4f}, total={}, correct={}",
@@ -223,6 +247,31 @@ public class ProficiencyService {
     }
 
     // ======================== 内部方法 ========================
+
+    /**
+     * Backfill today's snapshot for all existing proficiency records.
+     * Call once on first deploy to seed the snapshot table.
+     */
+    @Transactional
+    public void backfillSnapshots(String studentId) {
+        LocalDate today = LocalDate.now();
+        List<StudentKnowledgeProficiency> all = proficiencyRepo.findByStudentId(studentId);
+        int count = 0;
+        for (StudentKnowledgeProficiency kp : all) {
+            if (snapshotRepo.findByStudentIdAndConceptAndSnapshotDate(
+                    studentId, kp.getConcept(), today).isEmpty()) {
+                double raw = kp.getProficiency() != null
+                    ? kp.getProficiency().doubleValue() : 0.0;
+                double effective = effectiveProficiency(raw, kp.getLastStudyTime());
+                snapshotRepo.save(new ProficiencySnapshot(
+                    studentId, kp.getConcept(),
+                    kp.getProficiency() != null ? kp.getProficiency() : BigDecimal.ZERO,
+                    BigDecimal.valueOf(effective), today));
+                count++;
+            }
+        }
+        log.info("ProficiencyService: backfilled {} snapshots for student={}", count, studentId);
+    }
 
     private void syncToProfile(String studentId, StudentKnowledgeProficiency prof) {
         try {

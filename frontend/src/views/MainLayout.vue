@@ -78,8 +78,11 @@ function connectSSE(studentId) {
     es.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
+        if (data.type === 'REPORT_UPDATED') {
+          window.dispatchEvent(new CustomEvent('report-updated'))
+          return
+        }
         if (data.triggerType === 'PATH_UPDATED') {
-          // Path recalculated due to profile change — show gentle notification
           ElNotification({
             title: '学习路径已更新',
             message: `你的画像发生了变化，学习路径已自动调整（剩余 ${data.resourceCount} 个节点）`,
@@ -87,7 +90,7 @@ function connectSSE(studentId) {
             duration: 5000,
             onClick: goToPush
           })
-        } else {
+        } else if (data.triggerType) {
           pushNotificationCount.value++
           ElNotification({
             title: '资源推送',
