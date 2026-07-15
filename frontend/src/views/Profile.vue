@@ -105,17 +105,87 @@
       </section>
     </div>
 
-    <!-- ====== 学习报告 ====== -->
+    <!-- ====== 学习报告仪表盘 ====== -->
     <section class="section" v-if="profileExists">
       <div class="report-header">
         <h3>📋 学习报告</h3>
         <span class="report-date">生成于 {{ reportDate }}</span>
+        <el-button size="small" text @click="loadReport">刷新</el-button>
       </div>
 
-      <!-- 报告正文 -->
-      <div class="report-body markdown-body">
+      <!-- 无数据 -->
+      <div v-if="stats.quizCount === 0" class="report-empty">
+        <el-empty description="还没有学习记录，完成首次练习后将自动生成学习报告" :image-size="100">
+          <el-button type="primary" @click="$router.push('/learning')">去学习 →</el-button>
+        </el-empty>
+      </div>
 
-        <!-- 评分说明 -->
+      <template v-else>
+        <!-- Row 1: 综合评分 + 投入度数字 -->
+        <div class="stats-row">
+          <div class="stat-card composite">
+            <span class="stat-card-num">{{ reportData.compositeScore || stats.compositeScore || '—' }}</span>
+            <span class="stat-card-label">综合评分</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-card-num">{{ reportData.learningInput?.activeDays || 0 }}</span>
+            <span class="stat-card-label">活跃天数</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-card-num">{{ reportData.learningInput?.resourceViews || 0 }}</span>
+            <span class="stat-card-label">浏览资源</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-card-num">{{ reportData.learningInput?.chatRounds || 0 }}</span>
+            <span class="stat-card-label">AI 对话</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-card-num">{{ reportData.learningInput?.quizTotal || 0 }}</span>
+            <span class="stat-card-label">答题数</span>
+          </div>
+        </div>
+
+        <!-- Row 2: 雷达图 + 折线图 -->
+        <div class="chart-row">
+          <div class="chart-box" v-if="(reportData.knowledgeRadar || []).length">
+            <v-chart :option="radarOption" autoresize style="height:320px" />
+          </div>
+          <div class="chart-box" v-if="(reportData.growthTrend || []).length">
+            <v-chart :option="growthOption" autoresize style="height:320px" />
+          </div>
+          <div v-if="!(reportData.knowledgeRadar || []).length && !(reportData.growthTrend || []).length"
+               class="chart-box chart-empty">
+            <p>完成练习后，这里将展示知识点掌握雷达图与成长趋势</p>
+          </div>
+        </div>
+
+        <!-- Row 3: 学习进度 + 投入度柱状图 -->
+        <div class="chart-row">
+          <div class="chart-box" v-if="reportData.learningProgress?.totalNodes">
+            <h4>📂 学习进度</h4>
+            <el-progress
+              :percentage="Math.round((reportData.learningProgress.completedNodes || 0) / (reportData.learningProgress.totalNodes || 1) * 100)"
+              :stroke-width="16" color="#667eea" />
+            <p class="progress-label">
+              已完成 {{ reportData.learningProgress.completedNodes }} /
+              共 {{ reportData.learningProgress.totalNodes }} 个知识点
+            </p>
+          </div>
+          <div class="chart-box" v-if="(reportData.learningInput?.weeklyTrend || []).length">
+            <v-chart :option="inputOption" autoresize style="height:280px" />
+          </div>
+        </div>
+
+        <!-- Row 4: 薄弱环节标签云 -->
+        <div class="tag-cloud" v-if="weakPoints.length">
+          <h4>📉 薄弱环节</h4>
+          <span v-for="wp in weakPoints" :key="wp.concept"
+                :style="{ fontSize: 12 + (1 - wp.proficiency) * 12 + 'px',
+                         color: wp.proficiency < 0.4 ? '#f56c6c' : wp.proficiency < 0.6 ? '#e6a23c' : '#909399' }"
+                class="tag-cloud-item">{{ wp.concept }}</span>
+        </div>
+
+        <!-- 评分说明 (keep existing) -->
         <el-collapse class="score-explainer">
           <el-collapse-item title="📐 评分依据说明" name="1">
             <div class="explainer-content">
@@ -123,88 +193,27 @@
               <table>
                 <thead><tr><th>指标</th><th>计算方式</th><th>说明</th></tr></thead>
                 <tbody>
-                  <tr><td><strong>原始正确率</strong></td><td><code>correctQuestions / totalQuestions</code></td><td>基于答题记录统计，存储在数据库中</td></tr>
-                  <tr><td><strong>有效掌握度</strong></td><td><code>原始正确率 × e<sup>(-距上次学习天数 / 半衰期)</sup></code></td><td>引入艾宾浩斯遗忘曲线，长期不复习则掌握度自然衰减；掌握越牢固遗忘越慢（半衰期 3~30 天梯度）</td></tr>
-                  <tr><td><strong>置信度</strong></td><td><code>1 − e<sup>(−0.4 × 答题总数)</sup></code></td><td>仅基于答题数量，不受时间影响；1 题 ≈ 33%，5 题 ≈ 86%，10 题 ≈ 98%</td></tr>
-                  <tr><td colspan="3" style="color:#909399;font-size:13px;"><em>参考文献：Ebbinghaus H. (1885). Memory: A Contribution to Experimental Psychology. · C. H. Piech et al. (2015). Deep Knowledge Tracing. NeurIPS.</em></td></tr>
+                  <tr><td><strong>原始正确率</strong></td><td><code>correctQuestions / totalQuestions</code></td><td>基于答题记录统计</td></tr>
+                  <tr><td><strong>有效掌握度</strong></td><td><code>原始正确率 × e<sup>(-天数 / 半衰期)</sup></code></td><td>艾宾浩斯遗忘衰减；半衰期 3~30 天</td></tr>
+                  <tr><td><strong>置信度</strong></td><td><code>1 − e<sup>(−0.4 × 答题总数)</sup></code></td><td>仅基于答题数量；5 题 ≈ 86%</td></tr>
                 </tbody>
               </table>
             </div>
           </el-collapse-item>
         </el-collapse>
 
-        <!-- 学习总结 -->
-        <blockquote v-if="summaryText" class="report-summary">
-          <p>{{ summaryText }}</p>
-        </blockquote>
-
-        <!-- 无数据 -->
-        <div v-if="stats.quizCount === 0" class="report-empty">
-          <el-empty description="还没有学习记录，完成首次练习后将自动生成学习报告" :image-size="100">
-            <el-button type="primary" @click="$router.push('/learning')">去学习 →</el-button>
-          </el-empty>
-        </div>
-
-        <template v-else>
-          <!-- 知识点掌握概览 -->
-          <h4>📊 知识点掌握概览</h4>
-          <table>
-            <thead><tr><th>知识点</th><th style="text-align:center">有效掌握度</th><th style="text-align:center">置信度</th><th style="text-align:center">答题统计</th><th style="text-align:center">状态</th></tr></thead>
-            <tbody>
-              <tr v-for="wp in weakPoints" :key="wp.concept" class="row-weak">
-                <td><strong>{{ wp.concept }}</strong></td>
-                <td style="text-align:center">
-                  <span class="proficiency-badge weak">{{ fmtPct(wp.proficiency) }}</span>
-                </td>
-                <td style="text-align:center">{{ Math.round(wp.confidence * 100) }}%</td>
-                <td style="text-align:center">{{ wp.correctQuestions }}/{{ wp.totalQuestions }}</td>
-                <td style="text-align:center">
-                  <el-tag size="small" type="danger" v-if="wp.daysSinceStudy > 14">{{ wp.daysSinceStudy }}天未复习</el-tag>
-                  <el-tag size="small" type="danger" v-else>薄弱</el-tag>
-                </td>
-              </tr>
-              <tr v-for="sp in strongPoints" :key="sp.concept" class="row-strong">
-                <td><strong>{{ sp.concept }}</strong></td>
-                <td style="text-align:center">
-                  <span class="proficiency-badge strong">{{ fmtPct(sp.proficiency) }}</span>
-                </td>
-                <td style="text-align:center">{{ Math.round(sp.confidence * 100) }}%</td>
-                <td style="text-align:center">—</td>
-                <td style="text-align:center"><el-tag size="small" type="success">掌握良好</el-tag></td>
-              </tr>
-              <tr v-for="ep in evenPoints" :key="ep.concept" class="row-even">
-                <td><strong>{{ ep.concept }}</strong></td>
-                <td style="text-align:center">
-                  <span class="proficiency-badge even">{{ fmtPct(ep.proficiency) }}</span>
-                </td>
-                <td style="text-align:center">{{ Math.round(ep.confidence * 100) }}%</td>
-                <td style="text-align:center">{{ ep.correctQuestions }}/{{ ep.totalQuestions }}</td>
-                <td style="text-align:center"><el-tag size="small" type="warning">待加强</el-tag></td>
-              </tr>
-            </tbody>
-          </table>
-
-          <!-- 学习建议 -->
-          <h4>💡 学习建议</h4>
-          <div class="tips-list">
-            <div v-for="(tip, i) in learningTips" :key="i" :class="['tip-item', tip.level]">
-              <span class="tip-icon">{{ tip.icon }}</span>
-              <div class="tip-body">
-                <strong>{{ tip.title }}</strong>
-                <p>{{ tip.desc }}</p>
-              </div>
+        <!-- 学习建议 -->
+        <h4>💡 学习建议</h4>
+        <div class="tips-list">
+          <div v-for="(tip, i) in learningTips" :key="i" :class="['tip-item', tip.level]">
+            <span class="tip-icon">{{ tip.icon }}</span>
+            <div class="tip-body">
+              <strong>{{ tip.title }}</strong>
+              <p>{{ tip.desc }}</p>
             </div>
           </div>
-
-          <!-- 学习路线规划（占位） -->
-          <h4>🗺️ 学习路线规划</h4>
-          <div class="path-placeholder">
-            <el-empty description="完成更多练习后，系统将根据你的知识点掌握情况自动规划个性化学习路线" :image-size="60">
-              <el-button type="primary" plain @click="$router.push('/push')">查看学习路径 →</el-button>
-            </el-empty>
-          </div>
-        </template>
-      </div>
+        </div>
+      </template>
     </section>
 
     <!-- 未构建画像时的占位 -->
@@ -222,12 +231,31 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import { Edit, UserFilled, ChatDotRound } from '@element-plus/icons-vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { getProfileSummaryApi } from '../api/index.js'
+import { ChatDotRound, Edit, UserFilled } from '@element-plus/icons-vue'
+import VChart from 'vue-echarts'
+import { use } from 'echarts/core'
+import { RadarChart } from 'echarts/charts'
+import { LineChart } from 'echarts/charts'
+import { BarChart } from 'echarts/charts'
+import { TitleComponent, TooltipComponent, LegendComponent, RadarComponent } from 'echarts/components'
+import { GridComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+
+use([CanvasRenderer, RadarChart, LineChart, BarChart,
+     TitleComponent, TooltipComponent, LegendComponent, RadarComponent, GridComponent])
 
 const userInfo = ref({})
 const profileExists = ref(false)
+const reportData = ref({
+  compositeScore: 0,
+  knowledgeRadar: [],
+  learningProgress: { totalNodes: 0, completedNodes: 0, currentNode: '' },
+  learningInput: { activeDays: 0, totalDurationMin: 0, resourceViews: 0, chatRounds: 0, quizTotal: 0, weeklyTrend: [] },
+  growthTrend: []
+})
 const summaryText = ref('')
 const weakPoints = ref([])
 const strongPoints = ref([])
@@ -303,7 +331,111 @@ const learningTips = computed(() => {
   return tips
 })
 
+// ---- chart options ----
+const radarOption = computed(() => {
+  const data = reportData.value.knowledgeRadar || []
+  if (!data.length) return {}
+  return {
+    title: { text: '知识掌握度', left: 'center', textStyle: { fontSize: 14, color: '#1a1a2e' } },
+    tooltip: {},
+    legend: { bottom: 0, data: ['有效掌握度'] },
+    radar: {
+      indicator: data.map(d => ({ name: d.concept, max: 1 })),
+      radius: '60%'
+    },
+    series: [{
+      type: 'radar',
+      data: [{ value: data.map(d => d.proficiency), name: '有效掌握度' }],
+      areaStyle: { color: 'rgba(102,126,234,0.2)' },
+      lineStyle: { color: '#667eea' },
+      itemStyle: { color: '#667eea' }
+    }]
+  }
+})
+
+const growthOption = computed(() => {
+  const data = reportData.value.growthTrend || []
+  if (!data.length) return {}
+  return {
+    title: { text: '能力成长趋势', left: 'center', textStyle: { fontSize: 14, color: '#1a1a2e' } },
+    tooltip: { trigger: 'axis' },
+    xAxis: { type: 'category', data: data.map(d => d.week) },
+    yAxis: { type: 'value', min: 0, max: 1, axisLabel: { formatter: v => Math.round(v * 100) + '%' } },
+    series: [{
+      type: 'line', data: data.map(d => d.avgProficiency),
+      smooth: true, lineStyle: { color: '#667eea' },
+      itemStyle: { color: '#667eea' },
+      areaStyle: { color: 'rgba(102,126,234,0.1)' }
+    }]
+  }
+})
+
+const inputOption = computed(() => {
+  const data = (reportData.value.learningInput?.weeklyTrend || [])
+  if (!data.length) return {}
+  return {
+    title: { text: '近4周投入度', left: 'center', textStyle: { fontSize: 14, color: '#1a1a2e' } },
+    tooltip: { trigger: 'axis' },
+    legend: { bottom: 0, data: ['测验数', '浏览数'] },
+    xAxis: { type: 'category', data: data.map(d => d.week) },
+    yAxis: { type: 'value' },
+    series: [
+      { name: '测验数', type: 'bar', data: data.map(d => d.quizzes), itemStyle: { color: '#667eea' } },
+      { name: '浏览数', type: 'bar', data: data.map(d => d.views), itemStyle: { color: '#764ba2' } }
+    ]
+  }
+})
+
 // ---- methods ----
+const loadReport = async () => {
+  try {
+    const res = await getProfileSummaryApi(getStudentId())
+    const data = res.data
+    if (data && data.exists) {
+      profileExists.value = true
+      stats.learningDays = data.learningDays || 0
+      stats.resourceCount = data.resourceCount || 0
+      stats.quizCount = data.quizCount || 0
+
+      reportData.value = {
+        compositeScore: data.compositeScore || 0,
+        knowledgeRadar: data.knowledgeRadar || [],
+        learningProgress: data.learningProgress || { totalNodes: 0, completedNodes: 0, currentNode: '' },
+        learningInput: data.learningInput || { activeDays: 0, totalDurationMin: 0, resourceViews: 0, chatRounds: 0, quizTotal: 0, weeklyTrend: [] },
+        growthTrend: data.growthTrend || []
+      }
+
+      const confMap = data.confidences || {}
+      dimensions.value = [
+        { key: 'knowledge', icon: '📖', label: '知识基础',
+          value: data.knowledgeBaseLevel || '', confidence: Math.round((confMap.knowledge || 0) * 100), color: '#667eea' },
+        { key: 'cognitive', icon: '🧩', label: '认知风格',
+          value: data.cognitiveStyleType || '', confidence: Math.round((confMap.cognitive || 0) * 100), color: '#3b82f6' },
+        { key: 'error', icon: '⚠️', label: '易错偏好',
+          value: (data.errorPatternTags || []).join('、') || '', confidence: Math.round((confMap.error || 0) * 100), color: '#f97316' },
+        { key: 'pace', icon: '🏃', label: '学习步调',
+          value: data.learningPaceType || '', confidence: Math.round((confMap.pace || 0) * 100), color: '#22c55e' },
+        { key: 'preference', icon: '🎯', label: '内容偏好',
+          value: data.contentPreferenceType || '', confidence: 50, color: '#ec4899' },
+        { key: 'goal', icon: '🏆', label: '目标导向',
+          value: data.goalOrientationType || '', confidence: Math.round((confMap.goal || 0) * 100), color: '#a855f7' }
+      ]
+
+      weakPoints.value = (data.weakPoints || []).map(wp => ({
+        concept: wp.concept, proficiency: wp.proficiency, confidence: wp.confidence,
+        totalQuestions: wp.totalQuestions || 0, correctQuestions: wp.correctQuestions || 0,
+        daysSinceStudy: wp.daysSinceStudy || 0
+      }))
+      strongPoints.value = (data.strongPoints || []).map(sp => ({
+        concept: sp.concept, proficiency: sp.proficiency, confidence: sp.confidence
+      }))
+      summaryText.value = data.summary || ''
+    } else {
+      profileExists.value = false
+    }
+  } catch (e) { /* silent */ }
+}
+
 const getStudentId = () => {
   try {
     const info = JSON.parse(localStorage.getItem('userInfo') || '{}')
@@ -318,59 +450,13 @@ const fmtPct = (val) => {
 
 onMounted(async () => {
   const info = localStorage.getItem('userInfo')
-  if (info) {
-    try { userInfo.value = JSON.parse(info) } catch { userInfo.value = {} }
-  }
+  if (info) { try { userInfo.value = JSON.parse(info) } catch { userInfo.value = {} } }
+  await loadReport()
+  window.addEventListener('report-updated', loadReport)
+})
 
-  try {
-    const res = await getProfileSummaryApi(getStudentId())
-    const data = res.data
-    if (data && data.exists) {
-      profileExists.value = true
-      stats.learningDays = data.learningDays || 0
-      stats.resourceCount = data.resourceCount || 0
-      stats.quizCount = data.quizCount || 0
-
-      const confMap = data.confidences || {}
-      dimensions.value = [
-        { key: 'knowledge',   icon: '📖', label: '知识基础',
-          value: data.knowledgeBaseLevel || '', confidence: Math.round((confMap.knowledge || 0) * 100), color: '#667eea' },
-        { key: 'cognitive',   icon: '🧩', label: '认知风格',
-          value: data.cognitiveStyleType || '', confidence: Math.round((confMap.cognitive || 0) * 100), color: '#3b82f6' },
-        { key: 'error',       icon: '⚠️', label: '易错偏好',
-          value: (data.errorPatternTags || []).join('、') || '', confidence: Math.round((confMap.error || 0) * 100), color: '#f97316' },
-        { key: 'pace',        icon: '🏃', label: '学习步调',
-          value: data.learningPaceType || '', confidence: Math.round((confMap.pace || 0) * 100), color: '#22c55e' },
-        { key: 'preference',  icon: '🎯', label: '内容偏好',
-          value: data.contentPreferenceType || '', confidence: 50, color: '#ec4899' },
-        { key: 'goal',        icon: '🏆', label: '目标导向',
-          value: data.goalOrientationType || '', confidence: Math.round((confMap.goal || 0) * 100), color: '#a855f7' }
-      ]
-
-      assessment.compositeScore = data.compositeScore ?? '--'
-      if (data.details) assessment.details = data.details
-
-      // 强弱项分类：weak(<0.6), even(0.6-0.8), strong(>=0.8)
-      weakPoints.value = (data.weakPoints || []).filter(w => w.proficiency < 0.6)
-      strongPoints.value = (data.strongPoints || []).filter(s => s.proficiency >= 0.8 && s.confidence >= 0.5)
-
-      // 中间段：掌握度 0.6-0.8 或高置信但低掌握的
-      const allEntries = [...(data.weakPoints || []), ...(data.strongPoints || [])]
-      const seen = new Set()
-      evenPoints.value = []
-      for (const e of allEntries) {
-        if (seen.has(e.concept)) continue
-        seen.add(e.concept)
-        if (e.proficiency >= 0.6 && e.proficiency < 0.8) {
-          evenPoints.value.push(e)
-        }
-      }
-
-      summaryText.value = data.summary || ''
-    }
-  } catch {
-    profileExists.value = false
-  }
+onUnmounted(() => {
+  window.removeEventListener('report-updated', loadReport)
 })
 </script>
 
@@ -525,5 +611,42 @@ onMounted(async () => {
   .profile-card { flex-direction: column; text-align: center; }
   .score-card { flex-direction: column; }
   .page-header { flex-direction: column; gap: 12px; }
+}
+
+.stats-row { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+.stat-card {
+  flex: 1; min-width: 100px; text-align: center;
+  padding: 16px 12px; border-radius: 14px;
+  background: linear-gradient(135deg, rgba(102,126,234,0.06), rgba(118,75,162,0.04));
+  border: 1px solid rgba(102,126,234,0.12);
+}
+.stat-card.composite { background: linear-gradient(135deg, #667eea, #764ba2); color: #fff; border: none; }
+.stat-card-num { display: block; font-size: 28px; font-weight: 800; }
+.stat-card.composite .stat-card-num { color: #fff; }
+.stat-card-label { font-size: 12px; color: #909399; margin-top: 4px; display: block; }
+.stat-card.composite .stat-card-label { color: rgba(255,255,255,0.8); }
+
+.chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+.chart-box {
+  background: #fff; border-radius: 14px; padding: 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+.chart-empty {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 200px; color: #909399; font-size: 14px;
+}
+.progress-label { text-align: center; color: #909399; font-size: 13px; margin-top: 10px; }
+
+.tag-cloud { padding: 16px; margin-bottom: 20px; text-align: center; }
+.tag-cloud h4 { margin-bottom: 12px; }
+.tag-cloud-item {
+  display: inline-block; margin: 4px 8px; cursor: default;
+  font-weight: 600; transition: transform 0.15s;
+}
+.tag-cloud-item:hover { transform: scale(1.1); }
+
+@media (max-width: 768px) {
+  .chart-row { grid-template-columns: 1fr; }
+  .stat-card { min-width: 70px; }
 }
 </style>
