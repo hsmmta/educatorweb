@@ -134,3 +134,10 @@ profile:
   passive:
     threshold: 8              # 触发阈值（未处理对话数）
     long-conversation: 20     # 长对话判定阈值（轮数）
+
+# --- Topic-based Resource Push ---
+topic:
+  push:
+    similarity-threshold: 0.6      # cosine similarity threshold for topic shift detection
+    count-threshold: 3              # number of cached topics to trigger count-based push
+    scheduler-cron: "0 0 18 * * ?"  # daily scheduled push at 18:00

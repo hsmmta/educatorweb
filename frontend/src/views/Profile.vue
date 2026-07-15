@@ -210,54 +210,6 @@ const dimensions = ref([
   { key: 'goal',        icon: '🏆', label: '目标导向',   value: '', color: '#a855f7', confidence: 0 }
 ])
 
-function getStudentId() {
-  try {
-    const info = JSON.parse(localStorage.getItem('userInfo') || '{}')
-    return info.id || info.phone || 'anonymous'
-  } catch { return 'anonymous' }
-}
-
-onMounted(async () => {
-  // 加载用户基本信息
-  const info = localStorage.getItem('userInfo')
-  if (info) {
-    try { userInfo.value = JSON.parse(info) } catch { userInfo.value = {} }
-  }
-
-  // 加载学习画像
-  try {
-    const res = await getProfileSummaryApi(getStudentId())
-    const data = res.data?.data
-    if (data && data.exists) {
-      profileExists.value = true
-      // 映射画像数据到显示维度
-      const confMap = data.confidences || {}
-      const mapDim = (key, val, confField) => ({
-        value: val || '',
-        confidence: Math.round((confMap[confField] || 0) * 100)
-      })
-
-      const km = mapDim('knowledge', data.knowledgeBaseLevel, 'knowledge')
-      const cm = mapDim('cognitive', data.cognitiveStyleType, 'cognitive')
-      const em = mapDim('error',
-        (data.errorPatternTags || []).join('、'), 'error')
-      const pm = mapDim('pace', data.learningPaceType, 'pace')
-      const prm = mapDim('preference', data.contentPreferenceType, 'goal')
-      const gm = mapDim('goal', data.goalOrientationType, 'goal')
-
-      dimensions.value = [
-        { key: 'knowledge',   icon: '📖', label: '知识基础',   ...km, color: '#667eea' },
-        { key: 'cognitive',   icon: '🧩', label: '认知风格',   ...cm, color: '#3b82f6' },
-        { key: 'error',       icon: '⚠️', label: '易错偏好',   ...em, color: '#f97316' },
-        { key: 'pace',        icon: '🏃', label: '学习步调',   ...pm, color: '#22c55e' },
-        { key: 'preference',  icon: '🎯', label: '内容偏好',   ...prm, color: '#ec4899' },
-        { key: 'goal',        icon: '🏆', label: '目标导向',   ...gm, color: '#a855f7' }
-      ]
-    }
-  } catch {
-    // 画像加载失败，使用默认空值
-  }
-})
 </script>
 
 <style scoped>

@@ -11,6 +11,7 @@ import org.example.educatorweb.learningpath.model.RecommendedResource;
 import org.example.educatorweb.profile.ProfileService;
 import org.example.educatorweb.profile.model.StudentKnowledgeProficiency;
 import org.example.educatorweb.profile.model.StudentProfile;
+import org.example.educatorweb.profile.repository.StudentKnowledgeProficiencyRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,7 @@ public class LearningPathService {
 
     private final KnowledgePointRepository kpRepo;
     private final ProfileService profileService;
+    private final StudentKnowledgeProficiencyRepository kpProficiencyRepo;
 
     /** 每个知识点推荐的资源类型和对应图标 */
     private static final List<ResourceSlot> DEFAULT_RESOURCE_SLOTS = List.of(
@@ -38,9 +40,11 @@ public class LearningPathService {
         new ResourceSlot("MINDMAP", "思维导图", "🧩", 5)
     );
 
-    public LearningPathService(KnowledgePointRepository kpRepo, ProfileService profileService) {
+    public LearningPathService(KnowledgePointRepository kpRepo, ProfileService profileService,
+                               StudentKnowledgeProficiencyRepository kpProficiencyRepo) {
         this.kpRepo = kpRepo;
         this.profileService = profileService;
+        this.kpProficiencyRepo = kpProficiencyRepo;
     }
 
     /**
@@ -51,11 +55,15 @@ public class LearningPathService {
      * @return 完整的学习路径
      */
     public LearningPath planPath(String studentId, String targetKnowledgePoint) {
-        // 1. 查找目标知识点
-        Optional<KnowledgePoint> targetOpt = kpRepo.findByName(targetKnowledgePoint);
-        if (targetOpt.isEmpty()) {
-            // 尝试按 ID 模糊查找
-            targetOpt = kpRepo.findById(targetKnowledgePoint);
+        // 1. 查找目标知识点（Neo4j may be unavailable, wrap with fallback）
+        Optional<KnowledgePoint> targetOpt = Optional.empty();
+        try {
+            targetOpt = kpRepo.findByName(targetKnowledgePoint);
+            if (targetOpt.isEmpty()) {
+                targetOpt = kpRepo.findById(targetKnowledgePoint);
+            }
+        } catch (Exception e) {
+            log.warn("LearningPathService: Neo4j unavailable — {}", e.getMessage());
         }
 
         // 2. 获取学生画像
@@ -67,7 +75,11 @@ public class LearningPathService {
 
         if (targetOpt.isPresent()) {
             KnowledgePoint target = targetOpt.get();
-            bfsCollectPrerequisites(target.getId(), visited, orderedNodes);
+            try {
+                bfsCollectPrerequisites(target.getId(), visited, orderedNodes);
+            } catch (Exception e) {
+                log.warn("LearningPathService: BFS failed — {}", e.getMessage());
+            }
             // 添加目标节点本身
             if (!visited.contains(target.getId())) {
                 orderedNodes.add(target);
@@ -266,10 +278,13 @@ public class LearningPathService {
     }
 
     private Map<String, StudentKnowledgeProficiency> buildProficiencyMap(String studentId) {
-        StudentProfile profile = profileService.getProfile(studentId);
-        if (profile == null || profile.getKnowledgeDetails() == null) return Map.of();
+        // 直接查 StudentKnowledgeProficiency 表，不碰 StudentProfile 的懒加载集合。
+        // WebFlux 下 @Transactional 没有线程绑定 Session，离开 repository 方法后
+        // Lazy 集合是失效代理，遍历即炸 —— 独立查询全量加载的实体即可根治。
+        List<StudentKnowledgeProficiency> details = kpProficiencyRepo.findByStudentId(studentId);
+        if (details == null || details.isEmpty()) return Map.of();
         Map<String, StudentKnowledgeProficiency> map = new LinkedHashMap<>();
-        for (StudentKnowledgeProficiency detail : profile.getKnowledgeDetails()) {
+        for (StudentKnowledgeProficiency detail : details) {
             map.put(detail.getConcept(), detail);
         }
         return map;

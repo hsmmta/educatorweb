@@ -12,6 +12,7 @@ public class RecommendedResource {
     private String reason;        // 推荐理由
     private String icon;          // 前端展示图标
     private int priority;         // 推荐优先级 (1-10)
+    private Long preGeneratedId;  // FK to PreGeneratedResource (null = not yet generated)
 
     public RecommendedResource() {}
 
@@ -38,6 +39,8 @@ public class RecommendedResource {
     public void setIcon(String icon) { this.icon = icon; }
     public int getPriority() { return priority; }
     public void setPriority(int priority) { this.priority = priority; }
+    public Long getPreGeneratedId() { return preGeneratedId; }
+    public void setPreGeneratedId(Long preGeneratedId) { this.preGeneratedId = preGeneratedId; }
 
     private String mapTypeLabel(String type) {
         return switch (type) {

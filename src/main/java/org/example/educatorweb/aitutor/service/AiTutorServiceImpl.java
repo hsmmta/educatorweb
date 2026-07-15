@@ -10,9 +10,12 @@ import org.example.educatorweb.knowledgegraph.model.KnowledgeContext;
 import org.example.educatorweb.rag.RagService;
 import org.example.educatorweb.rag.model.DocumentSnippet;
 import org.example.educatorweb.rag.service.EmbeddingService;
+import org.example.educatorweb.learninglog.service.LearningBehaviorService;
 import org.example.educatorweb.profile.passive.PassiveProfileUpdateService;
 import org.example.educatorweb.resourcegen.config.ModelRegistry;
 import org.example.educatorweb.resourcegen.infrastructure.ModelProvider;
+import org.example.educatorweb.topicpush.service.TopicDetector;
+import org.example.educatorweb.topicpush.service.PushTriggerService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -40,6 +43,9 @@ public class AiTutorServiceImpl implements AiTutorService {
     private final ChromaClient chromaClient;
     private final KnowledgeGraphService kgService;
     private final WebSearchService webSearchService;
+    private final TopicDetector topicDetector;
+    private final PushTriggerService pushTrigger;
+    private final LearningBehaviorService behaviorService;
     private final PassiveProfileUpdateService passiveProfileUpdateService;
 
     public AiTutorServiceImpl(ModelRegistry modelRegistry,
@@ -48,6 +54,9 @@ public class AiTutorServiceImpl implements AiTutorService {
                               ChromaClient chromaClient,
                               KnowledgeGraphService kgService,
                               WebSearchService webSearchService,
+                              TopicDetector topicDetector,
+                              PushTriggerService pushTrigger,
+                              LearningBehaviorService behaviorService,
                               PassiveProfileUpdateService passiveProfileUpdateService) {
         this.modelRegistry = modelRegistry;
         this.ragService = ragService;
@@ -55,6 +64,9 @@ public class AiTutorServiceImpl implements AiTutorService {
         this.chromaClient = chromaClient;
         this.kgService = kgService;
         this.webSearchService = webSearchService;
+        this.topicDetector = topicDetector;
+        this.pushTrigger = pushTrigger;
+        this.behaviorService = behaviorService;
         this.passiveProfileUpdateService = passiveProfileUpdateService;
     }
 
@@ -68,6 +80,9 @@ public class AiTutorServiceImpl implements AiTutorService {
 
         log.info("AiTutor: student={}, conversation={}, question(len={})",
             studentId, conversationId, question.length());
+
+        // 0. Topic shift detection — before processing this question
+        topicDetector.detectAndCache(studentId, question, conversationId);
 
         // 1. RAG — retrieve from private think-tank (Qdrant)
         List<DocumentSnippet> ragSnippets = retrieveKnowledge(studentId, question);
@@ -90,13 +105,23 @@ public class AiTutorServiceImpl implements AiTutorService {
         // 6. Call the LLM
         String answer = callLlm(prompt);
 
+        // Update answer in topic detector for next shift check
+        topicDetector.updateAnswer(studentId, answer);
+
         // 7. Store this round in Chroma
         storeConversation(conversationId, studentId, question, answer);
 
-        // 8. Async trigger for passive profile update
+        // Check if enough topics accumulated for count-based push
+        try {
+            pushTrigger.checkAndPush(studentId);
+        } catch (Exception e) {
+            log.warn("AiTutor: push check failed (non-critical): {}", e.getMessage());
+        }
+
+        // Async trigger for passive profile update
         passiveProfileUpdateService.checkAndTrigger(studentId);
 
-        // 9. Build response
+        // 8. Build response
         List<ChatResponse.SourceSnippet> sources = ragSnippets.stream()
             .map(s -> new ChatResponse.SourceSnippet(s.content(), s.source(), s.score()))
             .toList();

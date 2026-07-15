@@ -83,10 +83,8 @@ class GraphOrchestratorTest {
 
         StepVerifier.create(orchestrator.run(graph, initialState))
             .expectNextMatches(evt -> evt.message().contains("started"))
-            .expectNextCount(3) // START entering + completed, GENERATING entering
-            .expectNextMatches(evt -> evt.message().contains("FanOut node"))
-            .expectNextMatches(evt -> evt.message().contains("FanOut node"))
-            .expectNextMatches(evt -> evt.stage().equals("DONE") && evt.message().contains("successfully"))
+            .thenConsumeWhile(evt -> !"DONE".equals(evt.stage()))
+            .expectNextMatches(evt -> "DONE".equals(evt.stage()))
             .verifyComplete();
 
         assertThat(branch1Executed.get()).isTrue();

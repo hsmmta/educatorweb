@@ -9,6 +9,11 @@
         </router-link>
       </div>
       <div class="nav-right">
+        <el-badge :value="pushNotificationCount" :hidden="pushNotificationCount === 0" class="push-bell">
+          <el-icon :size="20" style="cursor: pointer" @click="goToPush">
+            <Bell />
+          </el-icon>
+        </el-badge>
         <el-dropdown @command="handleCommand" trigger="click">
           <div class="user-avatar">
             <el-avatar :size="32" :icon="UserFilled" />
@@ -51,19 +56,52 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { ArrowDown, User, UserFilled, SwitchButton, ChatDotRound, FolderOpened, Position } from '@element-plus/icons-vue'
+import { ElMessage, ElNotification } from 'element-plus'
+import { ArrowDown, User, UserFilled, SwitchButton, ChatDotRound, FolderOpened, Position, Bell } from '@element-plus/icons-vue'
 import VoiceAssistant from '@/components/VoiceAssistant.vue'
+import { subscribePushApi } from '@/api/index.js'
 
 const router = useRouter()
 const userInfo = ref({})
+const pushNotificationCount = ref(0)
 
 onMounted(() => {
   const info = localStorage.getItem('userInfo')
   if (info) {
     try { userInfo.value = JSON.parse(info) } catch (e) { userInfo.value = {} }
   }
+  // SSE subscribe for push notifications
+  const studentId = getStudentId()
+  if (studentId) {
+    try {
+      const es = subscribePushApi(studentId)
+      es.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data)
+          pushNotificationCount.value++
+          ElNotification({
+            title: '资源推送',
+            message: `已为你推送 ${data.resourceCount} 个学习资源（${data.triggerType === 'COUNT' ? '话题触发' : '定时推送'}）`,
+            type: 'info',
+            duration: 5000,
+            onClick: goToPush
+          })
+          window.dispatchEvent(new CustomEvent('push-refresh'))
+        } catch { /* ignore parse errors */ }
+      }
+      es.onerror = () => {
+        // SSE will auto-reconnect
+      }
+    } catch { /* SSE not supported */ }
+  }
 })
+
+function getStudentId() {
+  try {
+    const info = JSON.parse(localStorage.getItem('userInfo') || '{}')
+    return info.phone || info.id || ''
+  } catch { return '' }
+}
 
 const handleCommand = (cmd) => {
   if (cmd === 'logout') {
@@ -80,6 +118,11 @@ const handleCommand = (cmd) => {
   } else if (cmd === 'profile') {
     router.push('/profile')
   }
+}
+
+function goToPush() {
+  pushNotificationCount.value = 0
+  router.push('/push')
 }
 </script>
 
@@ -107,6 +150,7 @@ const handleCommand = (cmd) => {
 .logo-text { font-size: 20px; font-weight: 700; color: #1a1a2e; letter-spacing: 1px; }
 
 .nav-right { display: flex; align-items: center; gap: 16px; }
+.push-bell { margin-right: 12px; }
 .user-avatar {
   display: flex; align-items: center; gap: 8px; cursor: pointer;
   padding: 4px 12px 4px 4px; border-radius: 20px; transition: background 0.2s;

@@ -44,7 +44,7 @@ public class TutoringService {
         // L1: 私有知识库 (RAG)
         retrievalLog.add(new RetrievalStep("L1_PRIVATE_KB", "私有智库检索", "loading"));
         try {
-            List<DocumentSnippet> ragResults = ragService.retrieve(null, question, 5);
+            List<DocumentSnippet> ragResults = ragService.retrieve(studentId, question, 5);
             if (!ragResults.isEmpty()) {
                 // 过滤低相关性结果
                 List<DocumentSnippet> relevant = ragResults.stream()

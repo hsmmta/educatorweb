@@ -235,7 +235,7 @@ const goalOptions = [
 function getStudentId() {
   try {
     const info = JSON.parse(localStorage.getItem('userInfo') || '{}')
-    return info.id || info.phone || 'anonymous'
+    return info.phone || info.id || 'anonymous'
   } catch { return 'anonymous' }
 }
 

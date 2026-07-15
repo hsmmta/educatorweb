@@ -1,5 +1,6 @@
 package org.example.educatorweb.profile.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import org.example.educatorweb.profile.converter.JsonListConverter;
 import org.example.educatorweb.profile.converter.JsonMapConverter;
@@ -62,6 +63,7 @@ public class StudentProfile {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    @JsonIgnore
     @OneToMany(mappedBy = "studentProfile", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<StudentKnowledgeProficiency> knowledgeDetails = new ArrayList<>();
 

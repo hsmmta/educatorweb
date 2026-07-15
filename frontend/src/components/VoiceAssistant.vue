@@ -19,9 +19,10 @@
         <button class="va-close" @click="close">✕</button>
       </div>
 
-      <!-- 数字人形象（暂时使用表情动画，Live2D需要修复Cubism2 runtime后启用） -->
+      <!-- 数字人形象：Live2D 优先，加载失败则 emoji 兜底 -->
       <div class="va-canvas-wrap">
-        <div class="va-avatar">
+        <Live2DCharacter v-if="expanded" v-show="l2dReady" ref="l2dRef" class="va-l2d" />
+        <div v-show="!l2dReady" class="va-avatar">
           <span class="va-avatar-emoji">{{ avatarEmoji }}</span>
           <span v-if="isSpeaking" class="va-speaking-dot"></span>
         </div>
@@ -67,8 +68,11 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted, nextTick, computed } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, nextTick, computed, defineAsyncComponent } from 'vue'
 import { useRouter } from 'vue-router'
+// 异步组件：pixi.js / pixi-live2d-display 仅在面板首次打开、组件挂载时才加载，
+// 避免重型库在应用启动阶段被求值而拖垮整个布局，失败也被隔离在组件内。
+const Live2DCharacter = defineAsyncComponent(() => import('./Live2DCharacter.vue'))
 
 const router = useRouter()
 
@@ -78,6 +82,8 @@ const isListening = ref(false)
 const textInput = ref('')
 const messages = reactive([])
 const convoRef = ref(null)
+const l2dRef = ref(null)
+const l2dReady = ref(false)
 const expressionLabel = ref('')
 const speechSupported = ref(false)
 
@@ -102,6 +108,7 @@ const avatarEmoji = computed(() => {
 
 function setExpression(expr) {
   expressionLabel.value = EXPR_LABELS[expr] || ''
+  l2dRef.value?.setExpression?.(expr)
 }
 
 // ==================== SPEECH ====================
@@ -127,9 +134,18 @@ function initSpeech() {
       }
     }
 
-    recognition.onerror = () => {
+    recognition.onerror = (event) => {
       isListening.value = false
       setExpression('neutral')
+      // Web Speech API 固有的几类失败，给用户明确反馈（'aborted'=用户主动停止，不提示）
+      const tip = {
+        'no-speech': '没有听到声音，请靠近麦克风再说一次 🎤',
+        'audio-capture': '未检测到麦克风设备，请检查设备连接',
+        'not-allowed': '麦克风权限被拒绝，请在浏览器允许麦克风后重试',
+        'service-not-allowed': '麦克风权限被拒绝，请在浏览器允许麦克风后重试',
+        'network': '语音识别需要联网，当前网络异常，可改用文字输入',
+      }[event.error]
+      if (tip) addMessage('bot', tip)
     }
 
     recognition.onend = () => {
@@ -173,16 +189,20 @@ function speak(text) {
   utterance.onstart = () => {
     isSpeaking = true
     setExpression('speaking')
+    l2dRef.value?.playTalkMotion?.()
+    l2dRef.value?.startLipSync?.()
   }
 
   utterance.onend = () => {
     isSpeaking = false
     setExpression('neutral')
+    l2dRef.value?.stopLipSync?.()
   }
 
   utterance.onerror = () => {
     isSpeaking = false
     setExpression('neutral')
+    l2dRef.value?.stopLipSync?.()
   }
 
   currentUtterance = utterance
@@ -308,6 +328,15 @@ function sendText() {
 
 function open() {
   expanded.value = true
+  // Live2D 组件随面板 v-if 挂载（在可见容器里全新创建 canvas）；轮询其就绪状态
+  let tries = 0
+  const poll = setInterval(() => {
+    tries++
+    const rdy = l2dRef.value?.isReady
+    const ready = rdy && (typeof rdy === 'object' ? rdy.value : rdy)
+    if (ready) { l2dReady.value = true; clearInterval(poll) }
+    else if (tries > 40) { clearInterval(poll) }
+  }, 200)
   nextTick(() => {
     if (synth) synth.getVoices()
   })
@@ -320,6 +349,8 @@ function close() {
     try { recognition.stop() } catch (e) { /* ignore */ }
   }
   if (synth) synth.cancel()
+  l2dRef.value?.stopLipSync?.()
+  l2dReady.value = false  // 关闭即销毁 Live2D（v-if），重开时先显示 emoji 直到新实例就绪
   isSpeaking = false
   setExpression('neutral')
   messages.length = 0
@@ -443,6 +474,12 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+.va-l2d {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 .va-avatar {
   position: relative;

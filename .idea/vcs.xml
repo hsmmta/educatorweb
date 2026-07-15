@@ -2,5 +2,12 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/dev-docs/ML-For-Beginners" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/dev-docs/ML-From-Scratch" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/dev-docs/kg-sources/awesome-dl" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/dev-docs/kg-sources/awesome-ml" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/dev-docs/kg-sources/ml-for-beginners" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/dev-docs/kg-sources/ml-from-scratch" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/dev-docs/l2d-models" vcs="Git" />
   </component>
 </project>

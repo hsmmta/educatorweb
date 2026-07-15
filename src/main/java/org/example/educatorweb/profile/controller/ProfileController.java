@@ -12,6 +12,11 @@ import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
+import java.math.BigDecimal;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -42,6 +47,76 @@ public class ProfileController {
             }
             return ResponseEntity.ok(profile);
         }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /**
+     * 获取学生画像概览摘要（含统计数据）。
+     * GET /api/profile/{studentId}/summary
+     */
+    @GetMapping(value = "/{studentId}/summary", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<?>> getProfileSummary(@PathVariable String studentId) {
+        return Mono.<ResponseEntity<?>>fromCallable(() -> {
+            log.info("ProfileController: getProfileSummary student={}", studentId);
+            StudentProfile profile = profileService.getProfile(studentId);
+
+            Map<String, Object> summary = new LinkedHashMap<>();
+            summary.put("exists", profile != null);
+
+            if (profile != null) {
+                long learningDays = profile.getCreatedAt() != null
+                    ? Math.max(1, ChronoUnit.DAYS.between(profile.getCreatedAt(), LocalDateTime.now()))
+                    : 1;
+                summary.put("learningDays", (int) learningDays);
+                summary.put("resourceCount", 0);
+                summary.put("quizCount", 0);
+
+                double avg = averageConfidence(profile);
+                summary.put("compositeScore", Math.round(avg * 100));
+
+                summary.put("details", List.of(
+                    Map.of("label", "知识掌握", "value", pct(profile.getKnowledgeBaseConfidence()), "color", "#667eea"),
+                    Map.of("label", "练习正确率", "value", 0, "color", "#67c23a"),
+                    Map.of("label", "学习投入度", "value", pct(profile.getLearningPaceConfidence()), "color", "#e6a23c"),
+                    Map.of("label", "资源利用率", "value", 0, "color", "#f56c6c")
+                ));
+
+                summary.put("confidences", Map.of(
+                    "knowledge", profile.getKnowledgeBaseConfidence().doubleValue(),
+                    "cognitive", profile.getCognitiveStyleConfidence().doubleValue(),
+                    "error", profile.getErrorPatternConfidence().doubleValue(),
+                    "pace", profile.getLearningPaceConfidence().doubleValue(),
+                    "goal", profile.getGoalOrientationConfidence().doubleValue()
+                ));
+
+                summary.put("knowledgeBaseLevel", profile.getKnowledgeBaseLevel());
+                summary.put("cognitiveStyleType", profile.getCognitiveStyleType());
+                summary.put("errorPatternTags", profile.getErrorPatternTags());
+                summary.put("learningPaceType", profile.getLearningPaceType());
+                summary.put("contentPreferenceType", profile.getContentPreferenceType());
+                summary.put("goalOrientationType", profile.getGoalOrientationType());
+            }
+
+            return ResponseEntity.ok(summary);
+        }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private static int pct(BigDecimal bd) {
+        if (bd == null) return 0;
+        return (int) (bd.doubleValue() * 100);
+    }
+
+    private static double averageConfidence(StudentProfile p) {
+        double sum = 0;
+        int count = 0;
+        BigDecimal[] vals = {
+            p.getKnowledgeBaseConfidence(), p.getCognitiveStyleConfidence(),
+            p.getErrorPatternConfidence(), p.getLearningPaceConfidence(),
+            p.getGoalOrientationConfidence()
+        };
+        for (BigDecimal v : vals) {
+            if (v != null) { sum += v.doubleValue(); count++; }
+        }
+        return count > 0 ? sum / count : 0;
     }
 
     /**
