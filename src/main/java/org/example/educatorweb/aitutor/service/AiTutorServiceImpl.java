@@ -10,6 +10,7 @@ import org.example.educatorweb.knowledgegraph.model.KnowledgeContext;
 import org.example.educatorweb.rag.RagService;
 import org.example.educatorweb.rag.model.DocumentSnippet;
 import org.example.educatorweb.rag.service.EmbeddingService;
+import org.example.educatorweb.profile.passive.PassiveProfileUpdateService;
 import org.example.educatorweb.resourcegen.config.ModelRegistry;
 import org.example.educatorweb.resourcegen.infrastructure.ModelProvider;
 import org.slf4j.Logger;
@@ -39,19 +40,22 @@ public class AiTutorServiceImpl implements AiTutorService {
     private final ChromaClient chromaClient;
     private final KnowledgeGraphService kgService;
     private final WebSearchService webSearchService;
+    private final PassiveProfileUpdateService passiveProfileUpdateService;
 
     public AiTutorServiceImpl(ModelRegistry modelRegistry,
                               RagService ragService,
                               EmbeddingService embeddingService,
                               ChromaClient chromaClient,
                               KnowledgeGraphService kgService,
-                              WebSearchService webSearchService) {
+                              WebSearchService webSearchService,
+                              PassiveProfileUpdateService passiveProfileUpdateService) {
         this.modelRegistry = modelRegistry;
         this.ragService = ragService;
         this.embeddingService = embeddingService;
         this.chromaClient = chromaClient;
         this.kgService = kgService;
         this.webSearchService = webSearchService;
+        this.passiveProfileUpdateService = passiveProfileUpdateService;
     }
 
     @Override
@@ -89,7 +93,10 @@ public class AiTutorServiceImpl implements AiTutorService {
         // 7. Store this round in Chroma
         storeConversation(conversationId, studentId, question, answer);
 
-        // 8. Build response
+        // 8. Async trigger for passive profile update
+        passiveProfileUpdateService.checkAndTrigger(studentId);
+
+        // 9. Build response
         List<ChatResponse.SourceSnippet> sources = ragSnippets.stream()
             .map(s -> new ChatResponse.SourceSnippet(s.content(), s.source(), s.score()))
             .toList();
