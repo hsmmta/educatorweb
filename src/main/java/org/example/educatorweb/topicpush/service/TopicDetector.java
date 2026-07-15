@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -73,6 +74,22 @@ public class TopicDetector {
         lastState.put(userId, new LastMessageState(
             currentEmbedding, currentQuestion, null, Instant.now()
         ));
+    }
+
+    /**
+     * Async variant of {@link #detectAndCache} — runs the (potentially slow)
+     * embedding + topic labeling on the common fork-join pool so the chat
+     * response is never blocked by topic-detection work.
+     */
+    public void detectAndCacheAsync(String userId, String currentQuestion,
+                                    String conversationId) {
+        CompletableFuture.runAsync(() -> {
+            try {
+                detectAndCache(userId, currentQuestion, conversationId);
+            } catch (Exception e) {
+                log.debug("TopicDetector: async detection failed (non-critical): {}", e.getMessage());
+            }
+        });
     }
 
     /**

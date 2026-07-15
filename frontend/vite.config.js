@@ -16,7 +16,9 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:8080',
-        changeOrigin: true
+        changeOrigin: true,
+        timeout: 120000,        // 2 min for long LLM calls
+        proxyTimeout: 120000    // 2 min for SSE idle
       }
     }
   }

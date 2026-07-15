@@ -2,7 +2,7 @@ import axios from 'axios'
 
 const request = axios.create({
   baseURL: '/api',
-  timeout: 30000
+  timeout: 120000   // 2 min: LLM chat calls can take 15-45s (RAG + KG + embeddings + DeepSeek)
 })
 
 request.interceptors.request.use(config => {

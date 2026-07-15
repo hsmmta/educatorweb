@@ -415,36 +415,96 @@ const sendMessage = async () => {
   loadConversations()
 }
 
-// ---- Chat (Q&A) — ported from Tutoring.vue askQuestion() ----
+// ---- Chat (Q&A) — streaming SSE with typewriter UX ----
 const sendChatMessage = async (text) => {
   loading.value = true
   loadingText.value = '检索中...'
 
-  try {
-    const res = await request.post('/tutor/chat', {
-      studentId: getStudentId(),
-      question: text,
-      conversationId: currentConversationId.value
-    })
-    const data = res.data
-    currentConversationId.value = data.conversationId
+  const token = localStorage.getItem('token')
 
-    const sources = data.sources || []
-    messages.value.push({
-      id: nextMsgId(),
-      role: 'assistant',
-      type: 'text',
-      content: safeMarkdown(data.answer || ''),
-      sources,
-      ragCount: sources.length,
-      // ChatResponse has no hasKg/hasWeb fields — decorative defaults per plan
-      hasKg: data.hasKg !== undefined ? data.hasKg : true,
-      hasWeb: data.hasWeb !== undefined ? data.hasWeb : sources.length < 2,
-      question: text
+  // Insert a placeholder assistant message that we'll fill token-by-token
+  const assistantMsgId = nextMsgId()
+  messages.value.push({
+    id: assistantMsgId,
+    role: 'assistant',
+    type: 'text',
+    content: '',
+    sources: [],
+    ragCount: 0,
+    hasKg: true,
+    hasWeb: false,
+    question: text
+  })
+
+  try {
+    const controller = new AbortController()
+
+    const response = await fetch('/api/tutor/chat/stream', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': 'Bearer ' + token } : {})
+      },
+      body: JSON.stringify({
+        studentId: getStudentId(),
+        question: text,
+        conversationId: currentConversationId.value
+      }),
+      signal: controller.signal
     })
+
+    if (!response.ok) {
+      throw new Error('HTTP ' + response.status)
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let fullAnswer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        if (line.startsWith('event:done')) {
+          // Stream complete — set loading false now
+          loading.value = false
+        } else if (line.startsWith('data:')) {
+          try {
+            const tokenText = line.substring(5).trim()
+            fullAnswer += tokenText
+
+            const msg = messages.value.find(m => m.id === assistantMsgId)
+            if (msg) {
+              // Only re-render markdown on the final answer, not every token
+              // (avoids flicker and performance issues with rapid re-renders)
+              msg.content = fullAnswer
+            }
+          } catch { /* ignore parse errors */ }
+        }
+      }
+    }
+
+    // Final markdown render of the complete answer
+    const msg = messages.value.find(m => m.id === assistantMsgId)
+    if (msg) {
+      msg.content = safeMarkdown(fullAnswer)
+    }
+    loading.value = false
+
   } catch (e) {
-    ElMessage.error('提问失败：' + (e.response?.data?.error || e.message || '请稍后重试'))
-  } finally {
+    if (e.name !== 'AbortError') {
+      const msg = messages.value.find(m => m.id === assistantMsgId)
+      if (msg) {
+        msg.content = safeMarkdown('**抱歉，AI 助教暂时无法回答，请稍后再试。**')
+      }
+      ElMessage.error('提问失败：' + (e.message || '请稍后重试'))
+    }
     loading.value = false
   }
 }

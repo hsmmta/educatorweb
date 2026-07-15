@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Neo4j-backed implementation of KnowledgeGraphService.
@@ -57,19 +58,25 @@ public class Neo4jKnowledgeGraphService implements KnowledgeGraphService {
 
                 return new KnowledgeContext(prerequisites, successors, related, node.getDifficulty());
             } catch (Exception e) {
-                log.warn("Neo4j query failed for '{}', falling back to LLM: {}",
-                    knowledgePoint, e.getMessage());
-                return extractor.extract(knowledgePoint);
+                log.warn("Neo4j query failed for '{}': {}", knowledgePoint, e.getMessage());
+                return new KnowledgeContext(List.of(), List.of(), List.of(), 0);
             }
         }
 
-        // Not in graph — use LLM fallback (which also persists to Neo4j)
-        log.info("Knowledge point '{}' not in Neo4j, using LLM fallback", knowledgePoint);
-        try {
-            return extractor.extract(knowledgePoint);
-        } catch (Exception e) {
-            log.warn("LLM fallback also failed for '{}': {}", knowledgePoint, e.getMessage());
-            return new KnowledgeContext(List.of(), List.of(), List.of(), 0);
-        }
+        // Not in graph — fire async LLM enrichment, return empty context immediately.
+        // The DeepSeek call can take 10-30s and is NOT on the critical chat path;
+        // making it async keeps chat responsive. Next time this topic is queried,
+        // it will be served from Neo4j (enriched by the async task).
+        log.info("Knowledge point '{}' not in Neo4j, scheduling async LLM enrichment", knowledgePoint);
+        final String topic = knowledgePoint;
+        CompletableFuture.runAsync(() -> {
+            try {
+                extractor.extract(topic);
+            } catch (Exception e) {
+                log.debug("Async KG enrichment failed for '{}': {}", topic, e.getMessage());
+                Thread.interrupted(); // clear any stale flag on this worker thread
+            }
+        });
+        return new KnowledgeContext(List.of(), List.of(), List.of(), 0);
     }
 }

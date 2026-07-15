@@ -35,6 +35,7 @@ public class EmbeddingService {
     public EmbeddingService(String apiKey) {
         this.apiKey = apiKey;
         this.httpClient = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
             .connectTimeout(Duration.ofSeconds(30))
             .build();
         this.objectMapper = new ObjectMapper();
@@ -96,7 +97,9 @@ public class EmbeddingService {
                 HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() != 200) {
-                log.error("Embedding API returned {}: {}", response.statusCode(), response.body());
+                String respBody = response.body();
+                log.error("Embedding API returned {}: {}", response.statusCode(),
+                    respBody != null && respBody.length() > 500 ? respBody.substring(0, 500) + "..." : respBody);
                 return texts.stream().map(t -> new float[0]).toList();
             }
 
@@ -116,7 +119,9 @@ public class EmbeddingService {
             return embeddings;
 
         } catch (IOException | InterruptedException e) {
-            log.error("EmbeddingService: API call failed: {}", e.getMessage());
+            log.error("EmbeddingService: API call failed — {} (type={})",
+                e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName(),
+                e.getClass().getSimpleName());
             return texts.stream().map(t -> new float[0]).toList();
         }
     }

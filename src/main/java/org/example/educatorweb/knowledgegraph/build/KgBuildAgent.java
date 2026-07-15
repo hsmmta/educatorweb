@@ -120,9 +120,116 @@ public class KgBuildAgent {
                 cname, nodes.size(), knownPointIds.size());
         }
 
-        log.info("KgBuildAgent: FULL build done — {} KPs, {} rels, {} courses, {} resources",
-            totalKps, totalRels, totalCourses, totalResources);
+        // Phase 4: Build CONTAINS (Course→KP) + HAS_RESOURCE (KP→Resource) edges
+        int containsEdges = linkCoursesToKps();
+        int resourceEdges = linkKpsToResources();
+        totalRels += containsEdges + resourceEdges;
+
+        log.info("KgBuildAgent: FULL build done — {} KPs, {} rels, {} courses, {} resources (CONTAINS={}, HAS_RESOURCE={})",
+            totalKps, totalRels, totalCourses, totalResources, containsEdges, resourceEdges);
         return new BuildResult(totalKps, totalRels, 0);
+    }
+
+    // ---- Phase 4 helpers ----
+
+    /** Build CONTAINS edges: Course → KnowledgePoint (reverse of BELONGS_TO). */
+    private int linkCoursesToKps() {
+        int count = 0;
+        try (var s = writer.newSession()) {
+            var r = s.run("MATCH (kp:KnowledgePoint)-[:BELONGS_TO]->(c:Course) " +
+                          "WHERE NOT (c)-[:CONTAINS]->(kp) RETURN kp.id AS kpid, c.id AS cid");
+            while (r.hasNext()) {
+                var rec = r.next();
+                s.run("MATCH (kp:KnowledgePoint {id:$kpid}), (c:Course {id:$cid}) " +
+                      "MERGE (c)-[:CONTAINS]->(kp)",
+                    Map.of("kpid", rec.get("kpid").asString(), "cid", rec.get("cid").asString()));
+                count++;
+            }
+        } catch (Exception e) {
+            log.warn("KgBuildAgent: CONTAINS link failed: {}", e.getMessage());
+        }
+        log.info("KgBuildAgent: created {} CONTAINS edges", count);
+        return count;
+    }
+
+    /** Build HAS_RESOURCE edges: KnowledgePoint → LearningResource by keyword + category match. */
+    private int linkKpsToResources() {
+        int count = 0;
+        // Category → resource ID prefix hints
+        Map<String, String> catToResource = Map.of(
+            "数学基础", "bishop_prml",
+            "概念", "ng_coursera",
+            "算法", "sklearn",
+            "应用", "cs229",
+            "工具", "pytorch"
+        );
+        try (var s = writer.newSession()) {
+            // Get all KPs with their categories
+            var kps = s.run("MATCH (kp:KnowledgePoint) " +
+                "WHERE NOT (kp)-[:HAS_RESOURCE]->(:LearningResource) " +
+                "RETURN kp.id AS id, kp.name AS name, kp.category AS cat");
+            List<Map<String, String>> kpList = new ArrayList<>();
+            while (kps.hasNext()) {
+                var rec = kps.next();
+                kpList.add(Map.of("id", rec.get("id").asString(),
+                    "name", rec.get("name").asString(),
+                    "cat", rec.get("cat").asString("概念")));
+            }
+
+            // Get all resource IDs
+            var res = s.run("MATCH (r:LearningResource) RETURN r.id AS id, r.title AS title, r.type AS type, r.description AS desc");
+            List<Map<String, String>> resList = new ArrayList<>();
+            while (res.hasNext()) {
+                var rec = res.next();
+                resList.add(Map.of("id", rec.get("id").asString(),
+                    "title", rec.get("title").asString(""),
+                    "type", rec.get("type").asString(""),
+                    "desc", rec.get("desc").asString("")));
+            }
+
+            // Match KPs to resources
+            for (var kp : kpList) {
+                String bestRid = null;
+                // Strategy 1: keyword overlap in resource title/desc
+                String kpLower = kp.get("name").toLowerCase();
+                int bestScore = 0;
+                for (var resource : resList) {
+                    int score = 0;
+                    String titleLower = resource.get("title").toLowerCase();
+                    String descLower = resource.get("desc").toLowerCase();
+                    // Split KP name into words and count matches
+                    for (String word : kpLower.split("[\\s\\-_]+")) {
+                        if (word.length() < 2) continue;
+                        if (titleLower.contains(word)) score += 3;
+                        if (descLower.contains(word)) score += 1;
+                    }
+                    // Category bonus
+                    String expectedRid = catToResource.get(kp.get("cat"));
+                    if (resource.get("id").equals(expectedRid)) score += 2;
+
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestRid = resource.get("id");
+                    }
+                }
+                // Strategy 2: fallback — category-based default
+                if ((bestRid == null || bestScore < 2) && catToResource.containsKey(kp.get("cat"))) {
+                    bestRid = catToResource.get(kp.get("cat"));
+                }
+                // Strategy 3: absolute fallback
+                if (bestRid == null) bestRid = "ng_coursera";
+
+                s.run("MATCH (kp:KnowledgePoint {id:$kpid}), (r:LearningResource {id:$rid}) " +
+                      "MERGE (kp)-[:HAS_RESOURCE]->(r) " +
+                      "SET r.updatedAt = timestamp()",
+                    Map.of("kpid", kp.get("id"), "rid", bestRid));
+                count++;
+            }
+        } catch (Exception e) {
+            log.warn("KgBuildAgent: HAS_RESOURCE link failed: {}", e.getMessage());
+        }
+        log.info("KgBuildAgent: created {} HAS_RESOURCE edges", count);
+        return count;
     }
 
     /** Phase 1: Seed course nodes from a topic list. */
@@ -202,6 +309,91 @@ public class KgBuildAgent {
             "newChunks", store.countByStatus("new"),
             "processedChunks", store.countByStatus("processed")
         );
+    }
+
+    /**
+     * Link existing nodes only — builds CONTAINS (Course→KP) + HAS_RESOURCE (KP→Resource)
+     * WITHOUT clearing the graph. Safe to call after external data imports.
+     */
+    public BuildResult linkExistingNodes() {
+        log.info("KgBuildAgent: linking existing nodes (no-clear)");
+        int containsEdges = linkCoursesToKps();
+        int resourceEdges = linkKpsToResources();
+        int relatedEdges = linkRelatedToFromParentSon();
+        log.info("KgBuildAgent: link done — CONTAINS={}, HAS_RESOURCE={}, RELATED_TO={}",
+            containsEdges, resourceEdges, relatedEdges);
+        return new BuildResult(0, containsEdges + resourceEdges + relatedEdges, 0);
+    }
+
+    /** Build RELATED_TO edges from parent-son hierarchy (MOOCCube parent-son.json).
+     *  Uses name-based matching since MOOCCube IDs differ from our slug IDs. */
+    private int linkRelatedToFromParentSon() {
+        java.nio.file.Path base = java.nio.file.Path.of("dev-docs/MOOCCube");
+        java.nio.file.Path conceptFile = base.resolve("entities/concept.json");
+        java.nio.file.Path parentSonFile = base.resolve("relations/parent-son.json");
+        if (!java.nio.file.Files.exists(conceptFile)
+            || !java.nio.file.Files.exists(parentSonFile)) {
+            log.info("KgBuildAgent: MOOCCube files not found, skipping RELATED_TO import");
+            return 0;
+        }
+
+        try {
+            // Step 1: Build MOOCCube ID → name map from concept.json
+            var idToName = new java.util.HashMap<String, String>();
+            var nameToSlug = new java.util.HashMap<String, String>();
+            try (var reader = java.nio.file.Files.newBufferedReader(conceptFile)) {
+                String line;
+                var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                while ((line = reader.readLine()) != null) {
+                    if (line.isBlank()) continue;
+                    try {
+                        @SuppressWarnings("unchecked")
+                        var obj = mapper.readValue(line, java.util.Map.class);
+                        String mid = (String) obj.get("id");
+                        String mname = (String) obj.get("name");
+                        if (mid != null && mname != null) idToName.put(mid, mname);
+                    } catch (Exception ignored) {}
+                }
+            }
+
+            // Step 2: Build Neo4j name → slug map
+            try (var s = writer.newSession()) {
+                var r = s.run("MATCH (kp:KnowledgePoint) RETURN kp.id AS id, kp.name AS name");
+                while (r.hasNext()) {
+                    var rec = r.next();
+                    nameToSlug.put(rec.get("name").asString(""),
+                                   rec.get("id").asString(""));
+                }
+            }
+
+            // Step 3: Read parent-son.json and create RELATED_TO edges by name
+            int count = 0;
+            try (var s = writer.newSession();
+                 var reader = java.nio.file.Files.newBufferedReader(parentSonFile)) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String[] parts = line.split("\t");
+                    if (parts.length < 2) continue;
+                    String childName = idToName.get(parts[0].trim());
+                    String parentName = idToName.get(parts[1].trim());
+                    if (childName == null || parentName == null) continue;
+                    String childSlug = nameToSlug.get(childName);
+                    String parentSlug = nameToSlug.get(parentName);
+                    if (childSlug == null || parentSlug == null) continue;
+                    if (childSlug.equals(parentSlug)) continue;
+
+                    s.run("MATCH (a:KnowledgePoint {id:$child}), (b:KnowledgePoint {id:$parent}) " +
+                          "MERGE (a)-[:RELATED_TO]->(b)",
+                        java.util.Map.of("child", childSlug, "parent", parentSlug));
+                    count++;
+                }
+            }
+            log.info("KgBuildAgent: created {} RELATED_TO edges from parent-son.json", count);
+            return count;
+        } catch (Exception e) {
+            log.warn("KgBuildAgent: RELATED_TO import failed: {}", e.getMessage());
+            return 0;
+        }
     }
 
     public record BuildResult(int knowledgePoints, int relationships, long newChunks) {}

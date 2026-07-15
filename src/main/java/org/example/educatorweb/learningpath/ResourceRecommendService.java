@@ -190,34 +190,63 @@ public class ResourceRecommendService {
                                                         String contextText) {
         StudentProfile profile = profileService.getProfile(studentId);
 
-        List<RecommendedResource> resources = new ArrayList<>();
+        // Compute resource-type priority weights from six-dimension profile
+        // Default: DOC=9, QUIZ=8, MINDMAP=7
+        int docWeight = 9, quizWeight = 8, mindmapWeight = 7, videoWeight = 0, codeWeight = 0;
 
-        // Generate resources for this topic
-        resources.add(new RecommendedResource(
-            topicLabel + " 系统讲解", "DOC",
-            "基于你的学习画像推荐", 9));
-        resources.add(new RecommendedResource(
-            topicLabel + " 巩固练习", "QUIZ",
-            "巩固知识点的针对性练习", 8));
-        resources.add(new RecommendedResource(
-            topicLabel + " 思维导图", "MINDMAP",
-            "梳理" + topicLabel + "的知识框架", 7));
-
-        // Add profile-based recommendations if profile exists
         if (profile != null) {
+            // D2 认知风格
+            String cognitive = profile.getCognitiveStyleType();
+            if (isPref(cognitive, "视觉型", "visual")) { mindmapWeight += 3; videoWeight += 2; }
+            else if (isPref(cognitive, "分析型", "analytical")) { docWeight += 3; }
+            else if (isPref(cognitive, "实践型", "practical")) { codeWeight += 3; }
+
+            // D5 内容偏好 (supports both Chinese and legacy English values)
             String pref = profile.getContentPreferenceType();
-            if ("video".equals(pref)) {
-                resources.add(new RecommendedResource(
-                    topicLabel + " 视频讲解", "VIDEO",
-                    "匹配你的视频优先偏好", 10));
-            }
-            if ("interactive".equals(pref)) {
-                resources.add(new RecommendedResource(
-                    topicLabel + " 实战代码", "CODE",
-                    "匹配你的交互式学习偏好", 8));
-            }
+            if (isPref(pref, "视频优先", "video")) videoWeight += 3;
+            else if (isPref(pref, "文档优先", "document")) docWeight += 3;
+            else if (isPref(pref, "混合学习", "mixed", "interactive")) { quizWeight += 2; mindmapWeight += 2; }
+
+            // D6 目标导向
+            String goal = profile.getGoalOrientationType();
+            if (isPref(goal, "求职准备", "career")) codeWeight += 3;
+            else if (isPref(goal, "应试准备", "exam")) quizWeight += 3;
+            else if (isPref(goal, "学术深造", "academic")) docWeight += 3;
         }
 
+        // Build resources sorted by weight (highest first)
+        List<RecommendedResource> resources = new ArrayList<>();
+        addIfPositive(resources, new RecommendedResource(topicLabel + " 系统讲解", "DOC",
+            "基于你的六维学习画像推荐", docWeight), docWeight);
+        addIfPositive(resources, new RecommendedResource(topicLabel + " 巩固练习", "QUIZ",
+            "巩固知识点的针对性练习", quizWeight), quizWeight);
+        addIfPositive(resources, new RecommendedResource(topicLabel + " 思维导图", "MINDMAP",
+            "梳理" + topicLabel + "的知识框架", mindmapWeight), mindmapWeight);
+        addIfPositive(resources, new RecommendedResource(topicLabel + " 视频讲解", "VIDEO",
+            "匹配你的视觉学习偏好", videoWeight), videoWeight);
+        addIfPositive(resources, new RecommendedResource(topicLabel + " 实战代码", "CODE",
+            "匹配你的实践型学习偏好", codeWeight), codeWeight);
+
+        // Sort by priority descending
+        resources.sort((a, b) -> Integer.compare(b.getPriority(), a.getPriority()));
+
         return resources;
+    }
+
+    /** Add resource if its weight is positive (profile has this preference). */
+    private void addIfPositive(List<RecommendedResource> list, RecommendedResource r, int weight) {
+        if (weight > 0) {
+            r.setPriority(weight);
+            list.add(r);
+        }
+    }
+
+    /** Match preference type against one or more candidate values (bilingual). */
+    private static boolean isPref(String actual, String... candidates) {
+        if (actual == null) return false;
+        for (String c : candidates) {
+            if (c.equalsIgnoreCase(actual)) return true;
+        }
+        return false;
     }
 }

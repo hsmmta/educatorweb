@@ -51,4 +51,15 @@ public interface KnowledgePointRepository extends Neo4jRepository<KnowledgePoint
      */
     @Query("MATCH (n:KnowledgePoint {id: $id})-[:HAS_RESOURCE]->(r:LearningResource) RETURN r")
     List<LearningResource> findResources(@Param("id") String id);
+
+    /**
+     * All knowledge points with category and difficulty, for the category-browse UI.
+     */
+    @Query("MATCH (kp:KnowledgePoint) RETURN kp.id AS id, kp.name AS name, " +
+           "kp.category AS category, kp.difficulty AS difficulty " +
+           "ORDER BY kp.name")
+    List<KnowledgePointSummary> findAllSummaries();
+
+    /** Lightweight knowledge point summary for the browse list. */
+    record KnowledgePointSummary(String id, String name, String category, Integer difficulty) {}
 }

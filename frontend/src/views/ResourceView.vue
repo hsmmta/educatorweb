@@ -43,6 +43,10 @@
           <el-button size="small" @click="showAnswers = !showAnswers">
             {{ showAnswers ? '隐藏解析' : '显示全部解析' }}
           </el-button>
+          <el-button size="small" type="primary" @click="submitQuiz" :loading="quizSubmitting" :disabled="quizSubmitted">
+            {{ quizSubmitted ? '✓ 已提交 (' + quizScore + '分)' : '提交答案' }}
+          </el-button>
+          <span v-if="quizSubmitted" class="quiz-result">正确 {{ quizCorrect }}/{{ quizTotal }}</span>
         </div>
         <div v-if="quizData">
           <div v-for="(q, i) in quizData.questions" :key="i" class="quiz-item">
@@ -131,7 +135,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
@@ -139,7 +143,7 @@ import { marked } from 'marked'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import mermaid from 'mermaid'
-import { getResourceApi, checkResourceStatusApi } from '../api/index.js'
+import { getResourceApi, checkResourceStatusApi, submitQuizApi } from '../api/index.js'
 
 mermaid.initialize({ startOnLoad: false, theme: 'default' })
 
@@ -152,6 +156,11 @@ const resource = ref({ status: 'GENERATING' })
 const showAnswers = ref(false)
 const selectedAnswers = ref({})
 const mindmapSvg = ref('')
+const quizSubmitting = ref(false)
+const quizSubmitted = ref(false)
+const quizCorrect = ref(0)
+const quizTotal = ref(0)
+const quizScore = ref(0)
 
 // ---- rendered HTML for DOC type ----
 const renderedHtml = computed(() => {
@@ -185,9 +194,47 @@ watch(() => resource.value.content, async (val) => {
 })
 
 // ---- init ----
+let pollTimer = null
+
 onMounted(async () => {
   await loadResource()
+  // Auto-poll if resource is still generating
+  if (resource.value.status === 'GENERATING') {
+    startAutoPoll()
+  }
 })
+
+onUnmounted(() => {
+  stopAutoPoll()
+})
+
+function startAutoPoll() {
+  stopAutoPoll()
+  pollTimer = setInterval(async () => {
+    try {
+      const res = await checkResourceStatusApi(id.value)
+      const data = res.data?.data
+      if (data && data.status !== 'GENERATING') {
+        stopAutoPoll()
+        if (data.status === 'READY') {
+          await loadResource()
+        } else {
+          resource.value.status = data.status
+          resource.value.errorMsg = data.errorMsg || '生成失败'
+        }
+      }
+    } catch {
+      // keep polling
+    }
+  }, 5000) // poll every 5 seconds
+}
+
+function stopAutoPoll() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
 
 async function loadResource() {
   loading.value = true
@@ -217,6 +264,59 @@ async function pollStatus() {
   } finally {
     polling.value = false
   }
+}
+
+// ---- quiz submit ----
+async function submitQuiz() {
+  if (!quizData.value?.questions) return
+
+  // Build answers array: each answer has selected option and expected answer
+  const answers = quizData.value.questions.map((q, i) => {
+    const selected = selectedAnswers.value[i]
+    let expected = null
+    if (q.correctIndex !== undefined) expected = q.correctIndex
+    else if (q.answer !== undefined) {
+      // q.answer might be the value string (e.g. "A") or the option text
+      if (q.options) {
+        const idx = q.options.findIndex(o =>
+          (typeof o === 'string' ? o : (o.text || '')) === q.answer)
+        if (idx >= 0) expected = idx
+      }
+    }
+    // If answer is already a letter like "A", convert to index
+    if (expected === null && typeof q.answer === 'string' && q.answer.length === 1) {
+      expected = q.answer.charCodeAt(0) - 65 // A → 0, B → 1, ...
+    }
+    return { selected, expected }
+  })
+
+  quizSubmitting.value = true
+  try {
+    const res = await submitQuizApi({
+      studentId: getStudentId(),
+      concept: resource.value.topic || resource.value.title,
+      answers
+    })
+    const data = res.data?.data
+    if (data) {
+      quizCorrect.value = data.correct
+      quizTotal.value = data.total
+      quizScore.value = data.score
+    }
+    quizSubmitted.value = true
+    showAnswers.value = true
+  } catch (e) {
+    ElMessage.error('提交失败: ' + (e.response?.data?.message || e.message))
+  } finally {
+    quizSubmitting.value = false
+  }
+}
+
+function getStudentId() {
+  try {
+    const info = JSON.parse(localStorage.getItem('userInfo') || '{}')
+    return info.phone || info.id || 'anonymous'
+  } catch { return 'anonymous' }
 }
 
 // ---- code helpers ----
@@ -286,7 +386,8 @@ function copyCode() {
 
 /* QUIZ */
 .rv-quiz { background: #fff; border-radius: 16px; padding: 32px; box-shadow: 0 2px 12px rgba(0,0,0,0.04); }
-.quiz-toolbar { margin-bottom: 16px; }
+.quiz-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.quiz-result { font-size: 13px; color: #67c23a; font-weight: 500; }
 .quiz-item {
   border: 1px solid #f0f2f5; border-radius: 12px;
   padding: 18px; margin-bottom: 14px;

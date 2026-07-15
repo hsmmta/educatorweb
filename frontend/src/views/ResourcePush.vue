@@ -54,51 +54,55 @@
         </template>
       </section>
 
-      <!-- ========== 右卡片：自主探索 ========== -->
+      <!-- ========== 右卡片：自主探索（分类浏览） ========== -->
       <section class="card explore-card">
         <h3 class="card-title">🔍 自主探索</h3>
 
-        <div class="search-row">
-          <el-autocomplete
-            v-model="searchText"
-            :fetch-suggestions="fetchSuggestions"
-            placeholder="输入知识点名称..."
-            :trigger-on-focus="false"
+        <div class="card-body">
+          <!-- 搜索框：前端即时过滤 -->
+          <el-input
+            v-model="kpFilterText"
+            placeholder="过滤知识点..."
             clearable
-            class="search-input"
-            @select="handleSearch"
-            @keyup.enter="handleSearch"
+            size="small"
+            class="kp-filter"
+            :prefix-icon="Search"
+          />
+
+          <!-- 分类选择 -->
+          <el-select
+            v-model="activeCategory"
+            size="small"
+            class="kp-cat-select"
+            v-if="kpCategories.length"
           >
-            <template #default="{ item }">
-              <span>{{ item.value }}</span>
-            </template>
-          </el-autocomplete>
-          <el-button type="primary" @click="handleSearch" :loading="searchLoading">规划</el-button>
-        </div>
+            <el-option
+              v-for="cat in kpCategories" :key="cat.name"
+              :label="cat.name + ' (' + cat.points.length + ')'"
+              :value="cat.name"
+            />
+          </el-select>
 
-        <div v-if="recentTopics.length" class="quick-tags">
-          <span class="quick-label">📋 最近学过</span>
-          <el-tag
-            v-for="t in recentTopics" :key="t"
-            size="small" class="quick-tag" @click="searchText = t; handleSearch()"
-          >{{ t }}</el-tag>
-        </div>
+          <!-- 知识点列表（紧凑网格） -->
+          <div class="kp-grid" v-if="filteredPoints.length">
+            <span
+              v-for="kp in filteredPoints" :key="kp.id"
+              class="kp-chip"
+              @click="handleKpClick(kp)"
+              :title="kp.name + ' · 难度 ' + (kp.difficulty || 3)"
+            >
+              {{ kp.name }}
+            </span>
+          </div>
 
-        <div v-if="weaknessTopics.length" class="quick-tags">
-          <span class="quick-label">⚠️ 需要巩固</span>
-          <el-tag
-            v-for="w in weaknessTopics" :key="w.concept"
-            size="small" type="danger" class="quick-tag"
-            @click="searchText = w.concept; handleSearch()"
-          >
-            {{ w.concept }}
-            <span class="weak-pct">{{ Math.round(w.proficiency * 100) }}%</span>
-          </el-tag>
-        </div>
+          <div v-else-if="kpCategories.length" class="empty-state">
+            <p>没有匹配 "{{ kpFilterText }}" 的知识点</p>
+          </div>
 
-        <div v-if="!recentTopics.length && !weaknessTopics.length" class="empty-state">
-          <span class="empty-icon">🔍</span>
-          <p>输入你想学的知识点,系统为你规划个性化学习路径</p>
+          <div v-else class="empty-state">
+            <span class="empty-icon">📚</span>
+            <p>知识点加载中...</p>
+          </div>
         </div>
       </section>
     </div>
@@ -226,10 +230,10 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh, Close } from '@element-plus/icons-vue'
+import { Refresh, Close, Search } from '@element-plus/icons-vue'
 import {
   getRecommendationsApi, getPushResultsApi, getLatestPushApi, getPushContextApi,
-  clearPushHistoryApi
+  clearPushHistoryApi, getKnowledgePointsApi, logBrowseApi
 } from '../api/index.js'
 
 // ---------- state ----------
@@ -245,6 +249,19 @@ const selectedHistoryId = ref(null)
 
 const recentTopics = ref([])
 const weaknessTopics = ref([])
+
+// ---- knowledge point browse ----
+const kpCategories = ref([])          // [{name, points: [{id, name, difficulty}]}]
+const activeCategory = ref('')
+const kpFilterText = ref('')
+
+const filteredPoints = computed(() => {
+  const cat = kpCategories.value.find(c => c.name === activeCategory.value)
+  if (!cat) return []
+  const q = kpFilterText.value.trim().toLowerCase()
+  if (!q) return cat.points
+  return cat.points.filter(p => p.name.toLowerCase().includes(q))
+})
 
 // ---------- computed ----------
 const allPushGroups = computed(() => {
@@ -307,6 +324,27 @@ function goLearn(res, topic) {
     const title = res.title || res.resourceTypeLabel || res.resourceType || ''
     window.location.href = '/learning?topic=' + encodeURIComponent(t + ' - ' + title)
   }
+}
+
+// ---------- knowledge point browse ----------
+async function loadKnowledgePoints() {
+  try {
+    const res = await getKnowledgePointsApi()
+    const data = res.data?.data
+    if (data?.categories) {
+      kpCategories.value = data.categories
+      if (data.categories.length && !activeCategory.value) {
+        activeCategory.value = data.categories[0].name
+      }
+    }
+  } catch { /* ignore */ }
+}
+
+function handleKpClick(kp) {
+  // Log browse event (fire-and-forget)
+  logBrowseApi({ studentId: getStudentId(), concept: kp.name }).catch(() => {})
+  searchText.value = kp.name
+  handleSearch()
 }
 
 // ---------- search ----------
@@ -402,6 +440,7 @@ const refreshHandler = () => { loadLatestPush() }
 onMounted(() => {
   loadLatestPush()
   loadContext()
+  loadKnowledgePoints()
   window.addEventListener('push-refresh', refreshHandler)
 })
 
@@ -454,6 +493,22 @@ onUnmounted(() => {
 .card-footer:hover { color: #4a5dc7; }
 
 /* ---- explore ---- */
+.explore-card .card-body { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+.kp-filter { margin-bottom: 8px; }
+.kp-cat-select { width: 100%; margin-bottom: 8px; flex-shrink: 0; }
+.kp-grid {
+  flex: 1; overflow-y: auto; overflow-x: hidden;
+  display: flex; flex-wrap: wrap; align-content: flex-start;
+  gap: 6px; padding: 4px 0; max-height: calc(100vh - 380px); min-height: 120px;
+}
+.kp-chip {
+  display: inline-block; padding: 4px 10px; border-radius: 6px;
+  font-size: 13px; cursor: pointer; white-space: nowrap;
+  background: #f0f2f5; color: #303133; border: 1px solid #e8e8e8;
+  transition: all 0.12s;
+}
+.kp-chip:hover { background: #667eea; color: #fff; border-color: #667eea; }
+
 .search-row { display: flex; gap: 8px; margin-bottom: 16px; }
 .search-input { flex: 1; }
 

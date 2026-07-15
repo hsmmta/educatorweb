@@ -154,4 +154,18 @@ export function createGenerateStream(reqBody, callbacks) {
   return controller
 }
 
+// ==================== 知识点分类浏览 ====================
+/** 获取所有知识点（按 category 分组） */
+export const getKnowledgePointsApi = () =>
+  request.get('/push/knowledge-points')
+
+// ==================== 学习行为日志 ====================
+/** 记录知识点浏览事件 */
+export const logBrowseApi = (data) =>
+  request.post('/log/browse', data)
+
+/** 提交测验答案 */
+export const submitQuizApi = (data) =>
+  request.post('/quiz/submit', data)
+
 export default request

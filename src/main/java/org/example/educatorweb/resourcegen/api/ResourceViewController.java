@@ -1,6 +1,7 @@
 package org.example.educatorweb.resourcegen.api;
 
 import org.example.educatorweb.dto.ResponseResult;
+import org.example.educatorweb.learninglog.service.LearningBehaviorService;
 import org.example.educatorweb.resourcegen.model.PreGeneratedResource;
 import org.example.educatorweb.resourcegen.repository.PreGeneratedResourceRepository;
 import org.slf4j.Logger;
@@ -21,9 +22,12 @@ public class ResourceViewController {
     private static final Logger log = LoggerFactory.getLogger(ResourceViewController.class);
 
     private final PreGeneratedResourceRepository repo;
+    private final LearningBehaviorService behaviorService;
 
-    public ResourceViewController(PreGeneratedResourceRepository repo) {
+    public ResourceViewController(PreGeneratedResourceRepository repo,
+                                   LearningBehaviorService behaviorService) {
         this.repo = repo;
+        this.behaviorService = behaviorService;
     }
 
     /** GET /api/resources/{id} — get a single resource with full content */
@@ -32,6 +36,15 @@ public class ResourceViewController {
         PreGeneratedResource r = repo.findById(id).orElse(null);
         if (r == null) {
             return ResponseResult.error("Resource not found: " + id);
+        }
+        // Log resource view (only for READY resources — skips GENERATING/FAILED)
+        if (r.getStatus() == PreGeneratedResource.ResourceStatus.READY && r.getTopic() != null) {
+            try {
+                behaviorService.logResourceView(r.getUserId(), r.getTopic(),
+                    r.getResourceType(), r.getId(), r.getTitle());
+            } catch (Exception e) {
+                log.debug("ResourceView: behavior log failed (non-critical): {}", e.getMessage());
+            }
         }
         return ResponseResult.success(toMap(r));
     }

@@ -178,13 +178,18 @@ public class ResourceGenConfig {
     }
 
     /**
-     * RestClient.Builder with long timeouts for LLM calls.
+     * RestClient.Builder with reasonable timeouts for LLM calls.
+     * <p>
+     * Forces HTTP/1.1 because Java's HttpClient (HTTP/2 by default) can hang
+     * on certain server/CDN configurations (observed with api.deepseek.com).
+     * curl (HTTP/1.1) works reliably against the same endpoint.
      */
     private RestClient.Builder longTimeoutRestClient() {
         var httpClient = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)  // prevent HTTP/2 compatibility hangs
             .connectTimeout(Duration.ofSeconds(30)).build();
         var requestFactory = new JdkClientHttpRequestFactory(httpClient);
-        requestFactory.setReadTimeout(Duration.ofMinutes(3));
+        requestFactory.setReadTimeout(Duration.ofSeconds(60));
         return RestClient.builder().requestFactory(requestFactory);
     }
 }

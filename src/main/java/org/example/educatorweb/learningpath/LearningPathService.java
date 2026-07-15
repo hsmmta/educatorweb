@@ -14,6 +14,9 @@ import org.example.educatorweb.profile.model.StudentProfile;
 import org.example.educatorweb.profile.repository.StudentKnowledgeProficiencyRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -31,6 +34,7 @@ public class LearningPathService {
     private final KnowledgePointRepository kpRepo;
     private final ProfileService profileService;
     private final StudentKnowledgeProficiencyRepository kpProficiencyRepo;
+    private final ApplicationEventPublisher eventPublisher;
 
     /** 每个知识点推荐的资源类型和对应图标 */
     private static final List<ResourceSlot> DEFAULT_RESOURCE_SLOTS = List.of(
@@ -41,10 +45,12 @@ public class LearningPathService {
     );
 
     public LearningPathService(KnowledgePointRepository kpRepo, ProfileService profileService,
-                               StudentKnowledgeProficiencyRepository kpProficiencyRepo) {
+                               StudentKnowledgeProficiencyRepository kpProficiencyRepo,
+                               ApplicationEventPublisher eventPublisher) {
         this.kpRepo = kpRepo;
         this.profileService = profileService;
         this.kpProficiencyRepo = kpProficiencyRepo;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -55,6 +61,11 @@ public class LearningPathService {
      * @return 完整的学习路径
      */
     public LearningPath planPath(String studentId, String targetKnowledgePoint) {
+        // Remember target for auto re-planning on profile update
+        if (targetKnowledgePoint != null && !targetKnowledgePoint.isBlank()) {
+            lastTarget.put(studentId, targetKnowledgePoint);
+        }
+
         // 1. 查找目标知识点（Neo4j may be unavailable, wrap with fallback）
         Optional<KnowledgePoint> targetOpt = Optional.empty();
         try {
@@ -94,9 +105,10 @@ public class LearningPathService {
             // 所有节点初始状态由 buildPathNodes 设置
         }
 
-        // 5. 构建路径节点（带状态标记）
+        // 5. 构建路径节点（带状态标记 + 薄弱点强化单元）
         List<PathNode> pathNodes = buildPathNodes(orderedNodes, 0);
         markNodeStatuses(pathNodes, proficiencyMap);
+        insertReinforcementUnits(pathNodes, proficiencyMap);
 
         // 6. 根据画像偏好为每个节点推荐资源
         for (PathNode node : pathNodes) {
@@ -336,6 +348,87 @@ public class LearningPathService {
             new PushStrategy("🔄", "基于反馈",
                 "根据练习测试和资源使用反馈，持续优化推送策略")
         );
+    }
+
+    // ─── Dynamic path adjustment ──────────────────────────────
+
+    /** Cached last target per student for re-planning on profile update. */
+    private final Map<String, String> lastTarget = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Listen for profile updates: if the student's knowledge-base level changed,
+     * recalculate their last known learning path.
+     */
+    @Async
+    @EventListener
+    public void onProfileUpdated(ProfileUpdatedEvent event) {
+        String last = lastTarget.get(event.studentId());
+        if (last != null && !last.isBlank()) {
+            log.info("LearningPathService: re-planning path for user={} due to profile change (D1→{})",
+                event.studentId(), event.newKnowledgeBaseLevel());
+            try {
+                LearningPath path = planPath(event.studentId(), last);
+                // Publish event so PathNotificationListener broadcasts via SSE
+                eventPublisher.publishEvent(new PathRecalculatedEvent(
+                    this, event.studentId(),
+                    path.getTotalNodes() - path.getCompletedNodes()));
+                log.info("LearningPathService: path recalculated — remaining nodes={}",
+                    path.getTotalNodes() - path.getCompletedNodes());
+            } catch (Exception e) {
+                log.debug("LearningPathService: re-planning failed (non-critical): {}", e.getMessage());
+            }
+        }
+    }
+
+    // ─── Reinforcement units for weak nodes ────────────────────
+
+    /**
+     * Insert reinforcement sub-nodes before weak prerequisite nodes.
+     * For each node with proficiency &lt; 0.6 (not the first CURRENT node),
+     * insert a REINFORCEMENT node with half difficulty + extra quiz resources.
+     */
+    private void insertReinforcementUnits(List<PathNode> nodes,
+                                           Map<String, StudentKnowledgeProficiency> profMap) {
+        List<PathNode> enriched = new ArrayList<>();
+        boolean firstCurrentPassed = false;
+
+        for (PathNode node : nodes) {
+            if (node.getStatus() == PathNodeStatus.CURRENT) {
+                firstCurrentPassed = true;
+                enriched.add(node);
+                continue;
+            }
+
+            StudentKnowledgeProficiency prof = profMap.get(node.getKnowledgePointId());
+            boolean isWeak = prof != null && prof.getProficiency() != null
+                && prof.getProficiency().doubleValue() < 0.6;
+
+            // Insert reinforcement unit before this weak node (only after CURRENT)
+            if (isWeak && firstCurrentPassed) {
+                PathNode reinforcement = new PathNode(
+                    node.getKnowledgePointId() + "_reinforce",
+                    "📌 " + node.getKnowledgePointName() + "（强化）",
+                    "针对" + node.getKnowledgePointName() + "的专项强化练习",
+                    Math.max(1, node.getDifficulty() / 2),
+                    node.getCategory(),
+                    node.getOrder()
+                );
+                reinforcement.setStatus(PathNodeStatus.PENDING);
+                reinforcement.setEstimatedDuration("1天");
+                // Extra quiz-focused resources for reinforcement
+                reinforcement.setRecommendedResources(List.of(
+                    new RecommendedResource(node.getKnowledgePointName() + " 基础巩固题", "QUIZ",
+                        "薄弱点专项训练：从基础题起步", 10),
+                    new RecommendedResource(node.getKnowledgePointName() + " 概念回顾", "DOC",
+                        "重新梳理核心概念", 9)
+                ));
+                enriched.add(reinforcement);
+            }
+
+            enriched.add(node);
+        }
+        nodes.clear();
+        nodes.addAll(enriched);
     }
 
     /**
