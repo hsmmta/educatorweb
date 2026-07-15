@@ -685,6 +685,27 @@ const selectQuizOption = (msg, qIndex, optText) => {
     isCorrect = letter.toUpperCase() === correctLetter
   }
   msg.optionResult = { ...msg.optionResult, [qIndex]: isCorrect ? 'correct' : 'incorrect' }
+
+  // Submit quiz result to backend for proficiency tracking
+  submitQuizAnswer(msg, qIndex, q, isCorrect)
+}
+
+const submitQuizAnswer = async (msg, qIndex, q, correct) => {
+  try {
+    const knowledgePoint = msg.title || ''
+    await request.post('/quiz/submit', {
+      studentId: getStudentId(),
+      knowledgePoint: knowledgePoint,
+      results: [{
+        questionIndex: qIndex,
+        correct: correct,
+        relatedConcept: q.relatedConcept || knowledgePoint
+      }]
+    })
+  } catch (e) {
+    // Silently fail — quiz submission is non-blocking
+    console.warn('Quiz submit failed:', e.message)
+  }
 }
 
 const parseQuizData = (content) => {

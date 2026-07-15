@@ -8,6 +8,7 @@ import org.example.educatorweb.learningpath.model.LearningPath.PushStrategy;
 import org.example.educatorweb.learningpath.model.PathNode;
 import org.example.educatorweb.learningpath.model.PathNode.PathNodeStatus;
 import org.example.educatorweb.learningpath.model.RecommendedResource;
+import org.example.educatorweb.profile.ProficiencyService;
 import org.example.educatorweb.profile.ProfileService;
 import org.example.educatorweb.profile.model.StudentKnowledgeProficiency;
 import org.example.educatorweb.profile.model.StudentProfile;
@@ -163,16 +164,20 @@ public class LearningPathService {
 
     /**
      * 标记节点状态：已掌握/当前学习/待学习。
+     * 同时满足 proficiency >= 0.8 和 confidence >= 0.5 才标记为 COMPLETED。
      */
     private void markNodeStatuses(List<PathNode> nodes, Map<String, StudentKnowledgeProficiency> profMap) {
         boolean foundCurrent = false;
         for (PathNode node : nodes) {
             StudentKnowledgeProficiency prof = profMap.get(node.getKnowledgePointId());
-            if (prof != null && prof.getProficiency() != null
-                && prof.getProficiency().doubleValue() >= 0.8) {
+            double proficiency = prof != null && prof.getProficiency() != null
+                ? prof.getProficiency().doubleValue() : 0.0;
+            double confidence = ProficiencyService.confidence(
+                prof != null ? prof.getTotalQuestions() : 0);
+
+            if (proficiency >= 0.8 && confidence >= 0.5) {
                 node.setStatus(PathNodeStatus.COMPLETED);
-            } else if (!foundCurrent && (prof == null || prof.getProficiency() == null
-                || prof.getProficiency().doubleValue() < 0.8)) {
+            } else if (!foundCurrent) {
                 node.setStatus(PathNodeStatus.CURRENT);
                 foundCurrent = true;
             } else {
