@@ -7,6 +7,7 @@ import org.example.educatorweb.aitutor.search.WebSearchService;
 import org.example.educatorweb.aitutor.search.WebSearchService.SearchResult;
 import org.example.educatorweb.knowledgegraph.KnowledgeGraphService;
 import org.example.educatorweb.knowledgegraph.model.KnowledgeContext;
+import org.example.educatorweb.learninglog.service.LearningBehaviorService;
 import org.example.educatorweb.rag.RagService;
 import org.example.educatorweb.rag.model.DocumentSnippet;
 import org.example.educatorweb.rag.service.EmbeddingService;
@@ -20,6 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import reactor.core.publisher.Flux;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
@@ -72,6 +74,12 @@ public class AiTutorServiceImpl implements AiTutorService {
 
     @Override
     public ChatResponse chat(ChatRequest request) {
+        // Clear any stale interrupt flag from a previous request on this thread
+        // (prevents cascading InterruptedException across independent blocking calls)
+        if (Thread.interrupted()) {
+            log.debug("AiTutor: cleared stale interrupt flag on entry");
+        }
+
         String studentId = request.studentId();
         String question = request.question();
         String conversationId = request.conversationId() != null
@@ -81,8 +89,11 @@ public class AiTutorServiceImpl implements AiTutorService {
         log.info("AiTutor: student={}, conversation={}, question(len={})",
             studentId, conversationId, question.length());
 
-        // 0. Topic shift detection — before processing this question
-        topicDetector.detectAndCache(studentId, question, conversationId);
+        // 0. Topic shift detection — run async so it never blocks the chat response
+        //    The detectAndCache embeds the question (synchronous Zhipu call) and
+        //    may call DeepSeek for labeling; both can fail/slow under load.
+        final String finalConversationId = conversationId;
+        topicDetector.detectAndCacheAsync(studentId, question, finalConversationId);
 
         // 1. RAG — retrieve from private think-tank (Qdrant)
         List<DocumentSnippet> ragSnippets = retrieveKnowledge(studentId, question);
@@ -129,6 +140,73 @@ public class AiTutorServiceImpl implements AiTutorService {
         return new ChatResponse(conversationId, answer, sources, Instant.now());
     }
 
+    @Override
+    public Flux<String> streamChat(ChatRequest request) {
+        String studentId = request.studentId();
+        String question = request.question();
+        String conversationId = request.conversationId() != null
+            ? request.conversationId()
+            : UUID.randomUUID().toString();
+
+        log.info("AiTutor(stream): student={}, conversation={}, question(len={})",
+            studentId, conversationId, question.length());
+
+        final String finalConversationId = conversationId;
+
+        // Async topic detection (non-blocking)
+        topicDetector.detectAndCacheAsync(studentId, question, finalConversationId);
+
+        // Retrieval (same as blocking path)
+        List<DocumentSnippet> ragSnippets = retrieveKnowledge(studentId, question);
+        KnowledgeContext kgContext = queryKnowledgeGraph(question);
+        List<SearchResult> webResults = List.of();
+        if (ragSnippets.size() < WEB_FALLBACK_THRESHOLD) {
+            webResults = searchWeb(question);
+        }
+        List<Map<String, Object>> historyRecords = retrieveHistory(question, studentId);
+        String prompt = buildPrompt(question, ragSnippets, kgContext, webResults, historyRecords);
+
+        // Prepare sources for the final event
+        List<ChatResponse.SourceSnippet> sources = ragSnippets.stream()
+            .map(s -> new ChatResponse.SourceSnippet(s.content(), s.source(), s.score()))
+            .toList();
+
+        // Stream tokens from the LLM, collect full answer for post-processing
+        StringBuilder fullAnswer = new StringBuilder();
+        ModelProvider provider = modelRegistry.resolve(
+            org.example.educatorweb.common.model.ResourceType.DOC);
+
+        return provider.stream(prompt)
+            .doOnNext(token -> {
+                if (token != null) fullAnswer.append(token);
+            })
+            .doOnComplete(() -> {
+                String answer = fullAnswer.toString();
+                topicDetector.updateAnswer(studentId, answer);
+                storeConversation(conversationId, studentId, question, answer);
+                try {
+                    pushTrigger.checkAndPush(studentId);
+                } catch (Exception e) {
+                    log.warn("AiTutor(stream): push check failed (non-critical): {}", e.getMessage());
+                }
+                // Log chat interaction for behavior tracking
+                try {
+                    String conceptHint = question.length() > 50 ? question.substring(0, 50) : question;
+                    behaviorService.logChatInteraction(studentId, conceptHint, question);
+                } catch (Exception e) {
+                    log.debug("AiTutor(stream): behavior log failed (non-critical): {}", e.getMessage());
+                }
+                log.info("AiTutor(stream): complete — conversation={}, answer(len={}), sources={}",
+                    conversationId, answer.length(), sources.size());
+            })
+            .doOnError(err -> {
+                log.error("AiTutor(stream): LLM stream failed: {}", err.getMessage());
+                // Post-process with empty answer on stream failure
+                topicDetector.updateAnswer(studentId, "");
+                storeConversation(conversationId, studentId, question, "抱歉，AI 助教暂时无法回答，请稍后再试。");
+            });
+    }
+
     // ---------------------------------------------------------------
     // Private helpers
     // ---------------------------------------------------------------
@@ -161,6 +239,9 @@ public class AiTutorServiceImpl implements AiTutorService {
             return records;
         } catch (Exception e) {
             log.warn("AiTutor: history retrieval failed: {}", e.getMessage());
+            if (Thread.interrupted()) {
+                log.debug("AiTutor: cleared stale interrupt flag after history failure");
+            }
             return List.of();
         }
     }
@@ -173,6 +254,9 @@ public class AiTutorServiceImpl implements AiTutorService {
             return textProvider.chat(prompt);
         } catch (Exception e) {
             log.error("AiTutor: LLM call failed: {}", e.getMessage());
+            if (Thread.interrupted()) {
+                log.debug("AiTutor: cleared stale interrupt flag after LLM failure");
+            }
             return "抱歉，AI 助教暂时无法回答，请稍后再试。";
         }
     }
@@ -221,6 +305,10 @@ public class AiTutorServiceImpl implements AiTutorService {
             return ctx;
         } catch (Exception e) {
             log.warn("AiTutor: KG query failed: {}", e.getMessage());
+            // Clear interrupt flag to prevent cascading failures in subsequent blocking calls
+            if (Thread.interrupted()) {
+                log.debug("AiTutor: cleared stale interrupt flag after KG failure");
+            }
             return new KnowledgeContext(List.of(), List.of(), List.of(), 0);
         }
     }

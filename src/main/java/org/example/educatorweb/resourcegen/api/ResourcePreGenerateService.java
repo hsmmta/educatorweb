@@ -19,6 +19,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Triggers async pre-generation of actual resource content via the
@@ -45,6 +47,8 @@ public class ResourcePreGenerateService {
     private final PreGeneratedResourceRepository repo;
     private final FileStorageService fileStorage;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ExecutorService preGenExecutor = Executors.newFixedThreadPool(4,
+        r -> { Thread t = new Thread(r, "pregen"); t.setDaemon(true); return t; });
 
     public ResourcePreGenerateService(ResourceGenerationService generationService,
                                        PreGeneratedResourceRepository repo,
@@ -105,9 +109,9 @@ public class ResourcePreGenerateService {
                 long start = System.currentTimeMillis();
                 while (!sub.isDisposed()) {
                     Thread.sleep(200);
-                    if (System.currentTimeMillis() - start > 300_000) {
+                    if (System.currentTimeMillis() - start > 120_000) {
                         sub.dispose();
-                        throw new RuntimeException("Generation timed out after 5 min");
+                        throw new RuntimeException("Generation timed out after 2 min");
                     }
                 }
 
@@ -121,7 +125,7 @@ public class ResourcePreGenerateService {
                 markAllFailed(records, e.getMessage());
             }
             return repo.findAllById(records.stream().map(PreGeneratedResource::getId).toList());
-        });
+        }, preGenExecutor);
     }
 
     /**
@@ -164,9 +168,9 @@ public class ResourcePreGenerateService {
                 long start = System.currentTimeMillis();
                 while (!sub.isDisposed()) {
                     Thread.sleep(200);
-                    if (System.currentTimeMillis() - start > 300_000) {
+                    if (System.currentTimeMillis() - start > 120_000) {
                         sub.dispose();
-                        throw new RuntimeException("Generation timed out after 5 min");
+                        throw new RuntimeException("Generation timed out after 2 min");
                     }
                 }
 
@@ -184,7 +188,7 @@ public class ResourcePreGenerateService {
                 repo.save(savedRec);
             }
             return repo.findById(savedRec.getId()).orElse(savedRec);
-        });
+        }, preGenExecutor);
     }
 
     // ---- internal ----

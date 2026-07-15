@@ -63,8 +63,6 @@ public class PushResultController {
     @Transactional
     public ResponseResult<String> deleteHistory(@RequestParam String studentId) {
         resultRepo.deleteAllByUserId(studentId);
-        // Also reset pushed flag on cached topics so they can be re-pushed
-        cacheRepo.resetPushedByUserId(studentId);
         log.info("PushResultController: cleared push history for user={}", studentId);
         return ResponseResult.success("Cleared push history for " + studentId);
     }

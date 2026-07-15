@@ -54,7 +54,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElNotification } from 'element-plus'
 import { ArrowDown, User, UserFilled, SwitchButton, ChatDotRound, FolderOpened, Position, Bell } from '@element-plus/icons-vue'
@@ -65,19 +65,29 @@ const router = useRouter()
 const userInfo = ref({})
 const pushNotificationCount = ref(0)
 
-onMounted(() => {
-  const info = localStorage.getItem('userInfo')
-  if (info) {
-    try { userInfo.value = JSON.parse(info) } catch (e) { userInfo.value = {} }
-  }
-  // SSE subscribe for push notifications
-  const studentId = getStudentId()
-  if (studentId) {
-    try {
-      const es = subscribePushApi(studentId)
-      es.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data)
+let sseSource = null
+
+function connectSSE(studentId) {
+  // Prevent duplicate connections
+  if (sseSource) return
+
+  try {
+    const es = subscribePushApi(studentId)
+    sseSource = es
+
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        if (data.triggerType === 'PATH_UPDATED') {
+          // Path recalculated due to profile change — show gentle notification
+          ElNotification({
+            title: '学习路径已更新',
+            message: `你的画像发生了变化，学习路径已自动调整（剩余 ${data.resourceCount} 个节点）`,
+            type: 'success',
+            duration: 5000,
+            onClick: goToPush
+          })
+        } else {
           pushNotificationCount.value++
           ElNotification({
             title: '资源推送',
@@ -87,13 +97,42 @@ onMounted(() => {
             onClick: goToPush
           })
           window.dispatchEvent(new CustomEvent('push-refresh'))
-        } catch { /* ignore parse errors */ }
+        }
+      } catch { /* ignore parse errors */ }
+    }
+
+    es.onerror = () => {
+      // EventSource has built-in reconnection with backoff.
+      // We only need to close on fatal errors (e.g., 401, 404).
+      if (es.readyState === EventSource.CLOSED) {
+        sseSource = null
       }
-      es.onerror = () => {
-        // SSE will auto-reconnect
-      }
-    } catch { /* SSE not supported */ }
+      // Otherwise, let the browser's built-in reconnect handle it.
+      // The built-in delay starts at ~3s and increases.
+    }
+  } catch { /* SSE not supported */ }
+}
+
+function disconnectSSE() {
+  if (sseSource) {
+    sseSource.close()
+    sseSource = null
   }
+}
+
+onMounted(() => {
+  const info = localStorage.getItem('userInfo')
+  if (info) {
+    try { userInfo.value = JSON.parse(info) } catch (e) { userInfo.value = {} }
+  }
+  const studentId = getStudentId()
+  if (studentId) {
+    connectSSE(studentId)
+  }
+})
+
+onUnmounted(() => {
+  disconnectSSE()
 })
 
 function getStudentId() {

@@ -88,4 +88,48 @@ public class PushContextController {
             "suggestions", (Object) suggestions
         ));
     }
+
+    /**
+     * GET /api/push/knowledge-points
+     * Returns all knowledge points grouped by category, for the browse-by-category UI.
+     */
+    @GetMapping("/knowledge-points")
+    public ResponseResult<Map<String, Object>> getKnowledgePoints() {
+        List<KnowledgePointRepository.KnowledgePointSummary> all = kpRepo.findAllSummaries();
+
+        // Group by category
+        Map<String, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
+        for (var kp : all) {
+            String cat = kp.category() != null ? kp.category() : "概念";
+            grouped.computeIfAbsent(cat, k -> new ArrayList<>())
+                .add(Map.of(
+                    "id", (Object) kp.id(),
+                    "name", (Object) kp.name(),
+                    "difficulty", (Object) (kp.difficulty() != null ? kp.difficulty().intValue() : 3)
+                ));
+        }
+
+        // Build ordered category list
+        List<Map<String, Object>> categories = new ArrayList<>();
+        // Preferred order
+        List<String> order = List.of("数学基础", "概念", "算法", "应用", "工具");
+        Set<String> added = new LinkedHashSet<>();
+        for (String cat : order) {
+            if (grouped.containsKey(cat)) {
+                categories.add(Map.of("name", cat, "points", (Object) grouped.get(cat)));
+                added.add(cat);
+            }
+        }
+        // Any remaining categories
+        for (var entry : grouped.entrySet()) {
+            if (!added.contains(entry.getKey())) {
+                categories.add(Map.of("name", entry.getKey(), "points", (Object) entry.getValue()));
+            }
+        }
+
+        return ResponseResult.success(Map.of(
+            "categories", (Object) categories,
+            "totalCount", all.size()
+        ));
+    }
 }
