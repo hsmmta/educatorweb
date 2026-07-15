@@ -42,7 +42,7 @@ public class LearningPathService {
         new ResourceSlot("DOC", "课程文档", "📄", 10),
         new ResourceSlot("QUIZ", "练习题库", "📝", 8),
         new ResourceSlot("CODE", "代码案例", "💻", 7),
-        new ResourceSlot("MINDMAP", "思维导图", "🧩", 5)
+        new ResourceSlot("HTML", "交互课件", "🌐", 5)
     );
 
     public LearningPathService(KnowledgePointRepository kpRepo, ProfileService profileService,
@@ -278,7 +278,7 @@ public class LearningPathService {
             case "DOC" -> "基于你的" + (profile.getCognitiveStyleType() != null ? profile.getCognitiveStyleType() : "学习") + "风格推荐";
             case "QUIZ" -> "针对你的薄弱环节巩固练习";
             case "CODE" -> "匹配你的实践学习偏好";
-            case "MINDMAP" -> "帮助梳理知识结构框架";
+            case "HTML" -> "交互式课件可视化学习";
             case "VIDEO" -> "基于你的" + (profile.getContentPreferenceType() != null ? profile.getContentPreferenceType() : "学习") + "偏好推荐";
             default -> "为你推荐的学习资源";
         };

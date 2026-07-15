@@ -389,7 +389,13 @@ const selectConversation = async (conv) => {
 // deleteConversation: the Task-1 backend has NO delete endpoint yet, so this is
 // front-end only — drop it from the local list and reset if it was active.
 // TODO(backend): add DELETE /api/tutor/conversations/{id} and call it here.
-const deleteConversation = (conv) => {
+const deleteConversation = async (conv) => {
+  // Call backend to persist deletion
+  try {
+    await request.delete(`/tutor/conversations/${conv.conversationId}`, {
+      params: { studentId: getStudentId() }
+    })
+  } catch { /* backend may not be reachable; still remove locally */ }
   conversations.value = conversations.value.filter(c => c.conversationId !== conv.conversationId)
   if (currentConversationId.value === conv.conversationId) {
     newConversation()
@@ -461,6 +467,7 @@ const sendChatMessage = async (text) => {
     const decoder = new TextDecoder()
     let buffer = ''
     let fullAnswer = ''
+    let streamDone = false
 
     while (true) {
       const { done, value } = await reader.read()
@@ -471,29 +478,40 @@ const sendChatMessage = async (text) => {
       buffer = lines.pop() || ''
 
       for (const line of lines) {
+        if (streamDone) continue  // skip trailing data: JSON after event:done
+
         if (line.startsWith('event:done')) {
-          // Stream complete — set loading false now
+          streamDone = true
+          // Stream complete — do final markdown render
+          const msg = messages.value.find(m => m.id === assistantMsgId)
+          if (msg) {
+            msg.content = safeMarkdown(fullAnswer)
+          }
           loading.value = false
         } else if (line.startsWith('data:')) {
           try {
             const tokenText = line.substring(5).trim()
+            // Skip JSON payloads (conversationId), keep only real tokens
+            if (tokenText.startsWith('{')) continue
             fullAnswer += tokenText
 
             const msg = messages.value.find(m => m.id === assistantMsgId)
             if (msg) {
-              // Only re-render markdown on the final answer, not every token
-              // (avoids flicker and performance issues with rapid re-renders)
-              msg.content = fullAnswer
+              // Raw text during streaming; rendered on event:done
+              msg.content = '<pre style="white-space:pre-wrap;font-family:inherit;margin:0;">' +
+                escapeHtml(fullAnswer) + '</pre>'
             }
           } catch { /* ignore parse errors */ }
         }
       }
     }
 
-    // Final markdown render of the complete answer
-    const msg = messages.value.find(m => m.id === assistantMsgId)
-    if (msg) {
-      msg.content = safeMarkdown(fullAnswer)
+    // Fallback: if stream ended without event:done, render markdown now
+    if (!streamDone && fullAnswer) {
+      const msg = messages.value.find(m => m.id === assistantMsgId)
+      if (msg) {
+        msg.content = safeMarkdown(fullAnswer)
+      }
     }
     loading.value = false
 
@@ -683,7 +701,61 @@ const handleSseEvent = (evt, progressId, text) => {
 // ---- Helpers (ported from Learning.vue) ----
 const safeMarkdown = (text) => {
   if (!text) return ''
-  try { return marked.parse(text) } catch { return text }
+  try {
+    let md = text
+
+    // Phase 0: Fix inline tables — AI concatenates rows with || or | | as row separators.
+    //   "|col1|col2||------|------||data1|data2|" → proper multi-line table
+    //   Also handles "|sep| |data|" (pipe-space-pipe row boundaries)
+    md = md.replace(/\|\s*\|(?=[^|\s])/g, '|\n|')
+
+    // Table start: insert newline when inline table follows punctuation
+    //   e.g. "方向）|优化算法|..." or "分为：|类型|特点|..."
+    md = md.replace(/([。！？）】」.!?）、：，])(\|)/g, '$1\n$2')
+
+    // Phase 1: Insert blank lines before block-level elements.
+    //   The AI writes markdown without blank lines between blocks,
+    //   e.g. "。---###标题" all on one line.
+
+    // --- as horizontal rule: NOT inside table separators (exclude | and - neighbors)
+    md = md.replace(/([^\n\-|])(---)([^\n\-|])/g, '$1\n\n$2\n\n$3')
+    md = md.replace(/([^\n\-|])(---)(\s*\n|$)/g, '$1\n\n$2$3')
+
+    // ### headers: insert newline before
+    md = md.replace(/([^\n#])(#{1,6}[^\n])/g,
+      (m, before, heading) => before + '\n\n' + heading)
+    md = md.replace(/([^\n])\n(#{1,6})/g, '$1\n\n$2')
+
+    // > blockquotes mid-text
+    md = md.replace(/([^\n>])(>[^\s>])/g, '$1\n\n$2')
+
+    // Phase 2: Ensure space after markers (###text → ### text, etc.)
+    md = md.replace(/^(#{1,6})([^\s#])/gm, '$1 $2')
+    md = md.replace(/^(\d+\.)([^\s])/gm, '$1 $2')
+    // Split inline numbered list items (2.text3.text → separate lines)
+    md = md.replace(/([^\n\d])(\d+\.)([一-鿿])/g, '$1\n$2 $3')
+    md = md.replace(/^(>)([^\s>])/gm, '$1 $2')
+
+    // Phase 3: Break heading at first sentence-end so it doesn't consume the
+    //   whole paragraph (heading ends at first 。！？)
+    md = md.replace(/^(#{1,6}\s[^。！？\n]+[。！？])([^\n]+)/gm, '$1\n\n$2')
+
+    // Phase 4: Parse
+    return marked.parse(md)
+  } catch (e) {
+    console.error('[DEBUG] safeMarkdown ERROR:', e.message || e)
+    return text
+  }
+}
+
+const escapeHtml = (text) => {
+  if (!text) return ''
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
 }
 
 const copyText = (html) => {
@@ -1082,16 +1154,6 @@ onMounted(loadConversations)
 
 /* DOC markdown */
 .doc-render { font-size: 14px; line-height: 1.85; color: #2c3142; }
-.markdown-body :deep(h1), .markdown-body :deep(h2), .markdown-body :deep(h3) { margin: 18px 0 9px; color: var(--ink); }
-.markdown-body :deep(p) { margin: 8px 0; }
-.markdown-body :deep(pre) { background: #f6f8fa; padding: 13px; border-radius: 10px; overflow: auto; }
-.markdown-body :deep(code) { background: #f0f2f5; padding: 2px 6px; border-radius: 5px; font-size: 13px; }
-.markdown-body :deep(pre code) { background: none; padding: 0; }
-.markdown-body :deep(table) { border-collapse: collapse; margin: 12px 0; }
-.markdown-body :deep(th), .markdown-body :deep(td) { border: 1px solid #dcdfe6; padding: 6px 12px; }
-.markdown-body :deep(ul), .markdown-body :deep(ol) { padding-left: 24px; }
-.markdown-body :deep(.katex-display) { margin: 16px 0; overflow-x: auto; overflow-y: hidden; }
-.markdown-body :deep(.katex) { font-size: 1.1em; }
 
 /* QUIZ */
 .quiz-toolbar { margin-bottom: 12px; text-align: right; }
@@ -1211,4 +1273,32 @@ onMounted(loadConversations)
   .chat-messages { padding: 20px 14px; }
   .input-area { margin: 8px 14px 16px; }
 }
+</style>
+
+<!-- Non-scoped markdown styles — must be unscoped so v-html content gets styled -->
+<style>
+.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6 {
+  margin: 18px 0 9px; color: #1a1a2e; font-weight: 700; line-height: 1.4;
+}
+.markdown-body h1 { font-size: 1.6em; border-bottom: 2px solid #e8e8e8; padding-bottom: 8px; }
+.markdown-body h2 { font-size: 1.4em; border-bottom: 1px solid #f0f0f0; padding-bottom: 6px; }
+.markdown-body h3 { font-size: 1.2em; }
+.markdown-body h4 { font-size: 1.1em; }
+.markdown-body p { margin: 8px 0; line-height: 1.85; }
+.markdown-body pre { background: #f6f8fa; padding: 13px; border-radius: 10px; overflow: auto; }
+.markdown-body code { background: #f0f2f5; padding: 2px 6px; border-radius: 5px; font-size: 13px; }
+.markdown-body pre code { background: none; padding: 0; }
+.markdown-body blockquote {
+  border-left: 4px solid #667eea; padding: 8px 16px; margin: 12px 0;
+  color: #5b6270; background: rgba(102,126,234,0.04); border-radius: 0 8px 8px 0;
+}
+.markdown-body hr { border: none; border-top: 2px solid #e8e8e8; margin: 20px 0; }
+.markdown-body table { border-collapse: collapse; margin: 12px 0; width: 100%; }
+.markdown-body th, .markdown-body td { border: 1px solid #dcdfe6; padding: 8px 12px; text-align: left; }
+.markdown-body th { background: #f5f7fa; font-weight: 600; }
+.markdown-body ul, .markdown-body ol { padding-left: 24px; margin: 8px 0; }
+.markdown-body li { margin: 4px 0; line-height: 1.7; }
+.markdown-body .katex-display { margin: 16px 0; overflow-x: auto; overflow-y: hidden; }
+.markdown-body .katex { font-size: 1.1em; }
+.markdown-body img { max-width: 100%; }
 </style>

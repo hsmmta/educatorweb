@@ -56,11 +56,12 @@ public class QuizSubmitController {
         String studentId = request.studentId();
         String knowledgePoint = request.knowledgePoint();
 
+        List<AnswerResult> results = request.results() != null ? request.results() : List.of();
         log.info("QuizSubmit: student={}, topic={}, results={}",
-            studentId, knowledgePoint, request.results().size());
+            studentId, knowledgePoint, results.size());
 
         // 1. 仅对 Neo4j 中已存在的知识点记录 proficiency
-        for (AnswerResult r : request.results()) {
+        for (AnswerResult r : results) {
             String concept = (r.relatedConcept() != null && !r.relatedConcept().isBlank())
                 ? r.relatedConcept() : knowledgePoint;
             if (isInKnowledgeGraph(concept)) {
@@ -71,7 +72,7 @@ public class QuizSubmitController {
         }
 
         // 2. 重新获取所有更新后的结果用于返回
-        List<ProficiencyResult> allResults = request.results().stream()
+        List<ProficiencyResult> allResults = results.stream()
             .map(r -> {
                 String concept = (r.relatedConcept() != null && !r.relatedConcept().isBlank())
                     ? r.relatedConcept() : knowledgePoint;

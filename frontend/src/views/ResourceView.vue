@@ -57,17 +57,19 @@
             </div>
             <div v-if="q.options" class="quiz-options">
               <div v-for="(opt, oi) in q.options" :key="oi" :class="['quiz-opt', {
-                correct: showAnswers && (oi === q.correctIndex || opt === q.answer),
-                wrong: showAnswers && selectedAnswers[i] === oi && oi !== q.correctIndex && opt !== q.answer
+                correct: showAnswers && oi === answerIndex(q),
+                wrong: showAnswers && selectedAnswers[i] === oi && oi !== answerIndex(q)
               }]">
                 <label>
-                  <input v-model="selectedAnswers[i]" type="radio" :value="oi" :name="'q' + i" />
-                  {{ String.fromCharCode(65 + oi) }}. {{ typeof opt === 'string' ? opt : (opt.text || JSON.stringify(opt)) }}
+                  <input v-model="selectedAnswers[i]" type="radio" :value="oi" :name="'q' + i"
+                    :disabled="quizSubmitted" />
+                  {{ String.fromCharCode(65 + oi) }}. {{ optionText(opt) }}
                 </label>
               </div>
             </div>
-            <div v-if="showAnswers && (q.explanation || q.answerExplain)" class="quiz-explain">
-              💡 {{ q.explanation || q.answerExplain }}
+            <div v-if="showAnswers" class="quiz-explain">
+              💡 正确答案：{{ String.fromCharCode(65 + answerIndex(q)) }}. {{ optionText(q.options?.[answerIndex(q)]) }}
+              <span v-if="q.explanation || q.answerExplain"> — {{ q.explanation || q.answerExplain }}</span>
             </div>
           </div>
         </div>
@@ -162,6 +164,8 @@ const quizCorrect = ref(0)
 const quizTotal = ref(0)
 const quizScore = ref(0)
 
+const quizStorageKey = computed(() => 'quiz_submitted_' + id.value)
+
 // ---- rendered HTML for DOC type ----
 const renderedHtml = computed(() => {
   if (!resource.value.content) return ''
@@ -195,17 +199,65 @@ watch(() => resource.value.content, async (val) => {
 
 // ---- init ----
 let pollTimer = null
+let htmlOpenTime = null  // track HTML resource view duration
+
+// ---- HTML duration tracking ----
+function startHtmlTimer() {
+  htmlOpenTime = Date.now()
+}
+
+function sendHtmlDuration() {
+  if (!htmlOpenTime) return
+  const duration = Math.round((Date.now() - htmlOpenTime) / 1000)
+  // Fire-and-forget: log the duration
+  try {
+    const token = localStorage.getItem('token')
+    fetch('/api/log/duration', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': 'Bearer ' + token } : {})
+      },
+      body: JSON.stringify({
+        studentId: getStudentId(),
+        concept: resource.value.topic || resource.value.title,
+        durationSeconds: duration,
+        resourceType: 'HTML',
+        resourceId: id.value
+      })
+    }).catch(() => {})
+  } catch { /* ignore */ }
+  htmlOpenTime = null
+}
 
 onMounted(async () => {
   await loadResource()
-  // Auto-poll if resource is still generating
   if (resource.value.status === 'GENERATING') {
     startAutoPoll()
+  }
+  // Restore quiz state if already submitted
+  if (localStorage.getItem(quizStorageKey.value)) {
+    try {
+      const saved = JSON.parse(localStorage.getItem(quizStorageKey.value))
+      quizSubmitted.value = true
+      quizCorrect.value = saved.correct || 0
+      quizTotal.value = saved.total || 0
+      quizScore.value = saved.score || 0
+      showAnswers.value = true
+    } catch { /* ignore */ }
   }
 })
 
 onUnmounted(() => {
   stopAutoPoll()
+  sendHtmlDuration()
+})
+
+// Start timer when resource is READY and type is HTML
+watch(() => resource.value.status, (newStatus) => {
+  if (newStatus === 'READY' && resource.value.resourceType === 'HTML') {
+    startHtmlTimer()
+  }
 })
 
 function startAutoPoll() {
@@ -266,6 +318,30 @@ async function pollStatus() {
   }
 }
 
+// ---- quiz helpers ----
+function answerIndex(q) {
+  const ans = q.answer || q.correctAnswer
+  if (ans === undefined || ans === null) {
+    // Try to find by correctIndex
+    if (q.correctIndex !== undefined) return q.correctIndex
+    return -1
+  }
+  if (typeof ans === 'number') return ans
+  // Letter answer: "A" → 0, "B" → 1
+  const s = String(ans).trim().toUpperCase()
+  if (s.length === 1 && s >= 'A' && s <= 'Z') return s.charCodeAt(0) - 65
+  return parseInt(s) || 0
+}
+
+function optionText(opt) {
+  if (!opt) return ''
+  if (typeof opt === 'string') {
+    // Strip leading "A. " or "A)" prefix from option text
+    return opt.replace(/^[A-Z][.)。]\s*/, '')
+  }
+  return opt.text || JSON.stringify(opt)
+}
+
 // ---- quiz submit ----
 async function submitQuiz() {
   if (!quizData.value?.questions) return
@@ -305,6 +381,10 @@ async function submitQuiz() {
     }
     quizSubmitted.value = true
     showAnswers.value = true
+    // Persist so next open shows results instead of re-answering
+    localStorage.setItem(quizStorageKey.value, JSON.stringify({
+      correct: data.correct, total: data.total, score: data.score
+    }))
   } catch (e) {
     ElMessage.error('提交失败: ' + (e.response?.data?.message || e.message))
   } finally {
