@@ -105,47 +105,47 @@
           </div>
         </div>
       </section>
+    </div>
 
-      <!-- ========== 学习路径 ========== -->
-      <section class="card path-card" style="margin-top:24px">
-        <h3 class="card-title">📐 我的学习路径</h3>
+    <!-- ========== 学习路径（全宽） ========== -->
+    <section class="card path-card">
+      <h3 class="card-title">📐 我的学习路径</h3>
 
-        <div v-if="!savedPath" class="empty-state">
-          <span class="empty-icon">🗺️</span>
-          <p>暂未规划学习路径</p>
-          <el-button size="small" type="primary" @click="panelMode='search'">
-            搜索知识点规划路径 →
-          </el-button>
+      <div v-if="!savedPath" class="empty-state">
+        <span class="empty-icon">🗺️</span>
+        <p>暂未规划学习路径</p>
+        <el-button size="small" type="primary" @click="panelMode='search'">
+          搜索知识点规划路径 →
+        </el-button>
+      </div>
+
+      <template v-else>
+        <div class="path-summary-header">
+          <span>目标：<strong>{{ savedPath.targetKnowledgePoint }}</strong></span>
+          <span>{{ savedPath.completedNodes || 0 }}/{{ savedPath.totalNodes }}</span>
         </div>
 
-        <template v-else>
-          <div class="path-summary-header">
-            <span>目标：<strong>{{ savedPath.targetKnowledgePoint }}</strong></span>
-            <span>{{ savedPath.completedNodes || 0 }}/{{ savedPath.totalNodes }}</span>
+        <div class="path-node-list">
+          <div v-for="(node, i) in (savedPath.nodes || [])" :key="i"
+            :class="['path-node-item', {
+              completed: node.status === 'COMPLETED',
+              current: node.status === 'CURRENT',
+              locked: !nodeClickable(node, i)
+            }]"
+            @click="nodeClickable(node, i) && goLearnFromPath(node)">
+            <span class="path-node-status">
+              {{ node.status === 'COMPLETED' ? '✅' : node.status === 'CURRENT' ? '🔵' : '⚪' }}
+            </span>
+            <span class="path-node-name">{{ node.knowledgePointName }}</span>
+            <span class="path-node-label">{{ statusLabel(node) }}</span>
           </div>
+        </div>
 
-          <div class="path-node-list">
-            <div v-for="(node, i) in (savedPath.nodes || [])" :key="i"
-              :class="['path-node-item', {
-                completed: node.status === 'COMPLETED',
-                current: node.status === 'CURRENT',
-                locked: !nodeClickable(node, i)
-              }]"
-              @click="nodeClickable(node, i) && goLearnFromPath(node)">
-              <span class="path-node-status">
-                {{ node.status === 'COMPLETED' ? '✅' : node.status === 'CURRENT' ? '🔵' : '⚪' }}
-              </span>
-              <span class="path-node-name">{{ node.knowledgePointName }}</span>
-              <span class="path-node-label">{{ statusLabel(node) }}</span>
-            </div>
-          </div>
-
-          <el-button size="small" text @click="panelMode='search'" style="margin-top:12px">
-            🔄 重新规划目标
-          </el-button>
-        </template>
-      </section>
-    </div>
+        <el-button size="small" text @click="panelMode='search'" style="margin-top:12px">
+          🔄 重新规划目标
+        </el-button>
+      </template>
+    </section>
 
     <!-- ========== 底部面板 ========== -->
     <transition name="panel-slide">
@@ -444,6 +444,8 @@ async function handleSearch() {
   try {
     const res = await getRecommendationsApi(getStudentId(), q)
     searchResult.value = res.data?.data || null
+    // Reload saved path (planPath() was called on backend, path is now persisted)
+    await loadSavedPath()
   } catch (e) {
     ElMessage.error('搜索失败: ' + (e.response?.data?.message || e.message))
     searchResult.value = null
