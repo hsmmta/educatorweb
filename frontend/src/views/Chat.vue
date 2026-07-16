@@ -224,8 +224,8 @@
       <div class="mode-bar">
         <div
           v-for="m in modes" :key="m.key"
-          :class="['mode-item', { active: activeMode === m.key }]"
-          @click="switchMode(m.key)"
+          :class="['mode-item', { active: activeMode === m.key, locked: topicLocked }]"
+          @click="!topicLocked && switchMode(m.key)"
         >
           <span class="mode-icon">{{ m.icon }}</span>
           <span class="mode-label">{{ m.label }}</span>
@@ -234,7 +234,12 @@
 
       <!-- Input area -->
       <div class="input-area">
+        <div v-if="topicLocked" class="locked-topic">
+          <el-tag type="warning" size="large">🔒 {{ inputText }}</el-tag>
+          <span class="locked-hint">主题已锁定，来自学习路径节点</span>
+        </div>
         <el-input
+          v-else
           v-model="inputText"
           :placeholder="currentMode.placeholder"
           type="textarea"
@@ -243,9 +248,9 @@
           :disabled="loading"
         />
         <div class="input-footer">
-          <el-tag size="small" type="info">Ctrl + Enter 发送</el-tag>
-          <el-button type="primary" :icon="Promotion" :loading="loading" @click="sendMessage" :disabled="!inputText.trim()">
-            发送
+          <el-tag v-if="!topicLocked" size="small" type="info">Ctrl + Enter 发送</el-tag>
+          <el-button type="primary" :icon="Promotion" :loading="loading" @click="sendMessage" :disabled="!inputText.trim() || topicLocked">
+            {{ topicLocked ? '已锁定' : '发送' }}
           </el-button>
         </div>
       </div>
@@ -308,6 +313,7 @@ const modes = [
 ]
 const route = useRoute()
 const activeMode = ref('chat')
+const topicLocked = ref(false)  // true when entered from path node (URL params)
 const currentMode = computed(() => modes.find(m => m.key === activeMode.value) || modes[0])
 const switchMode = (key) => { activeMode.value = key }
 
@@ -969,6 +975,7 @@ onMounted(async () => {
     if (urlMode && modes.some(m => m.key === urlMode)) {
       activeMode.value = urlMode
     }
+    topicLocked.value = true  // lock topic from path node
     await nextTick()
     await sendResourceGenerate(urlTopic)
   }
@@ -1253,8 +1260,14 @@ onMounted(async () => {
   box-shadow: 0 8px 20px rgba(102,126,234,0.36);
 }
 .mode-icon { font-size: 16px; }
+.mode-item.locked { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
 
 /* ---- Input area ---- */
+.locked-topic {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 12px; margin-bottom: 4px;
+}
+.locked-hint { font-size: 12px; color: #909399; }
 .input-area {
   position: relative; z-index: 1;
   margin: 8px clamp(16px, 6vw, 80px) 20px;
