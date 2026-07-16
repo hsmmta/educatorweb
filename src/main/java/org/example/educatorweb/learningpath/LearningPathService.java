@@ -200,6 +200,8 @@ public class LearningPathService {
             double confidence = ProficiencyService.confidence(
                 prof != null ? prof.getTotalQuestions() : 0);
 
+            node.setProficiency(effectiveProficiency);
+
             if (effectiveProficiency >= 0.8 && confidence >= 0.5) {
                 node.setStatus(PathNodeStatus.COMPLETED);
             } else if (!foundCurrent) {

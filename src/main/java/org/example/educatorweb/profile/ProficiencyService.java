@@ -125,16 +125,18 @@ public class ProficiencyService {
         // Save daily proficiency snapshot for trend tracking
         try {
             LocalDate today = LocalDate.now();
+            final BigDecimal snapRaw = rawProficiency;
+            final double snapEffective = effective;
             snapshotRepo.findByStudentIdAndConceptAndSnapshotDate(studentId, concept, today)
                 .ifPresentOrElse(
                     existing -> {
-                        existing.setProficiency(rawProficiency);
-                        existing.setEffectiveProficiency(BigDecimal.valueOf(effective));
+                        existing.setProficiency(snapRaw);
+                        existing.setEffectiveProficiency(BigDecimal.valueOf(snapEffective));
                         snapshotRepo.save(existing);
                     },
                     () -> snapshotRepo.save(new ProficiencySnapshot(
-                        studentId, concept, rawProficiency,
-                        BigDecimal.valueOf(effective), today))
+                        studentId, concept, snapRaw,
+                        BigDecimal.valueOf(snapEffective), today))
                 );
         } catch (Exception e) {
             log.debug("ProficiencyService: snapshot save skipped: {}", e.getMessage());
@@ -273,32 +275,18 @@ public class ProficiencyService {
         log.info("ProficiencyService: backfilled {} snapshots for student={}", count, studentId);
     }
 
+    /**
+     * Sync proficiency to profile's knowledgeDetails collection (best-effort).
+     * Does NOT call profileService.updateProfile() — that causes cascade conflicts
+     * under concurrent access. Proficiency data is queried independently by the
+     * report/learning-path services from student_knowledge_proficiency table.
+     */
     private void syncToProfile(String studentId, StudentKnowledgeProficiency prof) {
-        try {
-            StudentProfile profile = profileService.getProfile(studentId);
-            if (profile != null) {
-                List<StudentKnowledgeProficiency> details = profile.getKnowledgeDetails();
-                if (details == null) {
-                    details = new ArrayList<>();
-                    profile.setKnowledgeDetails(details);
-                }
-                boolean found = false;
-                for (int i = 0; i < details.size(); i++) {
-                    if (details.get(i).getConcept().equals(prof.getConcept())) {
-                        details.set(i, prof);
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    prof.setStudentProfile(profile);
-                    details.add(prof);
-                }
-                profileService.updateProfile(studentId, profile);
-            }
-        } catch (Exception e) {
-            log.warn("ProficiencyService: failed to sync to profile: {}", e.getMessage());
-        }
+        // No-op: profile knowledgeDetails is a lazily-loaded collection that's only
+        // used for display. The authoritative proficiency source is the
+        // student_knowledge_proficiency table queried by ProficiencyService.
+        // Saving the profile here causes Hibernate NonUniqueObjectException
+        // under concurrent access and MySQL lock timeouts.
     }
 
     // ======================== 数据类型 ========================

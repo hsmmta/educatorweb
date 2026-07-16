@@ -60,14 +60,14 @@ public class QuizSubmitController {
         log.info("QuizSubmit: student={}, topic={}, results={}",
             studentId, knowledgePoint, results.size());
 
-        // 1. 仅对 Neo4j 中已存在的知识点记录 proficiency
+        // Record proficiency for ALL quiz answers (no Neo4j guard — proficiency is concept-agnostic)
         for (AnswerResult r : results) {
             String concept = (r.relatedConcept() != null && !r.relatedConcept().isBlank())
                 ? r.relatedConcept() : knowledgePoint;
-            if (isInKnowledgeGraph(concept)) {
+            try {
                 proficiencyService.recordAnswer(studentId, concept, r.correct());
-            } else {
-                log.debug("QuizSubmit: skipping concept '{}' — not in knowledge graph", concept);
+            } catch (Exception e) {
+                log.warn("QuizSubmit: proficiency record failed for {}: {}", concept, e.getMessage());
             }
         }
 

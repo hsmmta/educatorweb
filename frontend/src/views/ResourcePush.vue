@@ -137,6 +137,9 @@
               {{ node.status === 'COMPLETED' ? '✅' : node.status === 'CURRENT' ? '🔵' : '⚪' }}
             </span>
             <span class="path-node-name">{{ node.knowledgePointName }}</span>
+            <span class="path-node-progress" v-if="node.proficiency > 0">
+              {{ Math.round(node.proficiency * 100) }}%
+            </span>
             <span class="path-node-label">{{ statusLabel(node) }}</span>
           </div>
         </div>
