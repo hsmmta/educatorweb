@@ -41,6 +41,23 @@ public class PushNotifyController {
         reportUpdateSink.tryEmitNext(userId);
     }
 
+    /** Fire a proficiency milestone notification (proficiency >= 60%). */
+    public void notifyMilestone(String userId, String concept,
+                                int proficiencyPct, String nextNode) {
+        try {
+            String payload = new com.fasterxml.jackson.databind.ObjectMapper()
+                .writeValueAsString(Map.of(
+                    "type", "PROFICIENCY_MILESTONE",
+                    "concept", concept,
+                    "proficiency", proficiencyPct,
+                    "nextNode", nextNode != null ? nextNode : ""
+                ));
+            reportUpdateSink.tryEmitNext(userId + "::" + payload);
+        } catch (Exception e) {
+            log.debug("PushNotifyController: milestone notify skipped: {}", e.getMessage());
+        }
+    }
+
     @GetMapping(value = "/subscribe", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<Object>> subscribe(@RequestParam String studentId) {
 
@@ -52,10 +69,25 @@ public class PushNotifyController {
                 .build());
 
         Flux<ServerSentEvent<Object>> reportUpdates = reportUpdateSink.asFlux()
-            .filter(uid -> uid.equals(studentId))
-            .map(uid -> ServerSentEvent.<Object>builder()
-                .data(Map.of("type", "REPORT_UPDATED"))
-                .build());
+            .filter(msg -> {
+                String uid = msg.contains("::") ? msg.substring(0, msg.indexOf("::")) : msg;
+                return uid.equals(studentId);
+            })
+            .map(msg -> {
+                Object data;
+                if (msg.contains("::")) {
+                    String jsonPart = msg.substring(msg.indexOf("::") + 2);
+                    try {
+                        data = new com.fasterxml.jackson.databind.ObjectMapper()
+                            .readValue(jsonPart, Map.class);
+                    } catch (Exception e) {
+                        data = Map.of("type", "REPORT_UPDATED");
+                    }
+                } else {
+                    data = Map.of("type", "REPORT_UPDATED");
+                }
+                return ServerSentEvent.<Object>builder().data(data).build();
+            });
 
         Flux<ServerSentEvent<Object>> heartbeat = Flux.interval(Duration.ofSeconds(15))
             .map(tick -> ServerSentEvent.<Object>builder()
