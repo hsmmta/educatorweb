@@ -134,6 +134,15 @@ public class LearningPathService {
         path.setUpdatedAt(LocalDateTime.now());
         path.setPushStrategies(buildPushStrategies(profile));
 
+        // Persist path to student profile for later retrieval
+        try {
+            String pathJson = new com.fasterxml.jackson.databind.ObjectMapper()
+                .writeValueAsString(path);
+            profileService.saveLearningPath(studentId, pathJson);
+        } catch (Exception e) {
+            log.warn("LearningPathService: failed to persist path: {}", e.getMessage());
+        }
+
         return path;
     }
 
