@@ -305,14 +305,22 @@ const savedPathLoading = ref(false)
 const loadSavedPath = async () => {
   savedPathLoading.value = true
   try {
-    const res = await request.get(`/push/path/${getStudentId()}/saved`)
+    const studentId = getStudentId()
+    console.log('[loadSavedPath] studentId:', studentId)
+    const res = await request.get(`/push/path/${studentId}/saved`)
     const data = res.data?.data
+    console.log('[loadSavedPath] response:', JSON.stringify(data))
     if (data?.exists) {
       savedPath.value = data.path
+      console.log('[loadSavedPath] path loaded, nodes:', data.path?.nodes?.length)
     } else {
       savedPath.value = null
+      console.log('[loadSavedPath] no path exists')
     }
-  } catch { savedPath.value = null }
+  } catch (e) {
+    console.error('[loadSavedPath] error:', e.message || e)
+    savedPath.value = null
+  }
   finally { savedPathLoading.value = false }
 }
 
