@@ -4,6 +4,8 @@ import org.example.educatorweb.dto.ResponseResult;
 import org.example.educatorweb.learningpath.model.LearningPath;
 import org.example.educatorweb.learningpath.model.RecommendedResource;
 import org.example.educatorweb.profile.ProfileService;
+import org.example.educatorweb.profile.ProficiencyService;
+import org.example.educatorweb.profile.ProficiencyService.ProficiencyResult;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -20,13 +22,16 @@ public class LearningPathController {
     private final LearningPathService pathService;
     private final ResourceRecommendService recommendService;
     private final ProfileService profileService;
+    private final ProficiencyService proficiencyService;
 
     public LearningPathController(LearningPathService pathService,
                                   ResourceRecommendService recommendService,
-                                  ProfileService profileService) {
+                                  ProfileService profileService,
+                                  ProficiencyService proficiencyService) {
         this.pathService = pathService;
         this.recommendService = recommendService;
         this.profileService = profileService;
+        this.proficiencyService = proficiencyService;
     }
 
     /**
@@ -44,6 +49,20 @@ public class LearningPathController {
             var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             mapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
             LearningPath path = mapper.readValue(json, LearningPath.class);
+
+            // Enrich each node with current proficiency data
+            if (path.getNodes() != null) {
+                java.util.Map<String, Double> profMap = new java.util.HashMap<>();
+                for (ProficiencyResult pr : proficiencyService.getAllProficiencies(studentId)) {
+                    profMap.put(pr.concept(), pr.effectiveProficiency());
+                }
+                for (var node : path.getNodes()) {
+                    Double prof = profMap.get(node.getKnowledgePointName());
+                    if (prof == null) prof = profMap.get(node.getKnowledgePointId());
+                    node.setProficiency(prof != null ? prof : 0.0);
+                }
+            }
+
             return ResponseResult.success(Map.of("exists", true, "path", path));
         } catch (Exception e) {
             return ResponseResult.success(Map.of("exists", false, "error", "parse failed: " + e.getMessage()));
