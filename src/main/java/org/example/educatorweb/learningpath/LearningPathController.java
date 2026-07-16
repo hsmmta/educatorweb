@@ -3,6 +3,7 @@ package org.example.educatorweb.learningpath;
 import org.example.educatorweb.dto.ResponseResult;
 import org.example.educatorweb.learningpath.model.LearningPath;
 import org.example.educatorweb.learningpath.model.RecommendedResource;
+import org.example.educatorweb.profile.ProfileService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -18,11 +19,34 @@ public class LearningPathController {
 
     private final LearningPathService pathService;
     private final ResourceRecommendService recommendService;
+    private final ProfileService profileService;
 
     public LearningPathController(LearningPathService pathService,
-                                  ResourceRecommendService recommendService) {
+                                  ResourceRecommendService recommendService,
+                                  ProfileService profileService) {
         this.pathService = pathService;
         this.recommendService = recommendService;
+        this.profileService = profileService;
+    }
+
+    /**
+     * Get the saved learning path for a student.
+     * GET /api/push/path/{studentId}/saved
+     */
+    @GetMapping("/path/{studentId}/saved")
+    public ResponseResult<Map<String, Object>> getSavedPath(
+            @PathVariable String studentId) {
+        String json = profileService.getSavedLearningPathJson(studentId);
+        if (json == null || json.isEmpty()) {
+            return ResponseResult.success(Map.of("exists", false));
+        }
+        try {
+            LearningPath path = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readValue(json, LearningPath.class);
+            return ResponseResult.success(Map.of("exists", true, "path", path));
+        } catch (Exception e) {
+            return ResponseResult.success(Map.of("exists", false, "error", "parse failed"));
+        }
     }
 
     /**
