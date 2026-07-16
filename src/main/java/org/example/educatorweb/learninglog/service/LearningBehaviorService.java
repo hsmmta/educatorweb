@@ -122,6 +122,37 @@ public class LearningBehaviorService {
         } catch (Exception e) {
             log.debug("LearningBehavior: report update notify skipped: {}", e.getMessage());
         }
+
+        // Check proficiency milestone (>= 60%) and notify with next path node
+        BigDecimal newProf = kp.getProficiency();
+        if (newProf != null && newProf.doubleValue() >= 0.6) {
+            String nextNode = null;
+            try {
+                var profileOpt = profileRepo.findById(userId);
+                if (profileOpt.isPresent()) {
+                    String pathJson = profileOpt.get().getLearningPathJson();
+                    if (pathJson != null && !pathJson.isEmpty()) {
+                        var path = new com.fasterxml.jackson.databind.ObjectMapper()
+                            .readValue(pathJson, java.util.Map.class);
+                        @SuppressWarnings("unchecked")
+                        var nodes = (java.util.List<java.util.Map<String, Object>>) path.get("nodes");
+                        if (nodes != null) {
+                            for (int i = 0; i < nodes.size(); i++) {
+                                String name = (String) nodes.get(i).get("knowledgePointName");
+                                if (concept.equals(name) && i + 1 < nodes.size()) {
+                                    nextNode = (String) nodes.get(i + 1).get("knowledgePointName");
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("LearningBehavior: milestone nextNode lookup failed: {}", e.getMessage());
+            }
+            int pct = (int) Math.round(newProf.doubleValue() * 100);
+            pushNotifyController.notifyMilestone(userId, concept, pct, nextNode);
+        }
     }
 
     @Transactional
