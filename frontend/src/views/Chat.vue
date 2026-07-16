@@ -306,6 +306,7 @@ const modes = [
   { key: 'code', icon: '💻', label: '代码', placeholder: '输入知识点，如：使用 Python 实现 K-means' },
   { key: 'html', icon: '🌐', label: '课件', placeholder: '输入知识点，如：概率论基础' }
 ]
+const route = useRoute()
 const activeMode = ref('chat')
 const currentMode = computed(() => modes.find(m => m.key === activeMode.value) || modes[0])
 const switchMode = (key) => { activeMode.value = key }
@@ -960,7 +961,6 @@ onMounted(async () => {
   await loadConversations()
 
   // Auto-trigger resource generation if topic/mode passed via URL
-  const route = useRoute()
   const urlTopic = route.query.topic
   const urlMode = route.query.mode
   if (urlTopic) {

@@ -136,8 +136,9 @@ public class LearningPathService {
 
         // Persist path to student profile for later retrieval
         try {
-            String pathJson = new com.fasterxml.jackson.databind.ObjectMapper()
-                .writeValueAsString(path);
+            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            mapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
+            String pathJson = mapper.writeValueAsString(path);
             profileService.saveLearningPath(studentId, pathJson);
         } catch (Exception e) {
             log.warn("LearningPathService: failed to persist path: {}", e.getMessage());
