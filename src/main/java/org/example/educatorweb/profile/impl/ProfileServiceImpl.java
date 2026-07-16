@@ -4,6 +4,8 @@ import org.example.educatorweb.profile.ProfileService;
 import org.example.educatorweb.profile.model.StudentKnowledgeProficiency;
 import org.example.educatorweb.profile.model.StudentProfile;
 import org.example.educatorweb.profile.repository.StudentProfileRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,6 +16,8 @@ import java.util.Optional;
 
 @Service
 public class ProfileServiceImpl implements ProfileService {
+
+    private static final Logger log = LoggerFactory.getLogger(ProfileServiceImpl.class);
 
     private final StudentProfileRepository profileRepo;
 
@@ -97,5 +101,27 @@ public class ProfileServiceImpl implements ProfileService {
         }
 
         profileRepo.save(entity);
+    }
+
+    @Override
+    @Transactional
+    public void saveLearningPath(String studentId, String pathJson) {
+        Optional<StudentProfile> opt = profileRepo.findById(studentId);
+        if (opt.isEmpty()) {
+            log.warn("ProfileService: cannot save path — profile not found for {}", studentId);
+            return;
+        }
+        StudentProfile profile = opt.get();
+        profile.setLearningPathJson(pathJson);
+        profile.setUpdatedAt(LocalDateTime.now());
+        profileRepo.save(profile);
+        log.info("ProfileService: saved learning path for user={}", studentId);
+    }
+
+    @Override
+    public String getSavedLearningPathJson(String studentId) {
+        return profileRepo.findById(studentId)
+            .map(StudentProfile::getLearningPathJson)
+            .orElse(null);
     }
 }
