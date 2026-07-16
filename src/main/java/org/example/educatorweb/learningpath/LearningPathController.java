@@ -41,11 +41,12 @@ public class LearningPathController {
             return ResponseResult.success(Map.of("exists", false));
         }
         try {
-            LearningPath path = new com.fasterxml.jackson.databind.ObjectMapper()
-                .readValue(json, LearningPath.class);
+            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            mapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
+            LearningPath path = mapper.readValue(json, LearningPath.class);
             return ResponseResult.success(Map.of("exists", true, "path", path));
         } catch (Exception e) {
-            return ResponseResult.success(Map.of("exists", false, "error", "parse failed"));
+            return ResponseResult.success(Map.of("exists", false, "error", "parse failed: " + e.getMessage()));
         }
     }
 
