@@ -213,6 +213,19 @@
             </div>
           </div>
         </div>
+
+        <!-- 学习路径摘要 -->
+        <div class="chart-box" v-if="savedPath" style="margin-top:20px">
+          <h4>📐 当前学习路径</h4>
+          <p style="color:#909399;font-size:13px;margin:8px 0">
+            目标：{{ savedPath.targetKnowledgePoint }} ·
+            {{ savedPath.completedNodes || 0 }}/{{ savedPath.totalNodes }} 节点已完成
+          </p>
+          <el-progress
+            :percentage="savedPath.totalNodes ? Math.round((savedPath.completedNodes || 0) / savedPath.totalNodes * 100) : 0"
+            :stroke-width="10" color="#667eea" style="margin-bottom:12px" />
+          <el-button size="small" @click="$router.push('/push')">查看完整路径 →</el-button>
+        </div>
       </template>
     </section>
 
@@ -233,6 +246,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import request from '../api/request.js'
 import { getProfileSummaryApi } from '../api/index.js'
 import { ChatDotRound, Edit, UserFilled } from '@element-plus/icons-vue'
 import VChart from 'vue-echarts'
@@ -256,6 +270,16 @@ const reportData = ref({
   learningInput: { activeDays: 0, totalDurationMin: 0, resourceViews: 0, chatRounds: 0, quizTotal: 0, weeklyTrend: [] },
   growthTrend: []
 })
+const savedPath = ref(null)
+
+const loadSavedPathData = async () => {
+  try {
+    const res = await request.get('/push/path/' + getStudentId() + '/saved')
+    const data = res.data?.data
+    savedPath.value = data?.exists ? data.path : null
+  } catch { savedPath.value = null }
+}
+
 const summaryText = ref('')
 const weakPoints = ref([])
 const strongPoints = ref([])
@@ -433,6 +457,7 @@ const loadReport = async () => {
     } else {
       profileExists.value = false
     }
+    loadSavedPathData()
   } catch (e) { /* silent */ }
 }
 

@@ -105,6 +105,46 @@
           </div>
         </div>
       </section>
+
+      <!-- ========== 学习路径 ========== -->
+      <section class="card path-card" style="margin-top:24px">
+        <h3 class="card-title">📐 我的学习路径</h3>
+
+        <div v-if="!savedPath" class="empty-state">
+          <span class="empty-icon">🗺️</span>
+          <p>暂未规划学习路径</p>
+          <el-button size="small" type="primary" @click="panelMode='search'">
+            搜索知识点规划路径 →
+          </el-button>
+        </div>
+
+        <template v-else>
+          <div class="path-summary-header">
+            <span>目标：<strong>{{ savedPath.targetKnowledgePoint }}</strong></span>
+            <span>{{ savedPath.completedNodes || 0 }}/{{ savedPath.totalNodes }}</span>
+          </div>
+
+          <div class="path-node-list">
+            <div v-for="(node, i) in (savedPath.nodes || [])" :key="i"
+              :class="['path-node-item', {
+                completed: node.status === 'COMPLETED',
+                current: node.status === 'CURRENT',
+                locked: !nodeClickable(node, i)
+              }]"
+              @click="nodeClickable(node, i) && goLearnFromPath(node)">
+              <span class="path-node-status">
+                {{ node.status === 'COMPLETED' ? '✅' : node.status === 'CURRENT' ? '🔵' : '⚪' }}
+              </span>
+              <span class="path-node-name">{{ node.knowledgePointName }}</span>
+              <span class="path-node-label">{{ statusLabel(node) }}</span>
+            </div>
+          </div>
+
+          <el-button size="small" text @click="panelMode='search'" style="margin-top:12px">
+            🔄 重新规划目标
+          </el-button>
+        </template>
+      </section>
     </div>
 
     <!-- ========== 底部面板 ========== -->
@@ -231,6 +271,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, Close, Search } from '@element-plus/icons-vue'
+import request from '../api/request.js'
 import {
   getRecommendationsApi, getPushResultsApi, getLatestPushApi, getPushContextApi,
   clearPushHistoryApi, getKnowledgePointsApi, logBrowseApi
@@ -254,6 +295,43 @@ const weaknessTopics = ref([])
 const kpCategories = ref([])          // [{name, points: [{id, name, difficulty}]}]
 const activeCategory = ref('')
 const kpFilterText = ref('')
+
+const savedPath = ref(null)
+const savedPathLoading = ref(false)
+
+const loadSavedPath = async () => {
+  savedPathLoading.value = true
+  try {
+    const res = await request.get(`/push/path/${getStudentId()}/saved`)
+    const data = res.data?.data
+    if (data?.exists) {
+      savedPath.value = data.path
+    } else {
+      savedPath.value = null
+    }
+  } catch { savedPath.value = null }
+  finally { savedPathLoading.value = false }
+}
+
+const goLearnFromPath = (node) => {
+  const topic = node.knowledgePointName
+  window.location.href = '/chat?topic=' + encodeURIComponent(topic) + '&mode=html'
+}
+
+const statusLabel = (node) => {
+  if (node.status === 'COMPLETED') return '已掌握'
+  if (node.status === 'CURRENT') return '学习中'
+  return '待学习'
+}
+
+const nodeClickable = (node, index) => {
+  if (node.status === 'COMPLETED') return true
+  if (node.status === 'CURRENT') return true
+  const nodes = savedPath.value?.nodes || []
+  const currentIdx = nodes.findIndex(n => n.status === 'CURRENT')
+  if (currentIdx >= 0 && index === currentIdx + 1) return true
+  return false
+}
 
 const filteredPoints = computed(() => {
   const cat = kpCategories.value.find(c => c.name === activeCategory.value)
@@ -441,6 +519,7 @@ onMounted(() => {
   loadLatestPush()
   loadContext()
   loadKnowledgePoints()
+  loadSavedPath()
   window.addEventListener('push-refresh', refreshHandler)
 })
 
@@ -582,4 +661,27 @@ onUnmounted(() => {
 @media (max-width: 800px) {
   .two-cards, .search-result-layout, .history-layout { grid-template-columns: 1fr; }
 }
+
+.path-card { margin-top: 24px; min-height: 200px; }
+.path-summary-header {
+  display: flex; justify-content: space-between;
+  font-size: 13px; color: #909399; margin-bottom: 12px;
+  padding-bottom: 10px; border-bottom: 1px solid #f0f2f5;
+}
+.path-node-list { display: flex; flex-direction: column; gap: 6px; }
+.path-node-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-radius: 10px;
+  border: 1px solid #f0f2f5; cursor: pointer;
+  transition: all 0.15s; font-size: 14px;
+}
+.path-node-item:hover:not(.locked) {
+  background: #f0eeff; border-color: #667eea; transform: translateX(2px);
+}
+.path-node-item.completed { background: #f0f9eb; border-color: #c0e0b0; }
+.path-node-item.current { background: #eef0ff; border-color: #667eea; font-weight: 600; }
+.path-node-item.locked { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+.path-node-status { font-size: 16px; width: 24px; text-align: center; }
+.path-node-name { flex: 1; }
+.path-node-label { font-size: 12px; color: #909399; }
 </style>

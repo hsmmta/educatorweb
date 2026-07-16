@@ -82,6 +82,20 @@ function connectSSE(studentId) {
           window.dispatchEvent(new CustomEvent('report-updated'))
           return
         }
+        if (data.type === 'PROFICIENCY_MILESTONE') {
+          ElNotification({
+            title: '🎉 掌握度达标',
+            message: '「' + data.concept + '」掌握度已达 ' + data.proficiency + '%' + (data.nextNode ? '，建议继续学习：' + data.nextNode : ''),
+            type: 'success',
+            duration: 8000,
+            onClick() {
+              if (data.nextNode) {
+                window.location.href = '/chat?topic=' + encodeURIComponent(data.nextNode) + '&mode=html'
+              }
+            }
+          })
+          return
+        }
         if (data.triggerType === 'PATH_UPDATED') {
           ElNotification({
             title: '学习路径已更新',

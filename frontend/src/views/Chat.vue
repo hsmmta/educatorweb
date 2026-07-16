@@ -255,6 +255,7 @@
 
 <script setup>
 import { ref, computed, nextTick, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Promotion, Loading, DocumentCopy, RefreshRight, Download, VideoPlay } from '@element-plus/icons-vue'
 import request from '@/api/request'
@@ -955,7 +956,23 @@ const scrollToBottom = async () => {
   if (msgList.value) msgList.value.scrollTop = msgList.value.scrollHeight
 }
 
-onMounted(loadConversations)
+onMounted(async () => {
+  await loadConversations()
+
+  // Auto-trigger resource generation if topic/mode passed via URL
+  const route = useRoute()
+  const urlTopic = route.query.topic
+  const urlMode = route.query.mode
+  if (urlTopic) {
+    await nextTick()
+    inputText.value = urlTopic
+    if (urlMode && modes.some(m => m.key === urlMode)) {
+      activeMode.value = urlMode
+    }
+    await nextTick()
+    await sendResourceGenerate(urlTopic)
+  }
+})
 </script>
 
 <style scoped>
