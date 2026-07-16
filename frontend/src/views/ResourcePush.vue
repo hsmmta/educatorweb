@@ -318,7 +318,7 @@ const loadSavedPath = async () => {
 
 const goLearnFromPath = (node) => {
   const topic = node.knowledgePointName
-  window.location.href = '/chat?topic=' + encodeURIComponent(topic) + '&mode=html'
+  window.location.href = '/chat?topic=' + encodeURIComponent(topic) + '&mode=quiz'
 }
 
 const statusLabel = (node) => {

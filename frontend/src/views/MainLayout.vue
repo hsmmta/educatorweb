@@ -90,7 +90,7 @@ function connectSSE(studentId) {
             duration: 8000,
             onClick() {
               if (data.nextNode) {
-                window.location.href = '/chat?topic=' + encodeURIComponent(data.nextNode) + '&mode=html'
+                window.location.href = '/chat?topic=' + encodeURIComponent(data.nextNode) + '&mode=quiz'
               }
             }
           })
