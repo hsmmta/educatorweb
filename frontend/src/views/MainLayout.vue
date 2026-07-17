@@ -31,6 +31,9 @@
               <el-dropdown-item command="push">
                 <el-icon><Position /></el-icon>资源推送
               </el-dropdown-item>
+              <el-dropdown-item command="knowledge-graph">
+                <el-icon><Connection /></el-icon>知识图谱
+              </el-dropdown-item>
               <el-dropdown-item divided command="profile">
                 <el-icon><User /></el-icon>个人中心
               </el-dropdown-item>
@@ -57,7 +60,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElNotification } from 'element-plus'
-import { ArrowDown, User, UserFilled, SwitchButton, ChatDotRound, FolderOpened, Position, Bell } from '@element-plus/icons-vue'
+import { ArrowDown, User, UserFilled, SwitchButton, ChatDotRound, FolderOpened, Position, Bell, Connection } from '@element-plus/icons-vue'
 import VoiceAssistant from '@/components/VoiceAssistant.vue'
 import { subscribePushApi } from '@/api/index.js'
 
@@ -171,6 +174,8 @@ const handleCommand = (cmd) => {
     router.push('/thinktank')
   } else if (cmd === 'push') {
     router.push('/push')
+  } else if (cmd === 'knowledge-graph') {
+    router.push('/knowledge-graph')
   } else if (cmd === 'profile') {
     router.push('/profile')
   }
