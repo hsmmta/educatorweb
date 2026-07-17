@@ -216,44 +216,36 @@
             <div v-else class="empty-state"><p>未找到相关内容</p></div>
           </template>
 
-          <!-- 模式 2: 推送历史 -->
+          <!-- 模式 2: 推送历史（按话题+时间分组） -->
           <template v-if="panelMode === 'history'">
-            <div class="history-layout">
-              <div class="history-list">
-                <div v-if="!pushHistory.length" class="empty-state"><p>暂无推送记录</p></div>
-                <div v-else class="history-list-actions">
-                  <el-button size="small" type="danger" text @click="clearHistory">
-                    🗑 清空全部历史
-                  </el-button>
-                </div>
-                <div
-                  v-for="record in pushHistory" :key="record.id"
-                  :class="['history-item', { active: selectedHistoryId === record.id }]"
-                  @click="selectedHistoryId = record.id"
-                >
-                  <div class="history-item-header">
-                    <el-tag size="small" :type="record.triggerType === 'COUNT' ? 'success' : 'warning'">
-                      {{ record.triggerType === 'COUNT' ? '话题触发' : '定时推送' }}
-                    </el-tag>
-                    <span class="history-time">{{ formatTime(record.createdAt) }}</span>
-                  </div>
-                  <span class="history-count">{{ (record.resources || []).length }} 个话题</span>
-                </div>
+            <div class="history-timeline">
+              <div class="history-list-actions" v-if="pushHistory.length">
+                <el-button size="small" type="danger" text @click="clearHistory">🗑 清空全部历史</el-button>
               </div>
-              <div class="history-detail">
-                <div v-if="!selectedHistory" class="empty-state"><p>选择左侧推送记录查看详情</p></div>
-                <div v-else>
-                  <div v-for="(group, gi) in selectedHistory.resources" :key="gi" class="history-group">
-                    <div class="history-group-label">
-                      <el-tag :type="group.isWeakness ? 'danger' : 'primary'" size="small">
-                        {{ group.isWeakness ? '🔴' : '💬' }} {{ group.topic }}
+              <div v-if="!pushHistory.length" class="empty-state"><p>暂无推送记录</p></div>
+
+              <div v-for="dateGroup in groupedHistory" :key="dateGroup.date" class="history-date-group">
+                <div class="history-date-header">
+                  <span class="date-label">📅 {{ dateGroup.date }}</span>
+                  <span class="date-count">{{ dateGroup.topics.length }} 个话题</span>
+                </div>
+                <div class="history-topic-cards">
+                  <div v-for="(topic, ti) in dateGroup.topics" :key="ti" class="topic-card">
+                    <div class="topic-card-header">
+                      <el-tag :type="topic.isWeakness ? 'danger' : 'primary'" size="small">
+                        {{ topic.isWeakness ? '🔴 薄弱' : '💬 话题' }}
                       </el-tag>
+                      <strong>{{ topic.topic }}</strong>
+                      <span class="topic-card-time">{{ topic.time }}</span>
+                    </div>
+                    <div class="topic-card-info">
+                      <span class="topic-trigger">{{ topic.triggerLabel }}</span>
                     </div>
                     <div class="push-resource-tags">
                       <el-tag
-                        v-for="(res, ri) in group.resources" :key="ri"
+                        v-for="(res, ri) in topic.resources" :key="ri"
                         size="small" class="res-tag"
-                        @click="goLearn(res, group.topic)"
+                        @click="goLearn(res, topic.topic)"
                       >
                         {{ iconForType(res.resourceType) }} {{ res.resourceTypeLabel || res.resourceType }}
                       </el-tag>
@@ -394,6 +386,39 @@ function formatTime(ts) {
   if (diff < 86400000) return Math.floor(diff / 3600000) + ' 小时前'
   return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
 }
+
+function formatDateLabel(ts) {
+  if (!ts) return ''
+  const d = new Date(ts)
+  const now = new Date()
+  const diff = now - d
+  if (diff < 86400000) return '今天'
+  if (diff < 172800000) return '昨天'
+  return d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })
+}
+
+const groupedHistory = computed(() => {
+  // Flatten all records into topic entries grouped by date
+  const dateMap = new Map()
+  for (const record of pushHistory.value) {
+    const dateLabel = formatDateLabel(record.createdAt)
+    if (!dateMap.has(dateLabel)) {
+      dateMap.set(dateLabel, { date: dateLabel, topics: [] })
+    }
+    const group = dateMap.get(dateLabel)
+    const resources = record.resources || []
+    for (const r of resources) {
+      group.topics.push({
+        topic: r.topic,
+        isWeakness: r.isWeakness,
+        resources: r.resources || [],
+        triggerLabel: record.triggerType === 'COUNT' ? '话题触发' : '定时推送',
+        time: formatTime(record.createdAt)
+      })
+    }
+  }
+  return [...dateMap.values()]
+})
 
 function goLearn(res, topic) {
   if (res.preGeneratedId) {
@@ -647,24 +672,37 @@ onUnmounted(() => {
 .rec-meta { font-size: 12px; color: #909399; }
 
 /* ---- history ---- */
-.history-layout { display: grid; grid-template-columns: 260px 1fr; gap: 24px; min-height: 280px; }
-.history-list { border-right: 1px solid #f0f2f5; padding-right: 12px; overflow-y: auto; max-height: 420px; }
-.history-list-actions { text-align: right; margin-bottom: 8px; }
-.history-item {
-  padding: 10px 14px; border-radius: 10px; cursor: pointer;
-  border: 1px solid #f0f2f5; margin-bottom: 6px; transition: all 0.15s;
+.history-timeline { max-height: 500px; overflow-y: auto; }
+.history-list-actions { text-align: right; margin-bottom: 12px; }
+.history-date-group { margin-bottom: 20px; }
+.history-date-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 0 8px;
+  border-bottom: 2px solid #667eea;
+  margin-bottom: 12px;
 }
-.history-item:hover, .history-item.active { background: #f0eeff; border-color: #667eea; }
-.history-item-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-.history-time { font-size: 12px; color: #909399; }
-.history-count { font-size: 12px; color: #667eea; }
-.history-group { margin-bottom: 16px; }
-.history-group-label { margin-bottom: 8px; }
+.date-label { font-size: 14px; font-weight: 600; color: #1a1a2e; }
+.date-count { font-size: 12px; color: #909399; }
+.history-topic-cards { display: flex; flex-direction: column; gap: 10px; }
+.topic-card {
+  padding: 14px 18px; border-radius: 12px;
+  border: 1px solid #e8e8e8; background: #fafbfc;
+  transition: all 0.15s;
+}
+.topic-card:hover { border-color: #667eea; background: #f8f7ff; }
+.topic-card-header {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 6px;
+}
+.topic-card-header strong { font-size: 15px; color: #1a1a2e; }
+.topic-card-time { font-size: 12px; color: #909399; margin-left: auto; }
+.topic-card-info { margin-bottom: 8px; }
+.topic-trigger { font-size: 12px; color: #909399; }
 
 .loading-area { padding: 24px; }
 
 @media (max-width: 800px) {
-  .two-cards, .search-result-layout, .history-layout { grid-template-columns: 1fr; }
+  .two-cards, .search-result-layout { grid-template-columns: 1fr; }
 }
 
 .path-card { margin-top: 24px; min-height: 200px; }
