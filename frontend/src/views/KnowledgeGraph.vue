@@ -213,29 +213,34 @@ onMounted(loadGraph)
 <style scoped>
 .kg-container {
   height: calc(100vh - 48px);
-  display: flex;
-  flex-direction: column;
+  position: relative;
+  overflow: hidden;
   background: #f5f7fb;
 }
 
 .kg-toolbar {
+  position: absolute;
+  top: 12px; left: 24px; right: 24px;
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 24px;
-  background: #fff;
-  border-bottom: 1px solid #e8e8e8;
-  flex-shrink: 0;
+  padding: 8px 16px;
+  background: rgba(255,255,255,0.92);
+  backdrop-filter: blur(8px);
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,0.06);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
 }
-.kg-toolbar h2 { margin: 0; font-size: 18px; color: #1a1a2e; }
-.kg-toolbar-right { display: flex; align-items: center; gap: 10px; }
-.kg-stats { font-size: 12px; color: #909399; }
+.kg-toolbar h2 { margin: 0; font-size: 16px; color: #1a1a2e; }
+.kg-toolbar-right { display: flex; align-items: center; gap: 8px; }
+.kg-stats { font-size: 12px; color: #909399; white-space: nowrap; }
 
 .kg-chart {
-  flex: 1;
-  position: relative;
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
   overflow: hidden;
-  touch-action: none; /* prevent browser gestures from stealing drag */
+  touch-action: none;
 }
 
 .kg-loading, .kg-error {
@@ -249,12 +254,11 @@ onMounted(loadGraph)
 
 .kg-sidebar {
   position: absolute;
-  top: 0;
-  right: 0;
+  top: 0; right: 0; bottom: 0;
   width: 300px;
-  height: 100%;
-  background: #fff;
-  box-shadow: -2px 0 12px rgba(0,0,0,0.08);
+  background: rgba(255,255,255,0.95);
+  backdrop-filter: blur(8px);
+  box-shadow: -2px 0 16px rgba(0,0,0,0.1);
   z-index: 10;
   overflow-y: auto;
 }
