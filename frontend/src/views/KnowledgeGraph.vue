@@ -155,6 +155,33 @@ function edgeStyle(relation) {
   return EDGE_STYLES[relation] ?? EDGE_STYLES['RELATED_TO']
 }
 
+/**
+ * BFS 沿 REQUIRES 边向上游追溯，返回 {nodeId → depth} Map
+ */
+function bfsUpstream(startId, maxDepth = 5) {
+  const visited = new Map()  // nodeId → depth
+  const queue = [[startId, 0]]
+  visited.set(startId, 0)
+
+  while (queue.length > 0) {
+    const [current, depth] = queue.shift()
+    if (depth >= maxDepth) continue
+
+    // 找到所有指向 current 的 REQUIRES 边
+    const parents = allEdges.value
+      .filter(e => e.target === current && e.relation === 'REQUIRES')
+      .map(e => e.source)
+
+    for (const p of parents) {
+      if (!visited.has(p)) {
+        visited.set(p, depth + 1)
+        queue.push([p, depth + 1])
+      }
+    }
+  }
+  return visited
+}
+
 // ---- 数据转换 ----
 function buildGraphData(nodes, edges) {
   return {
@@ -202,8 +229,9 @@ function initGraph(nodes, edges) {
     node: {
       type: 'circle',
       state: {
-        dimmed: { opacity: 0.15 },
-        active: { opacity: 0.9 },
+        dimmed:    { opacity: 0.12 },
+        active:    { opacity: 0.9 },
+        highlight: { opacity: 1, lineWidth: 3, shadowBlur: 16 },
       },
       style: {
         fill: d => d.style?.fill ?? '#667eea',
@@ -218,8 +246,9 @@ function initGraph(nodes, edges) {
     edge: {
       type: 'cubic-vertical',
       state: {
-        dimmed: { opacity: 0.08 },
-        active: { opacity: 0.5 },
+        dimmed:    { opacity: 0.06 },
+        active:    { opacity: 0.5 },
+        highlight: { opacity: 0.9, lineWidth: 2.5 },
       },
       style: {
         stroke: d => d.style?.stroke ?? '#b0b0b0',
@@ -233,23 +262,59 @@ function initGraph(nodes, edges) {
     behaviors: ['drag-canvas', 'zoom-canvas', 'drag-element'],
   })
 
-  // ---- Node click handler ----
+  // ---- Node click handler — 追溯前置链路 ----
   graph.on('node:click', (evt) => {
     const nodeId = evt.target?.id
-    const n = allNodes.value.find(x => x.id === nodeId)
-    if (n) {
+    if (!nodeId) return
+
+    // 追溯前置链路
+    const upstream = bfsUpstream(nodeId, 5)
+    const upstreamIds = new Set(upstream.keys())
+
+    // 高亮前置路径节点
+    const allNodeData = graph.getNodeData()
+    allNodeData.forEach(n => {
+      graph.setElementState(n.id, upstreamIds.has(n.id) ? 'highlight' : 'dimmed')
+    })
+
+    // 高亮属于前置路径的 REQUIRES 边
+    const allEdgeData = graph.getEdgeData()
+    allEdgeData.forEach(e => {
+      const isPathEdge = upstreamIds.has(e.source) && upstreamIds.has(e.target)
+        && e.data?.relation === 'REQUIRES'
+      graph.setElementState(e.id, isPathEdge ? 'highlight' : 'dimmed')
+    })
+
+    // 打开侧边栏
+    const nodeData = allNodes.value.find(n => n.id === nodeId)
+    if (nodeData) {
       const prereqs = allEdges.value
-        .filter(e => e.target === n.id && e.relation === 'REQUIRES')
+        .filter(e => e.target === nodeId && e.relation === 'REQUIRES')
         .map(e => e.source)
       const succs = allEdges.value
-        .filter(e => e.source === n.id && e.relation === 'REQUIRES')
+        .filter(e => e.source === nodeId && e.relation === 'REQUIRES')
         .map(e => e.target)
-      selectedNode.value = { ...n, prerequisites: prereqs, successors: succs }
+      selectedNode.value = {
+        ...nodeData,
+        prerequisites: prereqs,
+        successors: succs,
+        upstreamCount: upstream.size - 1,  // exclude self
+      }
     }
   })
 
   // ---- Canvas click handler — dismiss sidebar ----
   graph.on('canvas:click', () => { selectedNode.value = null })
+
+  // ---- Canvas double-click — 复位 ----
+  graph.on('canvas:dblclick', () => {
+    const allNodeData = graph.getNodeData()
+    allNodeData.forEach(n => graph.setElementState(n.id, 'active'))
+    const allEdgeData = graph.getEdgeData()
+    allEdgeData.forEach(e => graph.setElementState(e.id, 'active'))
+    selectedNode.value = null
+    graph.fitView({ animation: { duration: 500, easing: 'easeCubic' } })
+  })
 
   // ---- Hover 交互 ----
   graph.on('node:pointerenter', (evt) => {
