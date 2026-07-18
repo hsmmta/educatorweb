@@ -2,7 +2,7 @@ package org.example.educatorweb.knowledgegraph.api;
 
 import org.example.educatorweb.dto.ResponseResult;
 import org.example.educatorweb.knowledgegraph.repository.KnowledgePointRepository;
-import org.example.educatorweb.knowledgegraph.model.KnowledgePointSummary;
+import org.example.educatorweb.knowledgegraph.repository.KnowledgePointRepository.KnowledgePointSummary;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
