@@ -110,7 +110,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { Search, Refresh, Loading, Close, Upload, UploadFilled } from '@element-plus/icons-vue'
 import { Graph } from '@antv/g6'
 import request from '@/api/request'
@@ -352,32 +352,56 @@ function initGraph(nodes, edges) {
   graph.render()
 }
 
-// ---- 可见节点/边（搜索/筛选用，Task 6 实现） ----
-const visibleNodes = computed(() => {
-  let nodes = allNodes.value
-  if (filterCategory.value) {
-    nodes = nodes.filter(n => n.category === filterCategory.value)
+function onSearch(query) {
+  if (!graph) return
+  const q = (query ?? '').toLowerCase().trim()
+
+  if (!q) {
+    // 空搜索 → 恢复全部
+    const allNodeData = graph.getNodeData()
+    allNodeData.forEach(n => graph.setElementState(n.id, 'active'))
+    const allEdgeData = graph.getEdgeData()
+    allEdgeData.forEach(e => graph.setElementState(e.id, 'active'))
+    graph.fitView({ animation: { duration: 500 } })
+    return
   }
-  if (searchText.value) {
-    const q = searchText.value.toLowerCase()
-    nodes = nodes.filter(n => n.name.toLowerCase().includes(q) || n.id.toLowerCase().includes(q))
-  }
-  return nodes
-})
 
-const visibleNodeIds = computed(() => new Set(visibleNodes.value.map(n => n.id)))
+  const matched = allNodes.value.filter(n =>
+    (n.name ?? '').toLowerCase().includes(q) || (n.id ?? '').toLowerCase().includes(q)
+  )
+  const matchedIds = new Set(matched.map(n => n.id))
 
-const visibleEdges = computed(() => {
-  return allEdges.value.filter(e =>
-    visibleNodeIds.value.has(e.source) && visibleNodeIds.value.has(e.target))
-})
+  if (matchedIds.size === 0) return
 
-function onSearch() {
-  // reactive via computed
+  // 高亮匹配节点，淡出其余
+  const allNodeData = graph.getNodeData()
+  allNodeData.forEach(n => {
+    graph.setElementState(n.id, matchedIds.has(n.id) ? 'highlight' : 'dimmed')
+  })
+  const allEdgeData = graph.getEdgeData()
+  allEdgeData.forEach(e => {
+    graph.setElementState(e.id, 'dimmed')
+  })
+
+  // 飞入第一个匹配节点
+  graph.focusItem(matched[0].id, { animation: { duration: 600, easing: 'easeCubic' } })
 }
 
-function onFilter() {
-  // reactive via computed
+function onFilter(cat) {
+  if (!graph) return
+
+  if (!cat) {
+    // 显示全部 → 重新渲染完整数据
+    initGraph(allNodes.value, allEdges.value)
+    return
+  }
+
+  const filteredNodes = allNodes.value.filter(n => n.category === cat)
+  const filteredIds = new Set(filteredNodes.map(n => n.id))
+  const filteredEdges = allEdges.value.filter(e =>
+    filteredIds.has(e.source) && filteredIds.has(e.target))
+
+  initGraph(filteredNodes, filteredEdges)
 }
 
 async function loadGraph() {
