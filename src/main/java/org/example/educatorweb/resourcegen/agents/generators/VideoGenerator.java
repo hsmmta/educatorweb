@@ -41,7 +41,7 @@ public class VideoGenerator extends AbstractGenerator {
             }
             log.info("Whiteboard not available, using legacy slideshow pipeline");
         } catch (Exception e) {
-            log.warn("Whiteboard pipeline failed, falling back to legacy: {}", e.getMessage());
+            log.warn("Whiteboard pipeline failed, falling back to legacy", e);
         }
         return doLegacyGenerate(state);
     }
@@ -50,25 +50,26 @@ public class VideoGenerator extends AbstractGenerator {
     // New whiteboard pipeline
     // ═══════════════════════════════════════════
 
-    private String doWhiteboardGenerate(GenerationState state) throws Exception {
+    private String doWhiteboardGenerate(GenerationState state) throws IOException, InterruptedException {
         Path workDir = Files.createTempDirectory("whiteboard-gen-");
         try {
             // Phase 1: DeepSeek generates board plan
             BoardPlan boardPlan = generateBoardPlan(state);
             log.info("Board plan: {} boards", boardPlan.boards().size());
 
-            // Phase 2: Seedream generates hand-drawn whiteboard images
+            // Phase 2: DeepSeek generates narration script (before image generation,
+            // so a cheap LLM failure doesn't waste expensive image spend)
+            NarrationScript script = generateNarrationScript(boardPlan, state);
+            log.info("Narration script: {} segments", script.segments().size());
+
+            // Phase 3: Seedream generates hand-drawn whiteboard images
             Path imagesDir = workDir.resolve("images");
             Files.createDirectories(imagesDir);
             for (BoardPlan.Board board : boardPlan.boards()) {
-                byte[] image = generateBoardImage(board, state.knowledgePoint());
+                byte[] image = generateBoardImage(board);
                 Files.write(imagesDir.resolve(board.id() + ".png"), image);
                 log.info("Board {}: generated image ({} bytes)", board.id(), image.length);
             }
-
-            // Phase 3: DeepSeek generates narration script
-            NarrationScript script = generateNarrationScript(boardPlan, state);
-            log.info("Narration script: {} segments", script.segments().size());
 
             // Phase 4: Write JSON files for the bridge script
             objectMapper.writerWithDefaultPrettyPrinter()
@@ -85,7 +86,11 @@ public class VideoGenerator extends AbstractGenerator {
             log.info("Whiteboard video: {} bytes → {}", mp4Bytes.length, path);
             return path;
         } finally {
-            try { deleteRecursively(workDir); } catch (IOException ignored) {}
+            try {
+                deleteRecursively(workDir);
+            } catch (IOException e) {
+                log.debug("Temp dir cleanup failed (files may be locked): {}", e.getMessage());
+            }
         }
     }
 
@@ -93,13 +98,53 @@ public class VideoGenerator extends AbstractGenerator {
         ModelProvider textProvider = registry.resolve(ResourceType.DOC);
         String prompt = buildBoardPlanPrompt(state);
         String response = textProvider.chat(prompt);
+        BoardPlan plan;
         try {
             response = stripJsonMarkdown(response);
-            return objectMapper.readValue(response, BoardPlan.class);
+            plan = objectMapper.readValue(response, BoardPlan.class);
         } catch (Exception e) {
             log.warn("Failed to parse BoardPlan, using fallback: {}", e.getMessage());
             return buildFallbackBoardPlan(state);
         }
+        if (!hasValidStructure(plan)) {
+            log.warn("BoardPlan missing boards or sections, using fallback");
+            return buildFallbackBoardPlan(state);
+        }
+        return sanitizeBoardIds(plan);
+    }
+
+    private boolean hasValidStructure(BoardPlan plan) {
+        if (plan.boards() == null || plan.boards().isEmpty()) {
+            return false;
+        }
+        for (BoardPlan.Board board : plan.boards()) {
+            if (board == null || board.sections() == null || board.sections().isEmpty()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Board ids become image filenames and cross-reference keys — never trust LLM output.
+     * Invalid ids are replaced with positional ones; duplicates get a positional suffix.
+     */
+    private BoardPlan sanitizeBoardIds(BoardPlan plan) {
+        List<BoardPlan.Board> boards = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (int i = 0; i < plan.boards().size(); i++) {
+            BoardPlan.Board board = plan.boards().get(i);
+            String id = board.id();
+            if (id == null || !id.matches("^[a-z0-9-]+$")) {
+                id = "board-" + (i + 1);
+            }
+            while (!seen.add(id)) {
+                id = id + "-" + (i + 1);
+            }
+            boards.add(id.equals(board.id()) ? board
+                : new BoardPlan.Board(id, board.title(), board.subtitle(), board.sections()));
+        }
+        return new BoardPlan(plan.topic(), plan.style(), boards);
     }
 
     private String buildBoardPlanPrompt(GenerationState state) {
@@ -143,7 +188,7 @@ public class VideoGenerator extends AbstractGenerator {
             """, state.knowledgePoint(), state.knowledgePoint());
     }
 
-    private byte[] generateBoardImage(BoardPlan.Board board, String topic) {
+    private byte[] generateBoardImage(BoardPlan.Board board) {
         StringBuilder visualDesc = new StringBuilder();
         visualDesc.append("Hand-drawn whiteboard infographic about \"").append(board.title()).append("\". ");
         for (BoardPlan.BoardSection sec : board.sections()) {
@@ -171,13 +216,19 @@ public class VideoGenerator extends AbstractGenerator {
         ModelProvider textProvider = registry.resolve(ResourceType.DOC);
         String prompt = buildNarrationPrompt(boardPlan, state);
         String response = textProvider.chat(prompt);
+        NarrationScript script;
         try {
             response = stripJsonMarkdown(response);
-            return objectMapper.readValue(response, NarrationScript.class);
+            script = objectMapper.readValue(response, NarrationScript.class);
         } catch (Exception e) {
             log.warn("Failed to parse NarrationScript, using fallback: {}", e.getMessage());
             return buildFallbackNarration(boardPlan, state);
         }
+        if (script.segments() == null || script.segments().isEmpty()) {
+            log.warn("NarrationScript has no segments, using fallback");
+            return buildFallbackNarration(boardPlan, state);
+        }
+        return script;
     }
 
     private String buildNarrationPrompt(BoardPlan boardPlan, GenerationState state) {
@@ -271,26 +322,15 @@ public class VideoGenerator extends AbstractGenerator {
         }
 
         byte[] mp4Bytes = assembler.imagesToVideo(validImages, script.scenes());
+        log.info("VideoGenerator legacy: produced {} bytes", mp4Bytes.length);
         return fileStorage.store(state.requestId(), mp4Bytes,
             sanitizeFilename(state.knowledgePoint()) + ".mp4");
-    }
-
-    // ═══════════════════════════════════════════
-    // Shared helpers
-    // ═══════════════════════════════════════════
-
-    private String stripJsonMarkdown(String response) {
-        String s = response.trim();
-        if (s.startsWith("```")) {
-            s = s.replaceAll("```json\\s*", "").replaceAll("```\\s*$", "").trim();
-        }
-        return s;
     }
 
     /** Keep old VideoScript generation for legacy fallback. */
     private VideoScript generateVideoScript(GenerationState state) {
         ModelProvider textProvider = registry.resolve(ResourceType.DOC);
-        String prompt = buildPrompt(state);
+        String prompt = buildLegacyScriptPrompt(state);
         String response = textProvider.chat(prompt);
         try {
             response = stripJsonMarkdown(response);
@@ -316,7 +356,7 @@ public class VideoGenerator extends AbstractGenerator {
             visual);
     }
 
-    private String buildPrompt(GenerationState state) {
+    private String buildLegacyScriptPrompt(GenerationState state) {
         return """
             You are a professional educator creating an educational video script.
             Topic: %s
@@ -377,24 +417,38 @@ public class VideoGenerator extends AbstractGenerator {
             return new NarrationScript(state.knowledgePoint(), 30, List.of());
         }
         BoardPlan.Board firstBoard = plan.boards().get(0);
+        String sectionId = firstBoard.sections().isEmpty()
+            ? "concept" : firstBoard.sections().get(0).id();
         return new NarrationScript(
             state.knowledgePoint(),
             30,
             List.of(
                 new NarrationScript.ScriptSegment("intro", 0, 5.0, 5.2,
                     "欢迎来到本节课程，我们将学习" + state.knowledgePoint() + "。",
-                    firstBoard.id(), "concept",
-                    List.of(new NarrationScript.ScriptAction("circle", "concept", state.knowledgePoint(), 0.8))),
+                    firstBoard.id(), sectionId,
+                    List.of(new NarrationScript.ScriptAction("circle", sectionId, state.knowledgePoint(), 0.8))),
                 new NarrationScript.ScriptSegment("detail", 5.2, 15.0, 15.3,
                     "让我们深入了解" + state.knowledgePoint() + "的核心概念和应用。",
-                    firstBoard.id(), "concept",
-                    List.of(new NarrationScript.ScriptAction("underline", "concept", "核心概念", 0.8))),
+                    firstBoard.id(), sectionId,
+                    List.of(new NarrationScript.ScriptAction("underline", sectionId, "核心概念", 0.8))),
                 new NarrationScript.ScriptSegment("summary", 15.3, 25.0, 25.0,
                     "以上就是本节关于" + state.knowledgePoint() + "的全部内容。",
-                    firstBoard.id(), "concept",
+                    firstBoard.id(), sectionId,
                     List.of())
             )
         );
+    }
+
+    // ═══════════════════════════════════════════
+    // Shared helpers
+    // ═══════════════════════════════════════════
+
+    private String stripJsonMarkdown(String response) {
+        String s = response.trim();
+        if (s.startsWith("```")) {
+            s = s.replaceFirst("^```[a-zA-Z]*\\s*", "").replaceFirst("```\\s*$", "").trim();
+        }
+        return s;
     }
 
     private String sanitizeFilename(String name) {
