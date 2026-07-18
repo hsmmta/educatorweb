@@ -159,7 +159,8 @@
                             'option-selected': msg.selectedOption[qi] === optionLetter(opt),
                             'option-correct': msg.selectedOption[qi] === optionLetter(opt) && msg.optionResult[qi] === 'correct',
                             'option-incorrect': msg.selectedOption[qi] === optionLetter(opt) && msg.optionResult[qi] === 'incorrect',
-                            'option-reveal-correct': msg.optionResult[qi] === 'incorrect' && isCorrectAnswer(q, opt)
+                            'option-reveal-correct': msg.optionResult[qi] === 'incorrect' && isCorrectAnswer(q, opt),
+                            'option-locked': msg.optionResult[qi] !== undefined
                           }
                         ]"
                         @click="selectQuizOption(msg, qi, opt)"
@@ -195,6 +196,12 @@
                       <div v-if="q.explanation" class="quiz-explain"><strong>解析：</strong>{{ q.explanation }}</div>
                     </div>
                   </div>
+                <!-- Assessment loading bar -->
+                <transition name="assess-fade">
+                  <div v-if="assessing" class="assess-bar">
+                    <span class="assess-spin">🧠</span> 正在评估你的答题表现...
+                  </div>
+                </transition>
                 </div>
                 <pre v-else class="raw-fallback">{{ msg.rawContent }}</pre>
               </div>
@@ -235,8 +242,19 @@
       <!-- Input area -->
       <div class="input-area">
         <div v-if="topicLocked" class="locked-topic">
-          <el-tag type="warning" size="large">🔒 {{ inputText }}</el-tag>
-          <span class="locked-hint">主题已锁定，来自学习路径节点</span>
+          <div class="locked-topic-row">
+            <el-tag type="warning" size="large">🔒 {{ lockedTopicName }}</el-tag>
+            <span class="locked-hint">主题已锁定，来自学习路径节点</span>
+          </div>
+          <div class="locked-topic-actions">
+            <el-button size="small" type="primary" :icon="Promotion" :loading="loading"
+              @click="sendResourceGenerate(lockedTopicName)">
+              再来一组练习
+            </el-button>
+            <el-button size="small" text @click="topicLocked = false; lockedTopicName = ''; inputText = ''">
+              解除锁定
+            </el-button>
+          </div>
         </div>
         <el-input
           v-else
@@ -247,10 +265,10 @@
           @keyup.enter.ctrl="sendMessage"
           :disabled="loading"
         />
-        <div class="input-footer">
-          <el-tag v-if="!topicLocked" size="small" type="info">Ctrl + Enter 发送</el-tag>
-          <el-button type="primary" :icon="Promotion" :loading="loading" @click="sendMessage" :disabled="!inputText.trim() || topicLocked">
-            {{ topicLocked ? '已锁定' : '发送' }}
+        <div class="input-footer" v-if="!topicLocked">
+          <el-tag size="small" type="info">Ctrl + Enter 发送</el-tag>
+          <el-button type="primary" :icon="Promotion" :loading="loading" @click="sendMessage" :disabled="!inputText.trim()">
+            发送
           </el-button>
         </div>
       </div>
@@ -314,12 +332,14 @@ const modes = [
 const route = useRoute()
 const activeMode = ref('chat')
 const topicLocked = ref(false)  // true when entered from path node (URL params)
+const lockedTopicName = ref('')  // original topic name from URL, used for proficiency tracking
 const currentMode = computed(() => modes.find(m => m.key === activeMode.value) || modes[0])
 const switchMode = (key) => { activeMode.value = key }
 
 // ---- State ----
 const inputText = ref('')
 const loading = ref(false)
+const assessing = ref(false)  // true while quiz answer is being evaluated
 const loadingText = ref('思考中...')
 const messages = ref([])
 const currentConversationId = ref(null)
@@ -807,6 +827,8 @@ const isCorrectAnswer = (q, optText) => {
 }
 
 const selectQuizOption = (msg, qIndex, optText) => {
+  // Lock answer after first selection — no changing
+  if (msg.optionResult[qIndex] !== undefined) return
   const q = msg.quizData?.questions?.[qIndex]
   if (!q || q.type === 'SHORT_ANSWER' || q.type === 'FILL_BLANK') return
   const letter = optionLetter(optText)
@@ -831,20 +853,39 @@ const selectQuizOption = (msg, qIndex, optText) => {
 }
 
 const submitQuizAnswer = async (msg, qIndex, q, correct) => {
+  assessing.value = true
   try {
-    const knowledgePoint = msg.title || ''
+    const primaryConcept = lockedTopicName.value || msg.title || ''
     await request.post('/quiz/submit', {
       studentId: getStudentId(),
-      knowledgePoint: knowledgePoint,
+      knowledgePoint: primaryConcept,
       results: [{
         questionIndex: qIndex,
         correct: correct,
-        relatedConcept: q.relatedConcept || knowledgePoint
+        relatedConcept: q.relatedConcept || primaryConcept
       }]
     })
+    // Save wrong answer to collection
+    if (!correct) {
+      try {
+        const userLetter = msg.selectedOption[qIndex] || ''
+        await request.post('/quiz/wrong-answer', {
+          studentId: getStudentId(),
+          question: q.question,
+          options: q.options || [],
+          userAnswer: userLetter,
+          correctAnswer: q.answer || '',
+          knowledgePoint: primaryConcept,
+          quizTitle: msg.title || ''
+        })
+      } catch (e) {
+        console.warn('Wrong answer save failed:', e.message)
+      }
+    }
   } catch (e) {
-    // Silently fail — quiz submission is non-blocking
     console.warn('Quiz submit failed:', e.message)
+  } finally {
+    assessing.value = false
   }
 }
 
@@ -976,6 +1017,7 @@ onMounted(async () => {
       activeMode.value = urlMode
     }
     topicLocked.value = true  // lock topic from path node
+    lockedTopicName.value = urlTopic  // store for proficiency tracking
     await nextTick()
     await sendResourceGenerate(urlTopic)
   }
@@ -1202,6 +1244,7 @@ onMounted(async () => {
 .option-marker { font-weight: 700; font-size: 14px; min-width: 20px; color: var(--brand-1); text-align: center; flex-shrink: 0; }
 .option-correct .option-marker { color: #67c23a; }
 .option-incorrect .option-marker { color: #f56c6c; }
+.quiz-option-item.option-locked { pointer-events: none; cursor: default; }
 .option-text { flex: 1; }
 .quiz-answer { margin: 12px 0 0 30px; padding: 12px; background: #f0f9eb; border-radius: 10px; font-size: 13px; }
 .quiz-answer-row { color: #529b2e; margin-bottom: 6px; }
@@ -1264,9 +1307,11 @@ onMounted(async () => {
 
 /* ---- Input area ---- */
 .locked-topic {
-  display: flex; align-items: center; gap: 12px;
+  display: flex; flex-direction: column; gap: 10px;
   padding: 8px 12px; margin-bottom: 4px;
 }
+.locked-topic-row { display: flex; align-items: center; gap: 12px; }
+.locked-topic-actions { display: flex; gap: 8px; align-items: center; }
 .locked-hint { font-size: 12px; color: #909399; }
 .input-area {
   position: relative; z-index: 1;
@@ -1303,6 +1348,24 @@ onMounted(async () => {
   .chat-messages { padding: 20px 14px; }
   .input-area { margin: 8px 14px 16px; }
 }
+
+.assess-bar {
+  display: flex; align-items: center; gap: 8px; justify-content: center;
+  padding: 10px 16px; margin-top: 10px; border-radius: 12px;
+  background: linear-gradient(135deg, rgba(102,126,234,0.08), rgba(118,75,162,0.05));
+  font-size: 13px; color: #667eea; font-weight: 500;
+}
+.assess-spin {
+  display: inline-block; font-size: 18px;
+  animation: assess-pulse 1.2s ease-in-out infinite;
+}
+@keyframes assess-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.6; }
+  50% { transform: scale(1.15); opacity: 1; }
+}
+.assess-fade-enter-active { transition: opacity 0.3s; }
+.assess-fade-leave-active { transition: opacity 0.5s; }
+.assess-fade-enter-from, .assess-fade-leave-to { opacity: 0; }
 </style>
 
 <!-- Non-scoped markdown styles — must be unscoped so v-html content gets styled -->
