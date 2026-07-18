@@ -247,6 +247,7 @@ function initGraph(nodes, edges) {
     container: graphRef.value,
     autoFit: 'view',
     animation: true,
+    renderer: 'webgl',
     layout: {
       type: 'dagre',
       rankdir: 'TB',
@@ -257,36 +258,38 @@ function initGraph(nodes, edges) {
       type: 'circle',
       state: {
         dimmed:    { opacity: 0.12 },
-        active:    { opacity: 0.9 },
-        highlight: { opacity: 1, lineWidth: 3, shadowBlur: 16 },
+        active:    { opacity: 0.95 },
+        highlight: { opacity: 1, lineWidth: 3 },
       },
       style: {
         fill: d => d.style?.fill ?? '#667eea',
         size: d => d.style?.size ?? 20,
         stroke: d => d.style?.fill ?? '#667eea',
-        lineWidth: 1,
-        opacity: 0.9,
-        shadowColor: d => d.style?.fill ?? '#667eea',
-        shadowBlur: 6,
+        lineWidth: 1.5,
+        opacity: 0.95,
       },
     },
     edge: {
       type: 'cubic-vertical',
       state: {
-        dimmed:    { opacity: 0.06 },
-        active:    { opacity: 0.5 },
-        highlight: { opacity: 0.9, lineWidth: 2.5 },
+        dimmed:    { opacity: 0.1 },
+        active:    { opacity: 0.55 },
+        highlight: { opacity: 0.95, lineWidth: 2.5 },
       },
       style: {
         stroke: d => d.style?.stroke ?? '#b0b0b0',
         lineWidth: d => d.style?.lineWidth ?? 0.8,
-        opacity: 0.5,
+        opacity: 0.55,
         endArrow: d => d.style?.endArrow ?? false,
         lineDash: d => d.style?.lineDash ?? undefined,
       },
     },
     data,
-    behaviors: ['drag-canvas', 'zoom-canvas', 'drag-element'],
+    behaviors: [
+      'drag-canvas',
+      { type: 'zoom-canvas', sensitivity: 2, enableOptimize: true },
+      'drag-element',
+    ],
   })
 
   // ---- Node click handler — 追溯前置链路 ----
@@ -304,12 +307,11 @@ function initGraph(nodes, edges) {
       graph.setElementState(n.id, upstreamIds.has(n.id) ? 'highlight' : 'dimmed')
     })
 
-    // 高亮属于前置路径的 REQUIRES 边
+    // 高亮所有连接到高亮节点的边
     const allEdgeData = graph.getEdgeData()
     allEdgeData.forEach(e => {
-      const isPathEdge = upstreamIds.has(e.source) && upstreamIds.has(e.target)
-        && e.data?.relation === 'REQUIRES'
-      graph.setElementState(e.id, isPathEdge ? 'highlight' : 'dimmed')
+      const connected = upstreamIds.has(e.source) || upstreamIds.has(e.target)
+      graph.setElementState(e.id, connected ? 'highlight' : 'dimmed')
     })
 
     // 打开侧边栏
