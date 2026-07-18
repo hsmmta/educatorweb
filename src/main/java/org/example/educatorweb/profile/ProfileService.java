@@ -2,6 +2,9 @@ package org.example.educatorweb.profile;
 
 import org.example.educatorweb.profile.model.StudentProfile;
 
+import java.math.BigDecimal;
+import java.util.List;
+
 public interface ProfileService {
     StudentProfile getProfile(String studentId);
     void updateProfile(String studentId, StudentProfile profile);
@@ -11,4 +14,7 @@ public interface ProfileService {
 
     /** Get the saved learning path JSON from the student's profile. */
     String getSavedLearningPathJson(String studentId);
+
+    /** Update only error_pattern_tags + confidence, bypassing lazy collection issues. */
+    void updateErrorPatterns(String studentId, List<String> tags, BigDecimal confidence);
 }

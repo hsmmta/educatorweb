@@ -7,6 +7,7 @@ import dev.langchain4j.service.AiServices;
 import org.example.educatorweb.aitutor.config.ChromaClient;
 import org.example.educatorweb.profile.ProfileAnalysisService;
 import org.example.educatorweb.profile.ProfileService;
+import org.example.educatorweb.profile.ProfileValueNormalizer;
 import org.example.educatorweb.profile.agent.ProfileUpdateAgent;
 import org.example.educatorweb.profile.model.ProfileAnalysisResult;
 import org.example.educatorweb.profile.model.StudentProfile;
@@ -224,29 +225,29 @@ public class ProfileAnalysisServiceImpl implements ProfileAnalysisService {
         StudentProfile p = new StudentProfile();
         p.setStudentId(studentId);
 
-        // Apply updated values (agent output), fall back to current values if null
-        p.setKnowledgeBaseLevel(
-            result.knowledgeBaseLevel() != null ? result.knowledgeBaseLevel() : current.getKnowledgeBaseLevel());
+        // Apply updated values (agent output), normalize to Chinese, fall back to current values if null
+        p.setKnowledgeBaseLevel(ProfileValueNormalizer.normalizeKnowledgeBase(
+            result.knowledgeBaseLevel() != null ? result.knowledgeBaseLevel() : current.getKnowledgeBaseLevel()));
         p.setKnowledgeBaseConfidence(
             result.knowledgeBaseConfidence() != null ? result.knowledgeBaseConfidence() : current.getKnowledgeBaseConfidence());
-        p.setCognitiveStyleType(
-            result.cognitiveStyleType() != null ? result.cognitiveStyleType() : current.getCognitiveStyleType());
+        p.setCognitiveStyleType(ProfileValueNormalizer.normalizeCognitiveStyle(
+            result.cognitiveStyleType() != null ? result.cognitiveStyleType() : current.getCognitiveStyleType()));
         p.setCognitiveStyleConfidence(
             result.cognitiveStyleConfidence() != null ? result.cognitiveStyleConfidence() : current.getCognitiveStyleConfidence());
-        p.setErrorPatternTags(
-            result.errorPatternTags() != null ? result.errorPatternTags() : current.getErrorPatternTags());
+        p.setErrorPatternTags(ProfileValueNormalizer.normalizeErrorTags(
+            result.errorPatternTags() != null ? result.errorPatternTags() : current.getErrorPatternTags()));
         p.setErrorPatternConfidence(
             result.errorPatternConfidence() != null ? result.errorPatternConfidence() : current.getErrorPatternConfidence());
-        p.setLearningPaceType(
-            result.learningPaceType() != null ? result.learningPaceType() : current.getLearningPaceType());
+        p.setLearningPaceType(ProfileValueNormalizer.normalizeLearningPace(
+            result.learningPaceType() != null ? result.learningPaceType() : current.getLearningPaceType()));
         p.setLearningPaceConfidence(
             result.learningPaceConfidence() != null ? result.learningPaceConfidence() : current.getLearningPaceConfidence());
-        p.setContentPreferenceType(
-            result.contentPreferenceType() != null ? result.contentPreferenceType() : current.getContentPreferenceType());
+        p.setContentPreferenceType(ProfileValueNormalizer.normalizeContentPreference(
+            result.contentPreferenceType() != null ? result.contentPreferenceType() : current.getContentPreferenceType()));
         p.setContentPreferenceRatio(
             result.contentPreferenceRatio() != null ? result.contentPreferenceRatio() : current.getContentPreferenceRatio());
-        p.setGoalOrientationType(
-            result.goalOrientationType() != null ? result.goalOrientationType() : current.getGoalOrientationType());
+        p.setGoalOrientationType(ProfileValueNormalizer.normalizeGoalOrientation(
+            result.goalOrientationType() != null ? result.goalOrientationType() : current.getGoalOrientationType()));
         p.setGoalOrientationConfidence(
             result.goalOrientationConfidence() != null ? result.goalOrientationConfidence() : current.getGoalOrientationConfidence());
 

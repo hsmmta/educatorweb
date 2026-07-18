@@ -2,6 +2,7 @@ package org.example.educatorweb.learningpath;
 
 import org.example.educatorweb.dto.ResponseResult;
 import org.example.educatorweb.learningpath.model.LearningPath;
+import org.example.educatorweb.learningpath.model.PathNode;
 import org.example.educatorweb.learningpath.model.RecommendedResource;
 import org.example.educatorweb.profile.ProfileService;
 import org.example.educatorweb.profile.ProficiencyService;
@@ -50,17 +51,44 @@ public class LearningPathController {
             mapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
             LearningPath path = mapper.readValue(json, LearningPath.class);
 
-            // Enrich each node with current proficiency data
+            // Enrich each node with real-time proficiency AND recompute statuses
             if (path.getNodes() != null) {
-                java.util.Map<String, Double> profMap = new java.util.HashMap<>();
-                for (ProficiencyResult pr : proficiencyService.getAllProficiencies(studentId)) {
-                    profMap.put(pr.concept(), pr.effectiveProficiency());
-                }
+                java.util.List<ProficiencyResult> allProfs = proficiencyService.getAllProficiencies(studentId);
+                boolean foundCurrent = false;
                 for (var node : path.getNodes()) {
-                    Double prof = profMap.get(node.getKnowledgePointName());
-                    if (prof == null) prof = profMap.get(node.getKnowledgePointId());
-                    node.setProficiency(prof != null ? prof : 0.0);
+                    String nodeName = node.getKnowledgePointName();
+                    if (nodeName == null) nodeName = "";
+                    double bestProficiency = 0.0;
+                    for (ProficiencyResult pr : allProfs) {
+                        String c = pr.concept();
+                        if (c == null) continue;
+                        if (c.equals(nodeName)
+                            || c.contains(nodeName)
+                            || nodeName.contains(c)) {
+                            if (pr.effectiveProficiency() > bestProficiency) {
+                                bestProficiency = pr.effectiveProficiency();
+                            }
+                        }
+                    }
+                    node.setProficiency(bestProficiency);
+
+                    // Recompute status: ≥60% proficiency → COMPLETED (confidence is informative only)
+                    if (bestProficiency >= 0.6) {
+                        node.setStatus(PathNode.PathNodeStatus.COMPLETED);
+                    } else if (!foundCurrent) {
+                        node.setStatus(PathNode.PathNodeStatus.CURRENT);
+                        foundCurrent = true;
+                    } else {
+                        node.setStatus(PathNode.PathNodeStatus.PENDING);
+                    }
                 }
+                if (!foundCurrent && !path.getNodes().isEmpty()) {
+                    path.getNodes().get(0).setStatus(PathNode.PathNodeStatus.CURRENT);
+                }
+
+                // Update completed count
+                path.setCompletedNodes((int) path.getNodes().stream()
+                    .filter(n -> n.getStatus() == PathNode.PathNodeStatus.COMPLETED).count());
             }
 
             return ResponseResult.success(Map.of("exists", true, "path", path));

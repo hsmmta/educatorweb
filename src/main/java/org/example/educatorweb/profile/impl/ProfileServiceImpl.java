@@ -10,7 +10,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -101,6 +103,17 @@ public class ProfileServiceImpl implements ProfileService {
         }
 
         profileRepo.save(entity);
+    }
+
+    @Override
+    @Transactional
+    public void updateErrorPatterns(String studentId, List<String> tags, BigDecimal confidence) {
+        profileRepo.findById(studentId).ifPresent(entity -> {
+            entity.setErrorPatternTags(tags != null ? new ArrayList<>(tags) : new ArrayList<>());
+            entity.setErrorPatternConfidence(confidence != null ? confidence : BigDecimal.ZERO);
+            // No knowledgeDetails access — avoids LazyInitializationException
+            profileRepo.save(entity);
+        });
     }
 
     @Override

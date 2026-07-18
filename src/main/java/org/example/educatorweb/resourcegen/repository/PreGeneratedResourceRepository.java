@@ -18,4 +18,6 @@ public interface PreGeneratedResourceRepository extends JpaRepository<PreGenerat
 
     /** Find a resource by requestId. */
     PreGeneratedResource findByRequestId(String requestId);
+    /** Count ready resources for a user. */
+    long countByUserIdAndStatus(String userId, PreGeneratedResource.ResourceStatus status);
 }

@@ -9,6 +9,7 @@
         <el-button type="primary" :icon="ChatDotRound" @click="$router.push('/profile/chat')">
           构建/更新画像
         </el-button>
+        <el-button plain @click="$router.push('/wrong-answers')">📝 错题集</el-button>
         <el-button plain :icon="Edit" @click="$router.push('/profile/edit')">编辑资料</el-button>
       </div>
     </div>
@@ -352,44 +353,6 @@
           </div>
         </div>
 
-        <!-- 错题集 -->
-        <section class="section" v-if="wrongAnswers.length" style="margin-top:20px">
-          <h3>📝 错题集 ({{ wrongAnswers.length }} 道)</h3>
-          <div class="wrong-list">
-            <div v-for="item in wrongAnswers" :key="item.id" class="wrong-card">
-              <div class="wrong-q">
-                <span class="wrong-num">#{{ item.id }}</span>
-                <span class="wrong-text">{{ item.question }}</span>
-              </div>
-              <div class="wrong-opts" v-if="item.options && item.options.length">
-                <span
-                  v-for="(opt, oi) in item.options" :key="oi"
-                  :class="[
-                    'wrong-opt',
-                    { 'opt-chosen': item.userAnswer === optionLetter(opt) && wrongShowAnswer[item.id] !== false },
-                    { 'opt-right': wrongShowAnswer[item.id] !== false && isCorrectOpt(item, opt) },
-                    { 'redo-selected': correctRedoAnswer[item.id + '|' + optionLetter(opt)] },
-                    { 'redo-correct': redoResult[item.id] === 'correct' && correctRedoAnswer[item.id + '|' + optionLetter(opt)] },
-                    { 'redo-wrong': redoResult[item.id] === 'incorrect' && correctRedoAnswer[item.id + '|' + optionLetter(opt)] }
-                  ]"
-                  @click="wrongShowAnswer[item.id] === false && redoWrongAnswer(item, optionLetter(opt))"
-                >
-                  {{ opt }}
-                </span>
-              </div>
-              <div class="wrong-meta">
-                <span>来源: {{ item.quizTitle || item.knowledgePoint || '未知' }}</span>
-                <span v-if="wrongRedone[item.id]" class="wrong-redone-tag">✓ 已重做</span>
-              </div>
-              <div class="wrong-actions">
-                <el-button size="small" text @click="toggleWrongAnswer(item.id)">
-                  {{ wrongShowAnswer[item.id] !== false ? '🙈 不看答案重做' : '👁 显示答案' }}
-                </el-button>
-              </div>
-            </div>
-          </div>
-        </section>
-
         <!-- 学习路径摘要 -->
         <div class="chart-box" v-if="savedPath" style="margin-top:20px">
           <h4>📐 当前学习路径</h4>
@@ -460,33 +423,6 @@ const summaryText = ref('')
 const weakPoints = ref([])
 const strongPoints = ref([])
 const evenPoints = ref([])
-
-// ---- 错题集 ----
-const wrongAnswers = ref([])
-const wrongShowAnswer = ref({})   // per-card: { [id]: true/false }
-const wrongRedone = ref({})       // per-card: { [id]: true/false }
-const correctRedoAnswer = ref({})
-const redoResult = ref({})
-
-const loadWrongAnswers = async () => {
-  try {
-    const res = await request.get('/quiz/wrong-answers/' + getStudentId())
-    wrongAnswers.value = (res.data?.data || []).slice(0, 50)
-  } catch { wrongAnswers.value = [] }
-}
-
-const toggleWrongAnswer = (id) => {
-  wrongShowAnswer.value = { ...wrongShowAnswer.value, [id]: !wrongShowAnswer.value[id] }
-}
-
-const redoWrongAnswer = (item, optLetter) => {
-  correctRedoAnswer.value = { ...correctRedoAnswer.value, [item.id + '|' + optLetter]: optLetter }
-  const isCorrect = optLetter.toUpperCase() === (item.correctAnswer || '').trim().toUpperCase()
-  redoResult.value = { ...redoResult.value, [item.id]: isCorrect ? 'correct' : 'incorrect' }
-  if (isCorrect) {
-    wrongRedone.value = { ...wrongRedone.value, [item.id]: true }
-  }
-}
 
 const stats = reactive({
   learningDays: 0,
@@ -680,7 +616,6 @@ const loadReport = async () => {
       profileExists.value = false
     }
     loadSavedPathData()
-    loadWrongAnswers()
   } catch (e) { /* silent */ }
 }
 
@@ -694,17 +629,6 @@ const getStudentId = () => {
 const fmtPct = (val) => {
   if (val == null) return '0%'
   return Math.round(val * 100) + '%'
-}
-
-// helper for wrong-answer option letter extraction
-const optionLetter = (optText) => {
-  if (!optText) return ''
-  const m = optText.match(/^([A-Z])[.)]/)
-  return m ? m[1] : ''
-}
-
-const isCorrectOpt = (item, opt) => {
-  return optionLetter(opt).toUpperCase() === (item.correctAnswer || '').trim().toUpperCase()
 }
 
 // 将 LLM 生成的英文维度值映射为中文（LLM prompt已要求中文，但有时仍输出英文）
@@ -1214,35 +1138,4 @@ onUnmounted(() => {
   background: #fafbfc; border: 1px dashed #dcdfe6; border-radius: 12px; padding: 20px;
 }
 .report-empty { padding: 32px 0; }
-
-/* ---- wrong answers ---- */
-.wrong-list { display: flex; flex-direction: column; gap: 12px; }
-.wrong-card {
-  background: #fff; border-radius: 14px; padding: 18px 20px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.04); border: 1px solid #f0f2f5;
-  transition: all 0.15s;
-}
-.wrong-card:hover { border-color: #d0d5dd; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
-.wrong-q { display: flex; gap: 10px; margin-bottom: 10px; align-items: flex-start; }
-.wrong-num { font-size: 11px; color: #c0c4cc; font-weight: 700; flex-shrink: 0; padding-top: 2px; }
-.wrong-text { font-size: 14px; font-weight: 500; color: #1a1a2e; line-height: 1.5; }
-
-.wrong-opts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-.wrong-opt {
-  padding: 5px 12px; border-radius: 8px; font-size: 12px;
-  background: #f8f9fe; border: 1px solid #eef0f4; color: #4a4f5e;
-  transition: all 0.12s;
-}
-.wrong-opt.opt-chosen { background: #fef0f0; border-color: #f56c6c; color: #dc2626; }
-.wrong-opt.opt-right { background: #dcfce7; border-color: #22c55e; color: #15803d; }
-.wrong-opt.redo-selected { border-color: #667eea; background: #eef0ff; }
-.wrong-opt.redo-correct { background: #dcfce7; border-color: #22c55e; color: #15803d; }
-.wrong-opt.redo-wrong { background: #fef0f0; border-color: #f56c6c; color: #dc2626; }
-
-.wrong-meta { display: flex; gap: 12px; font-size: 11px; color: #909399; margin-bottom: 6px; }
-.wrong-redone-tag { color: #22c55e; font-weight: 600; }
-.wrong-actions { display: flex; justify-content: flex-end; }
-
-.wrong-opt { cursor: default; }
-.wrong-opt.redo-selected { cursor: default; }
 </style>

@@ -186,23 +186,33 @@ public class LearningPathService {
 
     /**
      * 标记节点状态：已掌握/当前学习/待学习。
-     * 使用有效掌握度（含艾宾浩斯遗忘衰减），同时满足 effectiveProficiency >= 0.8 且
-     * confidence >= 0.5 才标记为 COMPLETED。超过 30 天未复习的节点即使曾经满分也会因衰减降级。
+     * 使用有效掌握度（含艾宾浩斯遗忘衰减），effectiveProficiency >= 0.6 即标记 COMPLETED。
+     * 置信度仅作参考，不阻塞进度——跳着学也是学。
+     * <p>Lookup uses both knowledgePointId and knowledgePointName (fuzzy match against proficiency records).
      */
     private void markNodeStatuses(List<PathNode> nodes, Map<String, StudentKnowledgeProficiency> profMap) {
         boolean foundCurrent = false;
         for (PathNode node : nodes) {
+            // Try ID lookup first, then fuzzy name lookup
             StudentKnowledgeProficiency prof = profMap.get(node.getKnowledgePointId());
+            if (prof == null && node.getKnowledgePointName() != null) {
+                String nodeName = node.getKnowledgePointName();
+                for (var entry : profMap.entrySet()) {
+                    String c = entry.getKey();
+                    if (c != null && (c.equals(nodeName) || c.contains(nodeName) || nodeName.contains(c))) {
+                        prof = entry.getValue();
+                        break;
+                    }
+                }
+            }
             double rawProficiency = prof != null && prof.getProficiency() != null
                 ? prof.getProficiency().doubleValue() : 0.0;
             double effectiveProficiency = ProficiencyService.effectiveProficiency(
                 rawProficiency, prof != null ? prof.getLastStudyTime() : null);
-            double confidence = ProficiencyService.confidence(
-                prof != null ? prof.getTotalQuestions() : 0);
 
             node.setProficiency(effectiveProficiency);
 
-            if (effectiveProficiency >= 0.8 && confidence >= 0.5) {
+            if (effectiveProficiency >= 0.6) {
                 node.setStatus(PathNodeStatus.COMPLETED);
             } else if (!foundCurrent) {
                 node.setStatus(PathNodeStatus.CURRENT);

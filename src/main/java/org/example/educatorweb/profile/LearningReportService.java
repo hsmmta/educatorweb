@@ -6,6 +6,8 @@ import org.example.educatorweb.profile.model.ProficiencySnapshot;
 import org.example.educatorweb.profile.repository.ProficiencySnapshotRepository;
 import org.example.educatorweb.learninglog.model.LearningBehaviorLog;
 import org.example.educatorweb.learninglog.repository.LearningBehaviorLogRepository;
+import org.example.educatorweb.resourcegen.model.PreGeneratedResource;
+import org.example.educatorweb.resourcegen.repository.PreGeneratedResourceRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -54,15 +56,18 @@ public class LearningReportService {
     private final ProfileService profileService;
     private final ProficiencySnapshotRepository snapshotRepo;
     private final LearningBehaviorLogRepository behaviorLogRepo;
+    private final PreGeneratedResourceRepository resourceRepo;
 
     public LearningReportService(ProficiencyService proficiencyService,
                                   ProfileService profileService,
                                   ProficiencySnapshotRepository snapshotRepo,
-                                  LearningBehaviorLogRepository behaviorLogRepo) {
+                                  LearningBehaviorLogRepository behaviorLogRepo,
+                                  PreGeneratedResourceRepository resourceRepo) {
         this.proficiencyService = proficiencyService;
         this.profileService = profileService;
         this.snapshotRepo = snapshotRepo;
         this.behaviorLogRepo = behaviorLogRepo;
+        this.resourceRepo = resourceRepo;
     }
 
     /**
@@ -139,7 +144,8 @@ public class LearningReportService {
         result.put("exists", true);
         result.put("studentId", studentId);
         result.put("learningDays", learningDays);
-        result.put("resourceCount", 0);
+        long resourceCount = resourceRepo.countByUserIdAndStatus(studentId, PreGeneratedResource.ResourceStatus.READY);
+        result.put("resourceCount", (int) resourceCount);
         result.put("quizCount", stats.totalQuestions());
         result.put("compositeScore", stats.compositeScore());
         result.put("knowledgeBaseLevel", profile.getKnowledgeBaseLevel());
