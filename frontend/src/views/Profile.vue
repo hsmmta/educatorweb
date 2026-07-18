@@ -124,7 +124,7 @@
         <!-- Row 1: 综合评分 + 投入度数字 -->
         <div class="stats-row">
           <div class="stat-card composite">
-            <span class="stat-card-num">{{ reportData.compositeScore || stats.compositeScore || '—' }}</span>
+            <span class="stat-card-num">{{ reportData.compositeScore != null ? reportData.compositeScore : '—' }}</span>
             <span class="stat-card-label">综合评分</span>
           </div>
           <div class="stat-card">

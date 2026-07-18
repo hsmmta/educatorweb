@@ -92,7 +92,7 @@
             accept=".json" @change="onDatasetChange">
             <el-icon :size="40"><UploadFilled /></el-icon>
             <div>上传知识图谱数据集 JSON</div>
-            <template #tip><div class="el-upload__tip">MOOCCube 格式 JSON 文件</div></template>
+            <template #tip><div class="el-upload__tip">支持JSON格式文件</div></template>
           </el-upload>
         </template>
       </div>
