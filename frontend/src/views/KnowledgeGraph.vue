@@ -227,6 +227,7 @@ function buildGraphData(nodes, edges) {
       const rel = e.relation ?? 'RELATED_TO'
       const style = edgeStyle(rel)
       return {
+        id: `${e.source}-${e.target}-${rel}`,
         source: e.source,
         target: e.target,
         data: { relation: rel },
