@@ -327,7 +327,8 @@ const modes = [
   { key: 'quiz', icon: '📝', label: '题库', placeholder: '输入知识点，如：线性回归推导' },
   { key: 'mindmap', icon: '🧩', label: '导图', placeholder: '输入知识点，如：机器学习知识体系' },
   { key: 'code', icon: '💻', label: '代码', placeholder: '输入知识点，如：使用 Python 实现 K-means' },
-  { key: 'html', icon: '🌐', label: '课件', placeholder: '输入知识点，如：概率论基础' }
+  { key: 'html', icon: '🌐', label: '课件', placeholder: '输入知识点，如：概率论基础' },
+  { key: 'video', icon: '🎬', label: '视频', placeholder: '输入知识点，如：梯度下降算法（白板讲解视频，生成约需数分钟）' }
 ]
 const route = useRoute()
 const activeMode = ref('chat')
