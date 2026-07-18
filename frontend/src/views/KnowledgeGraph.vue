@@ -139,7 +139,9 @@ const categoryColors = {
 const fallbackColors = ['#667eea', '#764ba2', '#3b82f6', '#22c55e', '#e6a23c', '#f56c6c', '#06b6d4', '#ec4899', '#8b5cf6', '#f97316']
 
 function colorForCategory(cat) {
-  return categoryColors[cat] ?? fallbackColors[0]
+  if (categoryColors[cat]) return categoryColors[cat]
+  const catIndex = categories.value.indexOf(cat)
+  return catIndex >= 0 ? fallbackColors[catIndex % fallbackColors.length] : fallbackColors[0]
 }
 
 // ---- 数据转换 ----
@@ -207,7 +209,7 @@ function initGraph(nodes, edges) {
 
   // ---- Node click handler ----
   graph.on('node:click', (evt) => {
-    const nodeId = evt.target.id
+    const nodeId = evt.target?.id
     const n = allNodes.value.find(x => x.id === nodeId)
     if (n) {
       const prereqs = allEdges.value
@@ -219,6 +221,9 @@ function initGraph(nodes, edges) {
       selectedNode.value = { ...n, prerequisites: prereqs, successors: succs }
     }
   })
+
+  // ---- Canvas click handler — dismiss sidebar ----
+  graph.on('canvas:click', () => { selectedNode.value = null })
 
   graph.render()
 }
