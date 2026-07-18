@@ -165,7 +165,7 @@ const clearAll = async () => {
   } catch { /* cancelled */ }
 }
 
-const optionLetter = (opt) => {
+const optLetter = (opt) => {
   if (!opt) return ''
   const m = opt.match(/^([A-Z])[.)]/)
   return m ? m[1] : ''
@@ -177,7 +177,7 @@ const stripLetter = (opt) => {
 }
 
 const isCorrectOpt = (item, opt) => {
-  return optionLetter(opt).toUpperCase() === (item.correctAnswer || '').trim().toUpperCase()
+  return optLetter(opt).toUpperCase() === (item.correctAnswer || '').trim().toUpperCase()
 }
 
 onMounted(loadWrongAnswers)
