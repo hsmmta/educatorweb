@@ -10,20 +10,19 @@
           @change="onFilter">
           <el-option v-for="cat in categories" :key="cat" :label="cat" :value="cat" />
         </el-select>
-        <span class="kg-stats">{{ visibleNodes.length }} 节点 · {{ visibleEdges.length }} 边</span>
+        <span class="kg-stats">{{ allNodes.length }} 节点 · {{ allEdges.length }} 边</span>
         <el-button size="small" type="primary" :icon="Upload" @click="showImport = true">导入</el-button>
         <el-button size="small" :icon="Refresh" @click="loadGraph">刷新</el-button>
       </div>
     </div>
 
     <!-- Graph -->
-    <div class="kg-chart" ref="chartRef" @wheel.prevent>
+    <div class="kg-chart">
       <div v-if="loading" class="kg-loading">
         <el-icon class="is-loading" :size="36"><Loading /></el-icon>
         <p>加载知识图谱...</p>
       </div>
-      <v-chart v-else-if="chartOption" :option="chartOption" autoresize
-        style="width:100%;height:100%;min-height:600px" />
+      <div v-else-if="allNodes.length" ref="graphRef" class="kg-g6-container"></div>
       <div v-else class="kg-error">
         <p>暂无数据，请检查 Neo4j 连接</p>
       </div>
@@ -64,79 +63,167 @@
     </transition>
   </div>
 
-    <!-- Import dialog -->
-    <el-dialog v-model="showImport" title="📤 导入知识图谱" width="520px" :close-on-click-modal="false">
-      <div class="import-modes">
-        <el-radio-group v-model="importMode" size="large">
-          <el-radio-button value="text">📝 文本录入</el-radio-button>
-          <el-radio-button value="file">📄 文件上传</el-radio-button>
-          <el-radio-button value="dataset">📦 数据集</el-radio-button>
-        </el-radio-group>
-      </div>
+  <!-- Import dialog -->
+  <el-dialog v-model="showImport" title="📤 导入知识图谱" width="520px" :close-on-click-modal="false">
+    <div class="import-modes">
+      <el-radio-group v-model="importMode" size="large">
+        <el-radio-button value="text">📝 文本录入</el-radio-button>
+        <el-radio-button value="file">📄 文件上传</el-radio-button>
+        <el-radio-button value="dataset">📦 数据集</el-radio-button>
+      </el-radio-group>
+    </div>
 
-      <div style="margin-top:20px">
-        <template v-if="importMode === 'text'">
-          <el-input v-model="importText" type="textarea" :rows="6"
-            placeholder="输入知识点描述，如：反向传播是一种通过链式法则计算神经网络梯度的算法..." />
-        </template>
-        <template v-else-if="importMode === 'file'">
-          <el-upload ref="uploadRef" drag :auto-upload="false" :limit="1"
-            accept=".txt,.md,.json,.csv" @change="onFileChange">
-            <el-icon :size="40"><UploadFilled /></el-icon>
-            <div>拖拽文件到此处或点击上传</div>
-            <template #tip><div class="el-upload__tip">支持 TXT/MD/JSON/CSV 文本文件</div></template>
-          </el-upload>
-        </template>
-        <template v-else>
-          <el-upload ref="datasetUploadRef" drag :auto-upload="false" :limit="1"
-            accept=".json" @change="onDatasetChange">
-            <el-icon :size="40"><UploadFilled /></el-icon>
-            <div>上传知识图谱数据集 JSON</div>
-            <template #tip><div class="el-upload__tip">支持JSON格式文件</div></template>
-          </el-upload>
-        </template>
-      </div>
-
-      <div v-if="importResult" class="import-result">
-        <el-alert :title="importResult" type="success" :closable="false" show-icon />
-      </div>
-
-      <template #footer>
-        <el-button @click="showImport = false">取消</el-button>
-        <el-button type="primary" :loading="importLoading" @click="doImport">
-          {{ importLoading ? '导入中...' : '开始导入' }}
-        </el-button>
+    <div style="margin-top:20px">
+      <template v-if="importMode === 'text'">
+        <el-input v-model="importText" type="textarea" :rows="6"
+          placeholder="输入知识点描述，如：反向传播是一种通过链式法则计算神经网络梯度的算法..." />
       </template>
-    </el-dialog>
+      <template v-else-if="importMode === 'file'">
+        <el-upload ref="uploadRef" drag :auto-upload="false" :limit="1"
+          accept=".txt,.md,.json,.csv" @change="onFileChange">
+          <el-icon :size="40"><UploadFilled /></el-icon>
+          <div>拖拽文件到此处或点击上传</div>
+          <template #tip><div class="el-upload__tip">支持 TXT/MD/JSON/CSV 文本文件</div></template>
+        </el-upload>
+      </template>
+      <template v-else>
+        <el-upload ref="datasetUploadRef" drag :auto-upload="false" :limit="1"
+          accept=".json" @change="onDatasetChange">
+          <el-icon :size="40"><UploadFilled /></el-icon>
+          <div>上传知识图谱数据集 JSON</div>
+          <template #tip><div class="el-upload__tip">支持JSON格式文件</div></template>
+        </el-upload>
+      </template>
+    </div>
+
+    <div v-if="importResult" class="import-result">
+      <el-alert :title="importResult" type="success" :closable="false" show-icon />
+    </div>
+
+    <template #footer>
+      <el-button @click="showImport = false">取消</el-button>
+      <el-button type="primary" :loading="importLoading" @click="doImport">
+        {{ importLoading ? '导入中...' : '开始导入' }}
+      </el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Search, Refresh, Loading, Close, Upload, UploadFilled } from '@element-plus/icons-vue'
-import VChart from 'vue-echarts'
-import { use } from 'echarts/core'
-import { GraphChart } from 'echarts/charts'
-import { TooltipComponent, LegendComponent } from 'echarts/components'
-import { CanvasRenderer } from 'echarts/renderers'
+import { Graph } from '@antv/g6'
 import request from '@/api/request'
 
-use([CanvasRenderer, GraphChart, TooltipComponent, LegendComponent])
-
+// ---- 响应式状态 ----
 const loading = ref(true)
 const searchText = ref('')
 const filterCategory = ref('')
 const selectedNode = ref(null)
-const chartRef = ref(null)
+const graphRef = ref(null)
 
 const allNodes = ref([])
 const allEdges = ref([])
 const categories = ref([])
 
-const categoryColors = [
-  '#667eea', '#764ba2', '#3b82f6', '#22c55e', '#e6a23c',
-  '#f56c6c', '#06b6d4', '#ec4899', '#8b5cf6', '#f97316'
-]
+let graph = null
 
+// ---- 分类配色 ----
+const categoryColors = {
+  '数学基础': '#667eea',
+  '概念':     '#22c55e',
+  '算法':     '#f56c6c',
+  '应用':     '#3b82f6',
+  '工具':     '#e6a23c',
+}
+const fallbackColors = ['#667eea', '#764ba2', '#3b82f6', '#22c55e', '#e6a23c', '#f56c6c', '#06b6d4', '#ec4899', '#8b5cf6', '#f97316']
+
+function colorForCategory(cat) {
+  return categoryColors[cat] ?? fallbackColors[0]
+}
+
+// ---- 数据转换 ----
+function buildGraphData(nodes, edges) {
+  return {
+    nodes: nodes.map(n => ({
+      id: n.id,
+      data: {
+        name: n.name ?? n.id,
+        category: n.category ?? '概念',
+        difficulty: n.difficulty ?? 1,
+      },
+      style: {
+        fill: colorForCategory(n.category),
+        size: 16 + (n.difficulty ?? 1) * 5,
+      },
+    })),
+    edges: edges.map(e => ({
+      source: e.source,
+      target: e.target,
+      data: { relation: e.relation ?? 'RELATED_TO' },
+    })),
+  }
+}
+
+// ---- 图初始化 ----
+function initGraph(nodes, edges) {
+  if (graph) { graph.destroy(); graph = null }
+
+  const data = buildGraphData(nodes, edges)
+
+  graph = new Graph({
+    container: graphRef.value,
+    autoFit: 'view',
+    animation: true,
+    layout: {
+      type: 'dagre',
+      rankdir: 'TB',
+      nodesep: 40,
+      ranksep: 80,
+    },
+    node: {
+      type: 'circle',
+      style: {
+        fill: d => d.style?.fill ?? '#667eea',
+        size: d => d.style?.size ?? 20,
+        stroke: d => d.style?.fill ?? '#667eea',
+        lineWidth: 1,
+        opacity: 0.9,
+        shadowColor: d => d.style?.fill ?? '#667eea',
+        shadowBlur: 6,
+      },
+    },
+    edge: {
+      type: 'cubic-vertical',
+      style: {
+        stroke: '#b0b0b0',
+        lineWidth: 1,
+        opacity: 0.4,
+      },
+    },
+    data,
+    behaviors: ['drag-canvas', 'zoom-canvas', 'drag-element'],
+  })
+
+  // ---- Node click handler ----
+  graph.on('node:click', (evt) => {
+    const nodeId = evt.target.id
+    const n = allNodes.value.find(x => x.id === nodeId)
+    if (n) {
+      const prereqs = allEdges.value
+        .filter(e => e.target === n.id && e.relation === 'REQUIRES')
+        .map(e => e.source)
+      const succs = allEdges.value
+        .filter(e => e.source === n.id && e.relation === 'REQUIRES')
+        .map(e => e.target)
+      selectedNode.value = { ...n, prerequisites: prereqs, successors: succs }
+    }
+  })
+
+  graph.render()
+}
+
+// ---- 可见节点/边（搜索/筛选用，Task 6 实现） ----
 const visibleNodes = computed(() => {
   let nodes = allNodes.value
   if (filterCategory.value) {
@@ -156,56 +243,6 @@ const visibleEdges = computed(() => {
     visibleNodeIds.value.has(e.source) && visibleNodeIds.value.has(e.target))
 })
 
-const chartOption = computed(() => {
-  if (!visibleNodes.value.length) return null
-
-  return {
-    tooltip: {
-      formatter: (params) => {
-        if (params.dataType === 'node') {
-          const n = params.data
-          return `<strong>${n.name}</strong><br/>分类: ${n.category}<br/>难度: ${'⭐'.repeat(n.difficulty || 1)}`
-        }
-        return `${params.data.source} → ${params.data.target}<br/>${params.data.relation || ''}`
-      }
-    },
-    legend: { bottom: 0, data: categories.value },
-    series: [{
-      type: 'graph',
-      layout: 'force',
-      animation: true,
-      data: visibleNodes.value.map(n => ({
-        name: n.id,
-        displayName: n.name,
-        category: n.category,
-        symbolSize: 8 + (n.difficulty || 1) * 4,
-        itemStyle: { color: categoryColors[categories.value.indexOf(n.category) % categoryColors.length] },
-        ...n
-      })),
-      links: visibleEdges.value.map(e => ({
-        source: e.source,
-        target: e.target,
-        label: { show: false },
-        lineStyle: {
-          color: e.relation === 'REQUIRES' ? '#e6a23c' : e.relation === 'CONTAINS' ? '#667eea' : '#909399',
-          width: e.relation === 'REQUIRES' ? 1.5 : 1,
-          curveness: 0.1
-        }
-      })),
-      categories: categories.value.map((c, i) => ({
-        name: c,
-        itemStyle: { color: categoryColors[i % categoryColors.length] }
-      })),
-      roam: true,        // enables both mouse-wheel zoom AND drag-to-pan
-      scaleLimit: { min: 0.1, max: 5 },
-      draggable: true,
-      force: { repulsion: 300, edgeLength: [60, 250], gravity: 0.1 },
-      emphasis: { focus: 'adjacency', lineStyle: { width: 3 } },
-      label: { show: true, fontSize: 10, formatter: p => p.data.displayName }
-    }]
-  }
-})
-
 function onSearch() {
   // reactive via computed
 }
@@ -223,33 +260,15 @@ async function loadGraph() {
       allNodes.value = data.nodes || []
       allEdges.value = data.edges || []
 
-      // Extract unique categories
       const catSet = new Set(allNodes.value.map(n => n.category))
       categories.value = [...catSet].sort()
+
+      initGraph(allNodes.value, allEdges.value)
     }
   } catch (e) {
     console.error('KnowledgeGraph: load failed:', e)
   } finally {
     loading.value = false
-  }
-}
-
-// Handle chart click to show node detail
-const handleChartClick = (params) => {
-  if (params.dataType === 'node') {
-    const n = allNodes.value.find(x => x.id === params.name)
-    if (n) {
-      // Find prerequisites and successors from edges
-      const prereqs = allEdges.value
-        .filter(e => e.target === n.id && e.relation === 'REQUIRES')
-        .map(e => e.source)
-      const succs = allEdges.value
-        .filter(e => e.source === n.id && e.relation === 'REQUIRES')
-        .map(e => e.target)
-      selectedNode.value = { ...n, prerequisites: prereqs, successors: succs }
-    }
-  } else {
-    selectedNode.value = null
   }
 }
 
@@ -303,6 +322,11 @@ async function doImport() {
 }
 
 onMounted(loadGraph)
+
+onUnmounted(() => {
+  graph?.destroy()
+  graph = null
+})
 </script>
 
 <style scoped>
@@ -335,7 +359,6 @@ onMounted(loadGraph)
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
   overflow: hidden;
-  touch-action: none;
 }
 
 .kg-loading, .kg-error {
@@ -345,6 +368,12 @@ onMounted(loadGraph)
   justify-content: center;
   height: 100%;
   color: #909399;
+}
+
+.kg-g6-container {
+  width: 100%;
+  height: 100%;
+  min-height: 600px;
 }
 
 .kg-sidebar {
