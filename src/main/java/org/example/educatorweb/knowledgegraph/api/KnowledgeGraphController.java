@@ -46,7 +46,7 @@ public class KnowledgeGraphController {
                 Map<String, Object> node = new LinkedHashMap<>();
                 node.put("id", s.id());
                 node.put("name", s.name() != null ? s.name() : s.id());
-                node.put("category", s.category() != null ? s.category() : "未分类");
+                node.put("category", normalizeCategory(s.category()));
                 node.put("difficulty", s.difficulty());
                 node.put("description", "");
                 nodes.add(node);
@@ -107,5 +107,23 @@ public class KnowledgeGraphController {
             log.error("KnowledgeGraph: overview failed: {}", e.getMessage());
             return ResponseResult.error("知识图谱加载失败：" + e.getMessage());
         }
+    }
+
+    /** Map Neo4j raw category to one of 5 standard categories. */
+    private static String normalizeCategory(String raw) {
+        if (raw == null || raw.isBlank()) return "概念";
+        String c = raw.strip();
+        // Direct matches
+        if (c.equals("数学基础") || c.equals("概念") || c.equals("算法") || c.equals("应用") || c.equals("工具")) {
+            return c;
+        }
+        // Fuzzy mapping
+        String lower = c.toLowerCase();
+        if (lower.contains("math") || lower.contains("数学") || lower.contains("线性代数") || lower.contains("概率") || lower.contains("统计")) return "数学基础";
+        if (lower.contains("concept") || lower.contains("基础") || lower.contains("概述") || lower.contains("简介") || lower.contains("理论") || lower.contains("原理")) return "概念";
+        if (lower.contains("algorithm") || lower.contains("模型") || lower.contains("学习") || lower.contains("训练") || lower.contains("优化") || lower.contains("网络") || lower.contains("梯度") || lower.contains("回归") || lower.contains("分类") || lower.contains("聚类") || lower.contains("树") || lower.contains("森林")) return "算法";
+        if (lower.contains("application") || lower.contains("应用") || lower.contains("实战") || lower.contains("案例") || lower.contains("系统") || lower.contains("推荐") || lower.contains("预测") || lower.contains("检测") || lower.contains("识别")) return "应用";
+        if (lower.contains("tool") || lower.contains("工具") || lower.contains("库") || lower.contains("框架") || lower.contains("python") || lower.contains("代码") || lower.contains("编程")) return "工具";
+        return "概念"; // fallback
     }
 }
