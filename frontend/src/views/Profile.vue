@@ -9,7 +9,6 @@
         <el-button type="primary" :icon="ChatDotRound" @click="$router.push('/profile/chat')">
           构建/更新画像
         </el-button>
-        <el-button plain @click="$router.push('/wrong-answers')">📝 错题集</el-button>
         <el-button plain :icon="Edit" @click="$router.push('/profile/edit')">编辑资料</el-button>
       </div>
     </div>
@@ -353,6 +352,28 @@
           </div>
         </div>
 
+        <!-- 错题预览 -->
+        <div class="section" v-if="wrongPreview.length" style="margin-top:24px">
+          <div class="wrong-preview-head">
+            <h3>📝 错题回顾</h3>
+            <span class="wrong-preview-count">{{ wrongTotal }} 道</span>
+          </div>
+          <div class="wrong-preview-cards">
+            <div
+              v-for="item in wrongPreview" :key="item.id"
+              class="wrong-preview-card"
+              @click="$router.push('/wrong-answers')"
+            >
+              <span class="wpc-num">{{ item.id }}</span>
+              <span class="wpc-text">{{ item.question }}</span>
+              <span class="wpc-arrow">→</span>
+            </div>
+          </div>
+          <div v-if="wrongTotal > 2" class="wrong-preview-more" @click="$router.push('/wrong-answers')">
+            查看全部 {{ wrongTotal }} 道错题 →
+          </div>
+        </div>
+
         <!-- 学习路径摘要 -->
         <div class="chart-box" v-if="savedPath" style="margin-top:20px">
           <h4>📐 当前学习路径</h4>
@@ -423,6 +444,19 @@ const summaryText = ref('')
 const weakPoints = ref([])
 const strongPoints = ref([])
 const evenPoints = ref([])
+
+// ---- wrong answer preview ----
+const wrongPreview = ref([])
+const wrongTotal = ref(0)
+
+const loadWrongPreview = async () => {
+  try {
+    const res = await request.get('/quiz/wrong-answers/' + getStudentId())
+    const list = res.data?.data || []
+    wrongTotal.value = list.length
+    wrongPreview.value = list.slice(0, 2)
+  } catch { wrongTotal.value = 0; wrongPreview.value = [] }
+}
 
 const stats = reactive({
   learningDays: 0,
@@ -616,6 +650,7 @@ const loadReport = async () => {
       profileExists.value = false
     }
     loadSavedPathData()
+    loadWrongPreview()
   } catch (e) { /* silent */ }
 }
 
@@ -1127,6 +1162,40 @@ onUnmounted(() => {
   min-height: 200px; color: #909399; font-size: 14px;
 }
 .progress-label { text-align: center; color: #909399; font-size: 13px; margin-top: 10px; }
+
+/* ---- wrong answer inline preview ---- */
+.wrong-preview-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.wrong-preview-head h3 { margin: 0; font-size: 16px; }
+.wrong-preview-count { font-size: 12px; color: #909399; }
+
+.wrong-preview-cards { display: flex; flex-direction: column; gap: 8px; }
+.wrong-preview-card {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; border-radius: 12px; cursor: pointer;
+  background: #fff; border: 1px solid #f0f2f5;
+  transition: all 0.15s;
+}
+.wrong-preview-card:hover { border-color: #d0d5dd; box-shadow: 0 2px 6px rgba(0,0,0,0.04); }
+.wpc-num {
+  width: 24px; height: 24px; border-radius: 7px; display: flex;
+  align-items: center; justify-content: center; flex-shrink: 0;
+  background: #fef2f2; color: #dc2626; font-size: 11px; font-weight: 700;
+  font-family: Georgia, serif;
+}
+.wpc-text {
+  flex: 1; font-size: 13px; color: #1a1a2e; font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wpc-arrow { font-size: 14px; color: #c0c4cc; flex-shrink: 0; }
+
+.wrong-preview-more {
+  text-align: center; font-size: 13px; color: #667eea; font-weight: 600;
+  padding: 10px 0 4px; cursor: pointer;
+}
+.wrong-preview-more:hover { color: #4a5dc7; }
 
 @media (max-width: 768px) {
   .chart-row { grid-template-columns: 1fr; }
