@@ -353,7 +353,7 @@
         </div>
 
         <!-- 错题预览 -->
-        <div class="section" v-if="wrongPreview.length" style="margin-top:28px">
+        <div class="chart-box" v-if="wrongPreview.length" style="margin-top:20px">
           <div class="wp-section-head">
             <div class="wp-head-left">
               <span class="wp-head-icon">
