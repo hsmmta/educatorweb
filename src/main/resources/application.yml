@@ -115,9 +115,9 @@ model-routing:
 
 resourcegen:
   whiteboard:
-    python-path: python3
+    python-path: python
     bridge-script: scripts/whiteboard-bridge.py
-    root: ${user.home}/.claude/skills/whiteboard-video
+    root: dev-docs/whiteboard-main
 
 logging:
   level:
