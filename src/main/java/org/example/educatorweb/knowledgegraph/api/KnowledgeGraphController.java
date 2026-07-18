@@ -3,12 +3,16 @@ package org.example.educatorweb.knowledgegraph.api;
 import org.example.educatorweb.dto.ResponseResult;
 import org.example.educatorweb.knowledgegraph.repository.KnowledgePointRepository;
 import org.example.educatorweb.knowledgegraph.repository.KnowledgePointRepository.KnowledgePointSummary;
+import org.example.educatorweb.knowledgegraph.service.LlmKnowledgeExtractor;
+import org.example.educatorweb.knowledgegraph.build.KgBuildAgent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 
 @RestController
@@ -20,9 +24,15 @@ public class KnowledgeGraphController {
     private static final int MAX_TOTAL_NODES = 800;
 
     private final KnowledgePointRepository kpRepo;
+    private final LlmKnowledgeExtractor extractor;
+    private final KgBuildAgent buildAgent;
 
-    public KnowledgeGraphController(KnowledgePointRepository kpRepo) {
+    public KnowledgeGraphController(KnowledgePointRepository kpRepo,
+                                    LlmKnowledgeExtractor extractor,
+                                    KgBuildAgent buildAgent) {
         this.kpRepo = kpRepo;
+        this.extractor = extractor;
+        this.buildAgent = buildAgent;
     }
 
     /**
@@ -127,6 +137,74 @@ public class KnowledgeGraphController {
         } catch (Exception e) {
             log.error("KnowledgeGraph: overview failed: {}", e.getMessage());
             return ResponseResult.error("知识图谱加载失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * POST /api/knowledge-graph/import
+     * Import knowledge points from text, file, or dataset.
+     */
+    @PostMapping("/import")
+    public ResponseResult<Map<String, Object>> importKnowledge(
+            @RequestParam String mode,
+            @RequestParam(required = false) String text,
+            @RequestParam(required = false) MultipartFile file) {
+        try {
+            switch (mode) {
+                case "text" -> {
+                    if (text == null || text.isBlank()) {
+                        return ResponseResult.error("文本内容不能为空");
+                    }
+                    var ctx = extractor.extract(text);
+                    int count = ctx.prerequisites().size() + ctx.successors().size()
+                        + ctx.relatedConcepts().size() + 1;
+                    log.info("KnowledgeGraph: text import — {} concepts extracted", count);
+                    return ResponseResult.success(Map.of(
+                        "success", true,
+                        "conceptsAdded", count,
+                        "edgesAdded", ctx.prerequisites().size(),
+                        "concepts", ctx.prerequisites(),
+                        "mode", "text"
+                    ));
+                }
+                case "file" -> {
+                    if (file == null || file.isEmpty()) {
+                        return ResponseResult.error("请上传文件");
+                    }
+                    String content = new String(file.getBytes(), StandardCharsets.UTF_8);
+                    var ctx = extractor.extract(content);
+                    int count = ctx.prerequisites().size() + ctx.successors().size()
+                        + ctx.relatedConcepts().size() + 1;
+                    log.info("KnowledgeGraph: file import '{}' — {} concepts extracted",
+                        file.getOriginalFilename(), count);
+                    return ResponseResult.success(Map.of(
+                        "success", true,
+                        "conceptsAdded", count,
+                        "edgesAdded", ctx.prerequisites().size(),
+                        "concepts", ctx.prerequisites(),
+                        "mode", "file"
+                    ));
+                }
+                case "dataset" -> {
+                    if (file == null || file.isEmpty()) {
+                        return ResponseResult.error("请上传数据集文件");
+                    }
+                    Path tmp = Files.createTempFile("kg-import-", ".json");
+                    file.transferTo(tmp.toFile());
+                    KgBuildAgent.BuildResult result = buildAgent.buildIncremental();
+                    Files.deleteIfExists(tmp);
+                    return ResponseResult.success(Map.of(
+                        "success", true,
+                        "knowledgePoints", result.knowledgePoints(),
+                        "relationships", result.relationships(),
+                        "mode", "dataset"
+                    ));
+                }
+                default -> { return ResponseResult.error("不支持的导入模式: " + mode); }
+            }
+        } catch (Exception e) {
+            log.error("KnowledgeGraph: import failed: {}", e.getMessage());
+            return ResponseResult.error("导入失败: " + e.getMessage());
         }
     }
 
