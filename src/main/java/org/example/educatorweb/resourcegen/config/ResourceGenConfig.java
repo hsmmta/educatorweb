@@ -7,6 +7,7 @@ import org.example.educatorweb.resourcegen.infrastructure.OpenAiCompatibleProvid
 import org.example.educatorweb.resourcegen.infrastructure.SeedanceVideoProvider;
 import org.example.educatorweb.resourcegen.infrastructure.StaticImageFallbackProvider;
 import org.example.educatorweb.resourcegen.infrastructure.VideoProvider;
+import org.example.educatorweb.resourcegen.infrastructure.WhiteboardPipelineRunner;
 import org.example.educatorweb.resourcegen.infrastructure.XunfeiProvider;
 import org.example.educatorweb.resourcegen.orchestration.GraphOrchestrator;
 import org.slf4j.Logger;
@@ -160,6 +161,23 @@ public class ResourceGenConfig {
             orchestrator.setCheckpointService(checkpointService);
         }
         return orchestrator;
+    }
+
+    // ---- Whiteboard pipeline ----
+
+    @Value("${resourcegen.whiteboard.python-path:python3}")
+    private String whiteboardPythonPath;
+
+    @Value("${resourcegen.whiteboard.bridge-script:scripts/whiteboard-bridge.py}")
+    private String whiteboardBridgeScript;
+
+    @Value("${resourcegen.whiteboard.root:${user.home}/.claude/skills/whiteboard-video}")
+    private String whiteboardRoot;
+
+    @Bean
+    public WhiteboardPipelineRunner whiteboardPipelineRunner() {
+        return new WhiteboardPipelineRunner(
+            whiteboardPythonPath, whiteboardBridgeScript, whiteboardRoot);
     }
 
     // ---- Helpers ----

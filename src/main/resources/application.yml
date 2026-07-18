@@ -113,6 +113,12 @@ model-routing:
       base-url: https://api-inference.huggingface.co
       api-key: ${HUGGINGFACE_API_KEY:}
 
+resourcegen:
+  whiteboard:
+    python-path: python3
+    bridge-script: scripts/whiteboard-bridge.py
+    root: ${user.home}/.claude/skills/whiteboard-video
+
 logging:
   level:
     org.example.educatorweb: DEBUG
