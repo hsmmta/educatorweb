@@ -54,6 +54,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 BOARD_MODULE = "hand-drawn-infographic-video-board"
@@ -67,6 +68,8 @@ TAIL_CHARS = 2000
 CALIBRATE_TIMEOUT = 240
 D_TIMEOUT = 180
 E_TIMEOUT = 600  # Java side hard-kills the whole tree at 10 min; this is a local backstop
+E_ATTEMPTS = 3       # edge-tts fails transiently under rapid sequential calls; retry the stage
+E_RETRY_PAUSE_S = 5
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 ITEM_REF_RE = re.compile(r"^(?P<base>.+?)-item-(?P<idx>\d+)$")
@@ -657,7 +660,21 @@ def main():
     ]
     if os.environ.get("WHITEBOARD_FULL_QA") != "1":
         e_cmd += ["--skip-checks", "--skip-keyframes"]
-    run_step(e_cmd, cwd=work_dir, label="E render", timeout=E_TIMEOUT, env=windows_node_env(work_dir))
+    # edge-tts (E's first phase) calls Microsoft's online TTS service and fails
+    # transiently under rapid sequential calls; the vendored renderer has no TTS
+    # retry, so one bad segment kills the stage. Retry the whole stage — failures
+    # land in the fast TTS phase, so a lost attempt costs seconds, not a render.
+    env = windows_node_env(work_dir)
+    for attempt in range(1, E_ATTEMPTS + 1):
+        result = run_step(e_cmd, cwd=work_dir, label=f"E render (attempt {attempt}/{E_ATTEMPTS})",
+                          timeout=E_TIMEOUT, check=False, env=env)
+        if result is not None and result.returncode == 0:
+            break
+        rc = result.returncode if result is not None else "n/a"
+        if attempt == E_ATTEMPTS:
+            fail(f"E render failed after {E_ATTEMPTS} attempts (last exit {rc})")
+        say(f"E render failed (exit {rc}); retrying in {E_RETRY_PAUSE_S}s...")
+        time.sleep(E_RETRY_PAUSE_S)
 
     # Step 5: final success contract
     video = work_dir / "video" / "preview.mp4"
