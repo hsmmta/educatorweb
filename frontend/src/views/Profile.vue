@@ -3,7 +3,7 @@
     <div class="page-header">
       <div class="header-left">
         <h1>📊 个人中心</h1>
-        <p>6维学习画像 · 学习报告 · 历史记录</p>
+        <p>6维画像 · 学习报告 · 路径总览</p>
       </div>
       <div class="header-actions">
         <el-button type="primary" :icon="ChatDotRound" @click="$router.push('/profile/chat')">
@@ -353,24 +353,28 @@
         </div>
 
         <!-- 错题预览 -->
-        <div class="section" v-if="wrongPreview.length" style="margin-top:24px">
-          <div class="wrong-preview-head">
-            <h3>📝 错题回顾</h3>
-            <span class="wrong-preview-count">{{ wrongTotal }} 道</span>
-          </div>
-          <div class="wrong-preview-cards">
-            <div
-              v-for="item in wrongPreview" :key="item.id"
-              class="wrong-preview-card"
-              @click="$router.push('/wrong-answers')"
-            >
-              <span class="wpc-num">{{ item.id }}</span>
-              <span class="wpc-text">{{ item.question }}</span>
-              <span class="wpc-arrow">→</span>
+        <div class="section" v-if="wrongPreview.length" style="margin-top:28px">
+          <div class="wp-section-head">
+            <div class="wp-head-left">
+              <span class="wp-head-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+              </span>
+              <h3>错题回顾</h3>
             </div>
+            <span class="wp-head-badge" @click="$router.push('/wrong-answers')">{{ wrongTotal }} 道错题 →</span>
           </div>
-          <div v-if="wrongTotal > 2" class="wrong-preview-more" @click="$router.push('/wrong-answers')">
-            查看全部 {{ wrongTotal }} 道错题 →
+          <div class="wp-cards">
+            <div
+              v-for="(item, idx) in wrongPreview" :key="item.id"
+              class="wp-card"
+              @click="$router.push('/wrong-answers')"
+              :style="{ animationDelay: (idx * 0.06) + 's' }"
+            >
+              <div class="wp-card-accent"></div>
+              <span class="wp-card-num">{{ idx + 1 }}</span>
+              <span class="wp-card-q">{{ item.question }}</span>
+              <span class="wp-card-hint">点击查看</span>
+            </div>
           </div>
         </div>
 
@@ -1163,39 +1167,99 @@ onUnmounted(() => {
 }
 .progress-label { text-align: center; color: #909399; font-size: 13px; margin-top: 10px; }
 
-/* ---- wrong answer inline preview ---- */
-.wrong-preview-head {
-  display: flex; align-items: baseline; justify-content: space-between;
-  margin-bottom: 12px;
+/* ---- wrong answer preview (批改笔记风格) ---- */
+.wp-section-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
 }
-.wrong-preview-head h3 { margin: 0; font-size: 16px; }
-.wrong-preview-count { font-size: 12px; color: #909399; }
+.wp-head-left { display: flex; align-items: center; gap: 10px; }
+.wp-head-left h3 { margin: 0; font-size: 16px; color: #1a1a2e; font-weight: 700; }
+.wp-head-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 10px;
+  background: linear-gradient(135deg, rgba(239,68,68,0.10), rgba(220,38,38,0.05));
+  color: #dc2626;
+  box-shadow: 0 2px 8px rgba(220,38,38,0.08);
+}
+.wp-head-badge {
+  font-size: 12px; font-weight: 600; color: #dc2626;
+  padding: 5px 12px; border-radius: 20px;
+  background: linear-gradient(135deg, rgba(254,242,242,0.80), rgba(255,255,255,0.60));
+  border: 1px solid rgba(239,68,68,0.15);
+  cursor: pointer; transition: all 0.2s;
+}
+.wp-head-badge:hover {
+  background: #fef2f2;
+  border-color: rgba(239,68,68,0.30);
+  box-shadow: 0 2px 8px rgba(239,68,68,0.08);
+}
 
-.wrong-preview-cards { display: flex; flex-direction: column; gap: 8px; }
-.wrong-preview-card {
-  display: flex; align-items: center; gap: 12px;
-  padding: 12px 16px; border-radius: 12px; cursor: pointer;
-  background: #fff; border: 1px solid #f0f2f5;
-  transition: all 0.15s;
+.wp-cards { display: flex; flex-direction: column; gap: 10px; }
+
+.wp-card {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 18px; border-radius: 14px; cursor: pointer;
+  background: #fff;
+  border: 1px solid #f0f2f6;
+  position: relative; overflow: hidden;
+  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: wpFadeSlide 0.45s cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
-.wrong-preview-card:hover { border-color: #d0d5dd; box-shadow: 0 2px 6px rgba(0,0,0,0.04); }
-.wpc-num {
-  width: 24px; height: 24px; border-radius: 7px; display: flex;
+.wp-card::before {
+  content: ''; position: absolute; inset: 0; border-radius: 14px;
+  background: linear-gradient(120deg, rgba(239,68,68,0.025) 0%, transparent 40%);
+  opacity: 0; transition: opacity 0.3s;
+}
+.wp-card:hover {
+  border-color: rgba(239,68,68,0.2);
+  box-shadow: 0 4px 18px rgba(239,68,68,0.06), 0 1px 3px rgba(0,0,0,0.04);
+  transform: translateX(4px);
+}
+.wp-card:hover::before { opacity: 1; }
+
+.wp-card-accent {
+  position: absolute; left: 0; top: 12%; bottom: 12%;
+  width: 3px; border-radius: 0 2px 2px 0;
+  background: linear-gradient(180deg, #ef4444, #dc2626);
+  opacity: 0; transform: scaleY(0.6);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.wp-card:hover .wp-card-accent {
+  opacity: 1; transform: scaleY(1);
+}
+
+.wp-card-num {
+  width: 30px; height: 30px; border-radius: 9px; display: flex;
   align-items: center; justify-content: center; flex-shrink: 0;
-  background: #fef2f2; color: #dc2626; font-size: 11px; font-weight: 700;
-  font-family: Georgia, serif;
+  background: linear-gradient(135deg, #fef2f2, #fee2e2);
+  color: #dc2626; font-size: 13px; font-weight: 800;
+  font-family: Georgia, 'Times New Roman', serif;
+  border: 1px solid rgba(239,68,68,0.12);
+  transition: all 0.2s;
 }
-.wpc-text {
-  flex: 1; font-size: 13px; color: #1a1a2e; font-weight: 500;
+.wp-card:hover .wp-card-num {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: #fff; border-color: transparent;
+  box-shadow: 0 3px 12px rgba(239,68,68,0.25);
+}
+
+.wp-card-q {
+  flex: 1; font-size: 13.5px; color: #1a1a2e; font-weight: 500;
+  line-height: 1.5;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.wpc-arrow { font-size: 14px; color: #c0c4cc; flex-shrink: 0; }
 
-.wrong-preview-more {
-  text-align: center; font-size: 13px; color: #667eea; font-weight: 600;
-  padding: 10px 0 4px; cursor: pointer;
+.wp-card-hint {
+  font-size: 11px; color: #c8cdd8; flex-shrink: 0;
+  opacity: 0; transform: translateX(-4px);
+  transition: all 0.25s;
 }
-.wrong-preview-more:hover { color: #4a5dc7; }
+.wp-card:hover .wp-card-hint { opacity: 1; transform: translateX(0); color: #ef4444; }
+
+@keyframes wpFadeSlide {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
 
 @media (max-width: 768px) {
   .chart-row { grid-template-columns: 1fr; }
