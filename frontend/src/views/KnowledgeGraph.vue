@@ -144,6 +144,17 @@ function colorForCategory(cat) {
   return catIndex >= 0 ? fallbackColors[catIndex % fallbackColors.length] : fallbackColors[0]
 }
 
+// ---- 边样式 ----
+const EDGE_STYLES = {
+  'REQUIRES':   { stroke: '#e6a23c', lineWidth: 1.8, endArrow: true },
+  'CONTAINS':   { stroke: '#667eea', lineWidth: 1.2, endArrow: false },
+  'RELATED_TO': { stroke: '#b0b0b0', lineWidth: 0.8, endArrow: false, lineDash: [4, 4] },
+}
+
+function edgeStyle(relation) {
+  return EDGE_STYLES[relation] ?? EDGE_STYLES['RELATED_TO']
+}
+
 // ---- 数据转换 ----
 function buildGraphData(nodes, edges) {
   return {
@@ -159,11 +170,16 @@ function buildGraphData(nodes, edges) {
         size: 16 + (n.difficulty ?? 1) * 5,
       },
     })),
-    edges: edges.map(e => ({
-      source: e.source,
-      target: e.target,
-      data: { relation: e.relation ?? 'RELATED_TO' },
-    })),
+    edges: edges.map(e => {
+      const rel = e.relation ?? 'RELATED_TO'
+      const style = edgeStyle(rel)
+      return {
+        source: e.source,
+        target: e.target,
+        data: { relation: rel },
+        style,
+      }
+    }),
   }
 }
 
@@ -198,9 +214,11 @@ function initGraph(nodes, edges) {
     edge: {
       type: 'cubic-vertical',
       style: {
-        stroke: '#b0b0b0',
-        lineWidth: 1,
-        opacity: 0.4,
+        stroke: d => d.style?.stroke ?? '#b0b0b0',
+        lineWidth: d => d.style?.lineWidth ?? 0.8,
+        opacity: 0.5,
+        endArrow: d => d.style?.endArrow ?? false,
+        lineDash: d => d.style?.lineDash ?? undefined,
       },
     },
     data,
