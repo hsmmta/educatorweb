@@ -515,9 +515,21 @@ async function doImport() {
   }
 }
 
-onMounted(loadGraph)
+function onResize() {
+  if (!graphRef.value || !graph) return
+  const { clientWidth, clientHeight } = graphRef.value
+  if (clientWidth > 0 && clientHeight > 0) {
+    graph.setSize(clientWidth, clientHeight)
+  }
+}
+
+onMounted(() => {
+  loadGraph()
+  window.addEventListener('resize', onResize)
+})
 
 onUnmounted(() => {
+  window.removeEventListener('resize', onResize)
   graph?.destroy()
   graph = null
 })
