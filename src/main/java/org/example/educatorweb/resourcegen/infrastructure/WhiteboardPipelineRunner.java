@@ -3,7 +3,9 @@ package org.example.educatorweb.resourcegen.infrastructure;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,9 +30,10 @@ public class WhiteboardPipelineRunner {
         this.pythonPath = pythonPath;
         // Normalize to absolute so isAvailable() (JVM cwd) and run() (workDir cwd) resolve identically.
         this.bridgeScript = Path.of(bridgeScript).toAbsolutePath().toString();
-        this.whiteboardRoot = whiteboardRoot;
+        // Normalize to absolute so the bridge (child cwd = temp workDir) resolves the root correctly.
+        this.whiteboardRoot = Path.of(whiteboardRoot).toAbsolutePath().toString();
         log.info("WhiteboardPipelineRunner: python={}, bridge={}, whiteboard={}",
-            pythonPath, this.bridgeScript, whiteboardRoot);
+            pythonPath, this.bridgeScript, this.whiteboardRoot);
     }
 
     /**
@@ -58,6 +61,21 @@ public class WhiteboardPipelineRunner {
         pb.environment().put("PYTHONUTF8", "1");  // force UTF-8 on pipes (Windows zh locale defaults to GBK)
 
         Process process = pb.start();
+
+        // Consume merged output in background to prevent pipe buffer deadlock
+        StringBuilder outputBuf = new StringBuilder();
+        Thread drainThread = new Thread(() -> {
+            try (var reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    outputBuf.append(line).append('\n');
+                }
+            } catch (IOException ignored) {}
+        }, "whiteboard-output-drain");
+        drainThread.setDaemon(true);
+        drainThread.start();
+
         try {
             boolean finished = process.waitFor(TIMEOUT_MINUTES, TimeUnit.MINUTES);
             if (!finished) {
@@ -70,9 +88,8 @@ public class WhiteboardPipelineRunner {
         }
 
         int exitCode = process.exitValue();
-
-        // Read output for diagnostics
-        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        drainThread.join(5000);
+        String output = outputBuf.toString();
         if (exitCode != 0) {
             log.error("Whiteboard pipeline failed (exit={}): {}", exitCode, output);
             throw new IOException("Whiteboard pipeline failed with exit code " + exitCode);
@@ -112,6 +129,10 @@ public class WhiteboardPipelineRunner {
             // Quick check: does the bridge script exist?
             if (!Files.exists(Path.of(bridgeScript))) {
                 log.warn("Whiteboard bridge script not found: {}", bridgeScript);
+                return false;
+            }
+            if (!Files.isDirectory(Path.of(whiteboardRoot))) {
+                log.warn("Whiteboard root not found: {}", whiteboardRoot);
                 return false;
             }
             // Check python can at least be invoked

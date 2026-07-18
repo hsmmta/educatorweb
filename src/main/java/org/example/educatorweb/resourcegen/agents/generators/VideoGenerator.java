@@ -8,6 +8,10 @@ import org.example.educatorweb.resourcegen.model.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import javax.imageio.ImageIO;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
@@ -40,6 +44,10 @@ public class VideoGenerator extends AbstractGenerator {
                 return doWhiteboardGenerate(state);
             }
             log.info("Whiteboard not available, using legacy slideshow pipeline");
+        } catch (InterruptedException e) {
+            // Do not run the legacy pipeline on an interrupted thread
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Video generation interrupted", e);
         } catch (Exception e) {
             log.warn("Whiteboard pipeline failed, falling back to legacy", e);
         }
@@ -63,12 +71,25 @@ public class VideoGenerator extends AbstractGenerator {
             log.info("Narration script: {} segments", script.segments().size());
 
             // Phase 3: Seedream generates hand-drawn whiteboard images
+            // (single-board failure -> placeholder; all boards failed -> legacy)
             Path imagesDir = workDir.resolve("images");
             Files.createDirectories(imagesDir);
+            int realImages = 0;
             for (BoardPlan.Board board : boardPlan.boards()) {
-                byte[] image = generateBoardImage(board);
+                byte[] image;
+                try {
+                    image = generateBoardImage(board);
+                    realImages++;
+                    log.info("Board {}: generated image ({} bytes)", board.id(), image.length);
+                } catch (Exception e) {
+                    log.warn("Board {} image generation failed, using placeholder: {}",
+                        board.id(), e.getMessage());
+                    image = placeholderBoardImage();
+                }
                 Files.write(imagesDir.resolve(board.id() + ".png"), image);
-                log.info("Board {}: generated image ({} bytes)", board.id(), image.length);
+            }
+            if (realImages == 0) {
+                throw new IllegalStateException("All board images failed");
             }
 
             // Phase 4: Write JSON files for the bridge script
@@ -97,20 +118,31 @@ public class VideoGenerator extends AbstractGenerator {
     private BoardPlan generateBoardPlan(GenerationState state) {
         ModelProvider textProvider = registry.resolve(ResourceType.DOC);
         String prompt = buildBoardPlanPrompt(state);
-        String response = textProvider.chat(prompt);
-        BoardPlan plan;
-        try {
-            response = stripJsonMarkdown(response);
-            plan = objectMapper.readValue(response, BoardPlan.class);
-        } catch (Exception e) {
-            log.warn("Failed to parse BoardPlan, using fallback: {}", e.getMessage());
-            return buildFallbackBoardPlan(state);
+        BoardPlan plan = tryParseBoardPlan(textProvider.chat(prompt));
+        if (plan == null) {
+            log.warn("Board plan invalid, retrying board plan generation");
+            plan = tryParseBoardPlan(textProvider.chat(prompt));
         }
-        if (!hasValidStructure(plan)) {
-            log.warn("BoardPlan missing boards or sections, using fallback");
-            return buildFallbackBoardPlan(state);
+        if (plan == null) {
+            throw new IllegalStateException("Board plan generation failed after retry");
         }
         return sanitizeBoardIds(plan);
+    }
+
+    /** Parse + structurally validate one LLM response; null means "bad response". */
+    private BoardPlan tryParseBoardPlan(String response) {
+        BoardPlan plan;
+        try {
+            plan = objectMapper.readValue(stripJsonMarkdown(response), BoardPlan.class);
+        } catch (Exception e) {
+            log.warn("Failed to parse BoardPlan: {}", e.getMessage());
+            return null;
+        }
+        if (!hasValidStructure(plan)) {
+            log.warn("BoardPlan missing boards or sections");
+            return null;
+        }
+        return plan;
     }
 
     private boolean hasValidStructure(BoardPlan plan) {
@@ -212,21 +244,44 @@ public class VideoGenerator extends AbstractGenerator {
         return videoProvider.generateImage(prompt);
     }
 
+    /** Blank whiteboard-colored 1920x1080 PNG used when a single board's image generation fails. */
+    private byte[] placeholderBoardImage() throws IOException {
+        BufferedImage img = new BufferedImage(1920, 1080, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = img.createGraphics();
+        g.setColor(new Color(245, 242, 235));
+        g.fillRect(0, 0, 1920, 1080);
+        g.dispose();
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ImageIO.write(img, "png", out);
+        return out.toByteArray();
+    }
+
     private NarrationScript generateNarrationScript(BoardPlan boardPlan, GenerationState state) {
         ModelProvider textProvider = registry.resolve(ResourceType.DOC);
         String prompt = buildNarrationPrompt(boardPlan, state);
-        String response = textProvider.chat(prompt);
+        NarrationScript script = tryParseNarrationScript(textProvider.chat(prompt));
+        if (script == null) {
+            log.warn("Narration script invalid, retrying narration script generation");
+            script = tryParseNarrationScript(textProvider.chat(prompt));
+        }
+        if (script == null) {
+            throw new IllegalStateException("Narration script generation failed after retry");
+        }
+        return script;
+    }
+
+    /** Parse + validate one LLM response; null means "bad response". */
+    private NarrationScript tryParseNarrationScript(String response) {
         NarrationScript script;
         try {
-            response = stripJsonMarkdown(response);
-            script = objectMapper.readValue(response, NarrationScript.class);
+            script = objectMapper.readValue(stripJsonMarkdown(response), NarrationScript.class);
         } catch (Exception e) {
-            log.warn("Failed to parse NarrationScript, using fallback: {}", e.getMessage());
-            return buildFallbackNarration(boardPlan, state);
+            log.warn("Failed to parse NarrationScript: {}", e.getMessage());
+            return null;
         }
         if (script.segments() == null || script.segments().isEmpty()) {
-            log.warn("NarrationScript has no segments, using fallback");
-            return buildFallbackNarration(boardPlan, state);
+            log.warn("NarrationScript has no segments");
+            return null;
         }
         return script;
     }
@@ -390,52 +445,6 @@ public class VideoGenerator extends AbstractGenerator {
                     "本节课要点回顾", "Summary with key takeaways", "wide", 10, "fade")
             ),
             "Realistic", 80
-        );
-    }
-
-    // ═══════════════════════════════════════════
-    // Fallback builders for whiteboard mode
-    // ═══════════════════════════════════════════
-
-    private BoardPlan buildFallbackBoardPlan(GenerationState state) {
-        return new BoardPlan(
-            state.knowledgePoint(),
-            "hand-drawn-whiteboard",
-            List.of(
-                new BoardPlan.Board("board-1", state.knowledgePoint(), "核心概念",
-                    List.of(
-                        new BoardPlan.BoardSection("concept", "核心概念",
-                            List.of("定义", "关键要素", "应用场景"),
-                            List.of("circle", "underline"))
-                    ))
-            )
-        );
-    }
-
-    private NarrationScript buildFallbackNarration(BoardPlan plan, GenerationState state) {
-        if (plan.boards().isEmpty()) {
-            return new NarrationScript(state.knowledgePoint(), 30, List.of());
-        }
-        BoardPlan.Board firstBoard = plan.boards().get(0);
-        String sectionId = firstBoard.sections().isEmpty()
-            ? "concept" : firstBoard.sections().get(0).id();
-        return new NarrationScript(
-            state.knowledgePoint(),
-            30,
-            List.of(
-                new NarrationScript.ScriptSegment("intro", 0, 5.0, 5.2,
-                    "欢迎来到本节课程，我们将学习" + state.knowledgePoint() + "。",
-                    firstBoard.id(), sectionId,
-                    List.of(new NarrationScript.ScriptAction("circle", sectionId, state.knowledgePoint(), 0.8))),
-                new NarrationScript.ScriptSegment("detail", 5.2, 15.0, 15.3,
-                    "让我们深入了解" + state.knowledgePoint() + "的核心概念和应用。",
-                    firstBoard.id(), sectionId,
-                    List.of(new NarrationScript.ScriptAction("underline", sectionId, "核心概念", 0.8))),
-                new NarrationScript.ScriptSegment("summary", 15.3, 25.0, 25.0,
-                    "以上就是本节关于" + state.knowledgePoint() + "的全部内容。",
-                    firstBoard.id(), sectionId,
-                    List.of())
-            )
         );
     }
 
