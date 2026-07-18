@@ -53,6 +53,12 @@
             <el-tag v-for="p in selectedNode.prerequisites" :key="p" size="small" type="warning"
               style="margin:2px">{{ p }}</el-tag>
           </div>
+          <div class="sidebar-field" v-if="selectedNode.upstreamTree?.length">
+            <span class="field-label">🔗 前置知识链（共 {{ selectedNode.upstreamCount }} 个）</span>
+            <ul class="upstream-tree">
+              <TreeNode v-for="node in selectedNode.upstreamTree" :key="node.id" :node="node" />
+            </ul>
+          </div>
           <div class="sidebar-field" v-if="selectedNode.successors?.length">
             <span class="field-label">后继知识</span>
             <el-tag v-for="s in selectedNode.successors" :key="s" size="small" type="success"
@@ -182,6 +188,26 @@ function bfsUpstream(startId, maxDepth = 5) {
   return visited
 }
 
+/**
+ * 将 BFS 结果 {nodeId → depth} 转为嵌套树，用于侧边栏渲染
+ * 返回起始节点的直接前置子树（按深度分组）
+ */
+function buildUpstreamTree(upstreamMap, startId) {
+  if (!upstreamMap || upstreamMap.size === 0) return []
+
+  function childrenOf(parentId) {
+    return allEdges.value
+      .filter(e => e.relation === 'REQUIRES' && e.target === parentId && upstreamMap.has(e.source))
+      .map(e => ({
+        id: e.source,
+        name: allNodes.value.find(n => n.id === e.source)?.name ?? e.source,
+        children: childrenOf(e.source),
+      }))
+  }
+
+  return childrenOf(startId)
+}
+
 // ---- 数据转换 ----
 function buildGraphData(nodes, edges) {
   return {
@@ -299,6 +325,7 @@ function initGraph(nodes, edges) {
         prerequisites: prereqs,
         successors: succs,
         upstreamCount: upstream.size - 1,  // exclude self
+        upstreamTree: buildUpstreamTree(upstream, nodeId),
       }
     }
   })
@@ -402,6 +429,20 @@ function onFilter(cat) {
     filteredIds.has(e.source) && filteredIds.has(e.target))
 
   initGraph(filteredNodes, filteredEdges)
+}
+
+// 递归树节点组件（用于侧边栏前置知识链）
+const TreeNode = {
+  name: 'TreeNode',
+  props: { node: Object },
+  template: `
+    <li>
+      <span class="tree-node-name">{{ node.name }}</span>
+      <ul v-if="node.children && node.children.length">
+        <TreeNode v-for="child in node.children" :key="child.id" :node="child" />
+      </ul>
+    </li>
+  `
 }
 
 async function loadGraph() {
@@ -557,4 +598,28 @@ onUnmounted(() => {
 
 .import-modes { text-align: center; }
 .import-result { margin-top: 16px; }
+
+.upstream-tree {
+  list-style: none;
+  padding-left: 0;
+  margin: 8px 0 0;
+}
+.upstream-tree ul {
+  padding-left: 16px;
+  border-left: 1px solid #e0e0e0;
+  margin-left: 4px;
+}
+.tree-node-name {
+  display: inline-block;
+  padding: 2px 8px;
+  margin: 2px 0;
+  font-size: 12px;
+  color: #e6a23c;
+  background: rgba(230, 162, 60, 0.08);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.tree-node-name:hover {
+  background: rgba(230, 162, 60, 0.18);
+}
 </style>
