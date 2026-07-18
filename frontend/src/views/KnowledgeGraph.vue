@@ -16,12 +16,13 @@
     </div>
 
     <!-- Graph -->
-    <div class="kg-chart" ref="chartRef">
+    <div class="kg-chart" ref="chartRef" @wheel.prevent>
       <div v-if="loading" class="kg-loading">
         <el-icon class="is-loading" :size="36"><Loading /></el-icon>
         <p>加载知识图谱...</p>
       </div>
-      <v-chart v-else-if="chartOption" :option="chartOption" autoresize style="width:100%;height:100%" />
+      <v-chart v-else-if="chartOption" :option="chartOption" autoresize
+        style="width:100%;height:100%;min-height:600px" />
       <div v-else class="kg-error">
         <p>暂无数据，请检查 Neo4j 连接</p>
       </div>
@@ -149,7 +150,8 @@ const chartOption = computed(() => {
         name: c,
         itemStyle: { color: categoryColors[i % categoryColors.length] }
       })),
-      roam: true,
+      roam: true,        // enables both mouse-wheel zoom AND drag-to-pan
+      scaleLimit: { min: 0.1, max: 5 },
       draggable: true,
       force: { repulsion: 300, edgeLength: [60, 250], gravity: 0.1 },
       emphasis: { focus: 'adjacency', lineStyle: { width: 3 } },
@@ -232,6 +234,8 @@ onMounted(loadGraph)
 .kg-chart {
   flex: 1;
   position: relative;
+  overflow: hidden;
+  touch-action: none; /* prevent browser gestures from stealing drag */
 }
 
 .kg-loading, .kg-error {
