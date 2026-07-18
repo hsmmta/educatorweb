@@ -457,14 +457,17 @@ async function loadGraph() {
 
       const catSet = new Set(allNodes.value.map(n => n.category))
       categories.value = [...catSet].sort()
-
-      await nextTick()  // wait for v-else-if to mount graphRef
-      initGraph(allNodes.value, allEdges.value)
     }
   } catch (e) {
     console.error('KnowledgeGraph: load failed:', e)
   } finally {
     loading.value = false
+  }
+
+  // initGraph AFTER loading=false so v-else-if mounts graphRef
+  if (allNodes.value.length > 0) {
+    await nextTick()
+    initGraph(allNodes.value, allEdges.value)
   }
 }
 
