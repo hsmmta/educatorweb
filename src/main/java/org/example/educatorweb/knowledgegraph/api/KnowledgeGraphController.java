@@ -16,7 +16,8 @@ import java.util.*;
 public class KnowledgeGraphController {
 
     private static final Logger log = LoggerFactory.getLogger(KnowledgeGraphController.class);
-    private static final int MAX_NODES = 300;
+    private static final int SEED_NODES = 300;
+    private static final int MAX_TOTAL_NODES = 800;
 
     private final KnowledgePointRepository kpRepo;
 
@@ -35,65 +36,85 @@ public class KnowledgeGraphController {
             long total = kpRepo.count();
             log.info("KnowledgeGraph: total nodes in Neo4j = {}", total);
 
-            // Use lightweight summary DTOs (id, name, category, difficulty only)
+            // Build lookup: id -> summary for all nodes
             List<KnowledgePointSummary> summaries = kpRepo.findAllSummaries();
-            List<Map<String, Object>> nodes = new ArrayList<>();
-            Set<String> nodeIds = new HashSet<>();
+            Map<String, KnowledgePointSummary> summaryMap = new LinkedHashMap<>();
+            for (KnowledgePointSummary s : summaries) {
+                summaryMap.put(s.id(), s);
+            }
+            log.info("KnowledgeGraph: total summaries = {}", summaryMap.size());
 
+            // Seed with first MAX_NODES
+            List<Map<String, Object>> nodes = new ArrayList<>();
+            Set<String> nodeIds = new LinkedHashSet<>();
             int count = 0;
             for (KnowledgePointSummary s : summaries) {
-                if (count >= MAX_NODES) break;
-                Map<String, Object> node = new LinkedHashMap<>();
-                node.put("id", s.id());
-                node.put("name", s.name() != null ? s.name() : s.id());
-                node.put("category", normalizeCategory(s.category()));
-                node.put("difficulty", s.difficulty());
-                node.put("description", "");
-                nodes.add(node);
+                if (count >= SEED_NODES) break;
                 nodeIds.add(s.id());
                 count++;
             }
-            log.info("KnowledgeGraph: loaded {} nodes (lightweight)", nodes.size());
 
-            // Fetch edges only for the loaded nodes (max 300 × 3 queries = 900 queries, manageable)
+            // Fetch edges: when target is outside seed set, pull it in automatically
             Set<String> edgeKeys = new HashSet<>();
             List<Map<String, Object>> edges = new ArrayList<>();
             int edgeErrors = 0;
 
-            for (String nid : nodeIds) {
+            // Work with a snapshot of current IDs (will grow as new nodes are pulled in)
+            List<String> workList = new ArrayList<>(nodeIds);
+            Set<String> processed = new HashSet<>();
+
+            for (int i = 0; i < workList.size(); i++) {
+                String nid = workList.get(i);
+                if (!processed.add(nid)) continue;
+                if (nodeIds.size() >= MAX_TOTAL_NODES) break;  // cap total expansion
+
                 try {
                     for (var p : kpRepo.findPrerequisites(nid)) {
-                        if (nodeIds.contains(p.getId())) {
-                            String key = nid + "|REQUIRES|" + p.getId();
-                            if (edgeKeys.add(key)) {
-                                edges.add(Map.of("source", nid, "target", p.getId(), "relation", "REQUIRES"));
-                            }
+                        String key = nid + "|REQUIRES|" + p.getId();
+                        if (edgeKeys.add(key)) {
+                            edges.add(Map.of("source", nid, "target", p.getId(), "relation", "REQUIRES"));
+                            if (nodeIds.size() < MAX_TOTAL_NODES && nodeIds.add(p.getId())) workList.add(p.getId());
                         }
                     }
                 } catch (Exception e) { edgeErrors++; }
 
                 try {
                     for (var c : kpRepo.findSubPoints(nid)) {
-                        if (nodeIds.contains(c.getId())) {
-                            String key = nid + "|CONTAINS|" + c.getId();
-                            if (edgeKeys.add(key)) {
-                                edges.add(Map.of("source", nid, "target", c.getId(), "relation", "CONTAINS"));
-                            }
+                        String key = nid + "|CONTAINS|" + c.getId();
+                        if (edgeKeys.add(key)) {
+                            edges.add(Map.of("source", nid, "target", c.getId(), "relation", "CONTAINS"));
+                            if (nodeIds.size() < MAX_TOTAL_NODES && nodeIds.add(c.getId())) workList.add(c.getId());
                         }
                     }
                 } catch (Exception e) { edgeErrors++; }
 
                 try {
                     for (var r : kpRepo.findRelated(nid)) {
-                        if (nodeIds.contains(r.getId())) {
-                            String key1 = nid + "|RELATED|" + r.getId();
-                            String key2 = r.getId() + "|RELATED|" + nid;
-                            if (edgeKeys.add(key1) && edgeKeys.add(key2)) {
-                                edges.add(Map.of("source", nid, "target", r.getId(), "relation", "RELATED_TO"));
-                            }
+                        String key = nid + "|RELATED|" + r.getId();
+                        if (edgeKeys.add(key)) {
+                            edges.add(Map.of("source", nid, "target", r.getId(), "relation", "RELATED_TO"));
+                            if (nodeIds.size() < MAX_TOTAL_NODES && nodeIds.add(r.getId())) workList.add(r.getId());
                         }
                     }
                 } catch (Exception e) { edgeErrors++; }
+            }
+
+            // Build node list from all collected IDs
+            for (String id : nodeIds) {
+                KnowledgePointSummary s = summaryMap.get(id);
+                Map<String, Object> node = new LinkedHashMap<>();
+                node.put("id", id);
+                if (s != null) {
+                    node.put("name", s.name() != null ? s.name() : id);
+                    node.put("category", normalizeCategory(s.category()));
+                    node.put("difficulty", s.difficulty());
+                } else {
+                    node.put("name", id);
+                    node.put("category", "概念");
+                    node.put("difficulty", 1);
+                }
+                node.put("description", "");
+                nodes.add(node);
             }
 
             log.info("KnowledgeGraph: {} nodes, {} edges ({} edge errors)",
