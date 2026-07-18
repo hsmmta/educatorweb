@@ -3,6 +3,8 @@ package org.example.educatorweb.knowledgegraph.build.api;
 import org.example.educatorweb.knowledgegraph.build.KaggleImporter;
 import org.example.educatorweb.knowledgegraph.build.KgBuildAgent;
 import org.example.educatorweb.knowledgegraph.build.MOOCCubeImporter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -11,6 +13,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/kg")
 public class KgBuildController {
+
+    private static final Logger log = LoggerFactory.getLogger(KgBuildController.class);
 
     private final KgBuildAgent agent;
     private final KaggleImporter kaggleImporter;
@@ -30,9 +34,17 @@ public class KgBuildController {
     }
 
     @PostMapping("/build")
-    public ResponseEntity<Map<String, Object>> build(@RequestParam(defaultValue = "incremental") String mode) {
+    public ResponseEntity<Map<String, Object>> build(@RequestParam(defaultValue = "incremental") String mode,
+                                                      @RequestParam(defaultValue = "false") boolean confirm) {
         KgBuildAgent.BuildResult result;
         if ("full".equalsIgnoreCase(mode)) {
+            if (!confirm) {
+                return ResponseEntity.badRequest().body(Map.of(
+                    "error", "mode=full will DELETE all knowledge graph data. Add ?confirm=true to proceed.",
+                    "currentNodeCount", agent.getStatus().get("knowledgePointCount")
+                ));
+            }
+            log.warn("KgBuildController: FULL build requested with confirmation — clearing all KG data");
             result = agent.buildFull();
         } else {
             result = agent.buildIncremental();
