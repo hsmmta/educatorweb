@@ -201,6 +201,10 @@ function initGraph(nodes, edges) {
     },
     node: {
       type: 'circle',
+      state: {
+        dimmed: { opacity: 0.15 },
+        active: { opacity: 0.9 },
+      },
       style: {
         fill: d => d.style?.fill ?? '#667eea',
         size: d => d.style?.size ?? 20,
@@ -213,6 +217,10 @@ function initGraph(nodes, edges) {
     },
     edge: {
       type: 'cubic-vertical',
+      state: {
+        dimmed: { opacity: 0.08 },
+        active: { opacity: 0.5 },
+      },
       style: {
         stroke: d => d.style?.stroke ?? '#b0b0b0',
         lineWidth: d => d.style?.lineWidth ?? 0.8,
@@ -242,6 +250,39 @@ function initGraph(nodes, edges) {
 
   // ---- Canvas click handler — dismiss sidebar ----
   graph.on('canvas:click', () => { selectedNode.value = null })
+
+  // ---- Hover 交互 ----
+  graph.on('node:pointerenter', (evt) => {
+    const nodeId = evt.target?.id
+    if (!nodeId) return
+
+    // 获取直接邻居
+    const neighbors = graph.getNeighborNodesData(nodeId)
+    const highlightIds = new Set([nodeId, ...neighbors.map(n => n.id)])
+
+    // 淡出非高亮节点和所有边
+    const allNodeData = graph.getNodeData()
+    allNodeData.forEach(n => {
+      graph.setElementState(n.id, highlightIds.has(n.id) ? 'active' : 'dimmed')
+    })
+
+    const allEdgeData = graph.getEdgeData()
+    allEdgeData.forEach(e => {
+      graph.setElementState(e.id, 'dimmed')
+    })
+  })
+
+  graph.on('node:pointerleave', () => {
+    // 恢复所有元素
+    const allNodeData = graph.getNodeData()
+    allNodeData.forEach(n => {
+      graph.setElementState(n.id, 'active')
+    })
+    const allEdgeData = graph.getEdgeData()
+    allEdgeData.forEach(e => {
+      graph.setElementState(e.id, 'active')
+    })
+  })
 
   graph.render()
 }
