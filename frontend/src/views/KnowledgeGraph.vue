@@ -116,7 +116,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { Search, Refresh, Loading, Close, Upload, UploadFilled } from '@element-plus/icons-vue'
 import { Graph } from '@antv/g6'
 import request from '@/api/request'
@@ -457,6 +457,7 @@ async function loadGraph() {
       const catSet = new Set(allNodes.value.map(n => n.category))
       categories.value = [...catSet].sort()
 
+      await nextTick()  // wait for v-else-if to mount graphRef
       initGraph(allNodes.value, allEdges.value)
     }
   } catch (e) {
