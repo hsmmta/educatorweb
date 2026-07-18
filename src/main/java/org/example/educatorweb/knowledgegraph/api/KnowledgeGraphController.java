@@ -71,7 +71,7 @@ public class KnowledgeGraphController {
                         }
                     }
                     // CONTAINS
-                    for (KnowledgePoint c : kpRepo.findSubKnowledgePoints(nid)) {
+                    for (KnowledgePoint c : kpRepo.findSubPoints(nid)) {
                         if (nodeIds.contains(c.getId())) {
                             String key = nid + "|CONTAINS|" + c.getId();
                             if (edgeKeys.add(key)) {
