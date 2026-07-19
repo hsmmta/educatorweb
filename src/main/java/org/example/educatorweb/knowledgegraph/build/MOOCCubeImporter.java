@@ -71,11 +71,21 @@ public class MOOCCubeImporter {
      *
      * @param dirPath path to the MOOCCube root (contains entities/ and relations/)
      */
+    // Maps MOOCCube original concept ID → our slug ID, built during import
+    private final Map<String, String> moocIdToSlug = new LinkedHashMap<>();
+
     public ImportResult importFromDir(String dirPath) throws IOException {
         Path base = Path.of(dirPath);
+        moocIdToSlug.clear();
 
-        // Step 1: Load concepts (filter for CS/AI/ML only)
-        List<ConceptRecord> concepts = loadConcepts(base.resolve("entities/concept.json"));
+        // Step 0: Pre-load prerequisite concept IDs (to include them in filter)
+        Set<String> prereqConceptIds = loadPrereqConceptIds(
+            base.resolve("relations/prerequisite-dependency.json"));
+        log.info("MOOCCube: {} unique concepts in prerequisite data", prereqConceptIds.size());
+
+        // Step 1: Load concepts (filter for CS/AI/ML + prereq concepts)
+        List<ConceptRecord> concepts = loadConcepts(base.resolve("entities/concept.json"),
+            prereqConceptIds);
         log.info("MOOCCube: loaded {} CS/AI/ML concepts from {} total",
             concepts.size(), countLines(base.resolve("entities/concept.json")));
 
@@ -112,13 +122,18 @@ public class MOOCCubeImporter {
         log.info("MOOCCube: {} new concepts after dedup ({} existing)",
             newConcepts.size(), concepts.size() - newConcepts.size());
 
-        // Step 7: AI-complete missing fields
-        aiCompleteFields(newConcepts);
+        // Step 7: AI-complete missing fields (skip if too many — would take too long)
+        if (newConcepts.size() <= 300) {
+            aiCompleteFields(newConcepts);
+        } else {
+            log.info("MOOCCube: skipping AI completion for {} concepts (too many, would take too long)",
+                newConcepts.size());
+        }
 
         // Step 8: Write concepts to Neo4j
         int nodeCount = writeConcepts(newConcepts);
 
-        // Step 9: Write prerequisites from MOOCCube data
+        // Step 9: Write prerequisites from MOOCCube data (prereq + parent-son)
         int edgeCount = writeEdges(newConcepts, prereqMap, parentMap);
 
         // Step 10: Write courses and BELONGS_TO edges
@@ -129,9 +144,40 @@ public class MOOCCubeImporter {
                 nodeCount, edgeCount, courseCount, dirPath));
     }
 
+    /** Collect all concept IDs referenced in prerequisite-dependency.json */
+    private Set<String> loadPrereqConceptIds(Path path) throws IOException {
+        Set<String> ids = new LinkedHashSet<>();
+        if (!Files.exists(path)) return ids;
+        try (BufferedReader r = Files.newBufferedReader(path)) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                String[] parts = line.split("\t");
+                if (parts.length >= 2) {
+                    ids.add(parts[0].trim());
+                    ids.add(parts[1].trim());
+                }
+            }
+        }
+        return ids;
+    }
+
     // ─── Loaders ──────────────────────────────────────────────
 
-    private List<ConceptRecord> loadConcepts(Path path) throws IOException {
+    private static final Set<String> CS_KEYWORDS = Set.of(
+        "计算机", "人工智能", "机器学习", "模式识别", "数据挖掘", "自然语言处理",
+        "软件", "编程", "算法", "信息科学", "电子", "通信", "网络", "数据库",
+        "操作系统", "编译", "安全", "密码", "分布式", "并行", "嵌入式"
+    );
+
+    private static boolean isCSRelated(String conceptId) {
+        for (String kw : CS_KEYWORDS) {
+            if (conceptId.contains(kw)) return true;
+        }
+        return false;
+    }
+
+    private List<ConceptRecord> loadConcepts(Path path, Set<String> prereqConceptIds)
+            throws IOException {
         List<ConceptRecord> result = new ArrayList<>();
         try (BufferedReader r = Files.newBufferedReader(path)) {
             String line;
@@ -153,10 +199,8 @@ public class MOOCCubeImporter {
 
                 if (id == null || name == null) continue;
 
-                // Filter: only CS/AI concepts
-                if (!id.contains("计算机科学技术") && !id.contains("人工智能")
-                    && !id.contains("机器学习") && !id.contains("模式识别")
-                    && !id.contains("数据挖掘") && !id.contains("自然语言处理")) continue;
+                // Filter: CS/AI concepts OR concepts with prerequisite data
+                if (!isCSRelated(id) && !prereqConceptIds.contains(id)) continue;
 
                 // Parse explanation
                 String field = "", description = "";
@@ -183,6 +227,9 @@ public class MOOCCubeImporter {
                 String slug = name.replaceAll("[^a-z0-9\\u4e00-\\u9fff]", "_")
                     .replaceAll("^_|_$", "").toLowerCase();
                 if (slug.length() > 80) slug = slug.substring(0, 80);
+
+                // Store MOOCCube ID → slug mapping for exact edge matching later
+                moocIdToSlug.put(id, slug);
 
                 result.add(new ConceptRecord(slug, name, category, 3, description));
             }
@@ -363,38 +410,60 @@ public class MOOCCubeImporter {
                             Map<String, List<String>> prereqMap,
                             Map<String, List<String>> parentMap) {
         int count = 0;
-        // Build name→id index for concept records
-        Map<String, String> nameToId = new LinkedHashMap<>();
-        for (var r : records) nameToId.put(r.name, r.id);
+        // Build slug set for fast lookup
+        Set<String> slugSet = new LinkedHashSet<>();
+        Map<String, String> slugToName = new LinkedHashMap<>();
+        for (var r : records) {
+            slugSet.add(r.id);
+            slugToName.put(r.id, r.name);
+        }
 
         try (Session s = writer.newSession()) {
-            for (var r : records) {
-                // Check MOOCCube prereq entries for this concept
-                Set<String> prereqs = new LinkedHashSet<>();
-                // Try both the concept's original MOOCCube ID and name
-                for (var e : prereqMap.entrySet()) {
-                    if (e.getKey().contains(r.name) || r.name.contains(e.getKey())) {
-                        for (String preId : e.getValue()) {
-                            // Find matching concept by name
-                            for (var rr : records) {
-                                if (preId.contains(rr.name) || rr.name.contains(preId)) {
-                                    prereqs.add(rr.id);
-                                }
-                            }
-                        }
-                    }
-                }
 
-                for (String preId : prereqs) {
-                    if (preId.equals(r.id)) continue;
-                    s.run("MATCH (a:KnowledgePoint {id:$from}), (b:KnowledgePoint {id:$to}) " +
+            // ── Step 1: REQUIRES from prerequisite-dependency.json ──
+            // prereqMap: prereqConceptId → [list of concepts it depends on]
+            // Meaning: A → B means "A depends on B" (B is prerequisite of A)
+            for (var entry : prereqMap.entrySet()) {
+                String moocA = entry.getKey();              // the dependent concept
+                String slugA = moocIdToSlug.get(moocA);    // our slug
+                if (slugA == null || !slugSet.contains(slugA)) continue;
+
+                for (String moocB : entry.getValue()) {    // the prerequisite
+                    String slugB = moocIdToSlug.get(moocB);
+                    if (slugB == null || !slugSet.contains(slugB)) continue;
+                    if (slugA.equals(slugB)) continue;
+
+                    // A REQUIRES B (B is prerequisite of A)
+                    s.run("MATCH (a:KnowledgePoint {id:$a}), (b:KnowledgePoint {id:$b}) " +
                           "MERGE (a)-[:REQUIRES]->(b)",
-                        Map.of("from", r.id, "to", preId));
+                        Map.of("a", slugA, "b", slugB));
+                    count++;
+                }
+            }
+
+            // ── Step 2: REQUIRES from parent-son.json ──
+            // parent-son: parentId → [child concepts]
+            // Meaning: parent is broader, child is narrower
+            // For knowledge: child REQUIRES parent (need broad concept before specific)
+            for (var entry : parentMap.entrySet()) {
+                String moocParent = entry.getKey();
+                String slugParent = moocIdToSlug.get(moocParent);
+                if (slugParent == null || !slugSet.contains(slugParent)) continue;
+
+                for (String moocChild : entry.getValue()) {
+                    String slugChild = moocIdToSlug.get(moocChild);
+                    if (slugChild == null || !slugSet.contains(slugChild)) continue;
+                    if (slugParent.equals(slugChild)) continue;
+
+                    // Child REQUIRES Parent
+                    s.run("MATCH (a:KnowledgePoint {id:$child}), (b:KnowledgePoint {id:$parent}) " +
+                          "MERGE (a)-[:REQUIRES]->(b)",
+                        Map.of("child", slugChild, "parent", slugParent));
                     count++;
                 }
             }
         }
-        log.info("MOOCCube: wrote {} edges", count);
+        log.info("MOOCCube: wrote {} REQUIRES edges (prereq + parent-son)", count);
         return count;
     }
 

@@ -120,8 +120,17 @@ public class LearningPathController {
         ResourceRecommendService.RecommendationResult result =
             recommendService.getDailyRecommendations(studentId, target);
 
+        // When a target topic is provided, generate topic-specific resources
+        // based on the student's personal profile (六维画像).
+        List<org.example.educatorweb.learningpath.model.RecommendedResource> topicResources = List.of();
+        if (target != null && !target.isBlank()) {
+            topicResources = recommendService.recommendByTopic(studentId, target,
+                "用户搜索: " + target);
+        }
+
         return ResponseResult.success(Map.of(
             "allRecommendations", (Object) result.allRecommendations(),
+            "topicRecommendations", (Object) topicResources,
             "profileBased", (Object) result.profileBased(),
             "progressBased", (Object) result.progressBased(),
             "weaknessBased", (Object) result.weaknessBased(),

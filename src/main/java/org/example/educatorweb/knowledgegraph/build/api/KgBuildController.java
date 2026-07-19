@@ -2,6 +2,7 @@ package org.example.educatorweb.knowledgegraph.build.api;
 
 import org.example.educatorweb.knowledgegraph.build.KaggleImporter;
 import org.example.educatorweb.knowledgegraph.build.KgBuildAgent;
+import org.example.educatorweb.knowledgegraph.build.LlmPrerequisiteGenerator;
 import org.example.educatorweb.knowledgegraph.build.MOOCCubeImporter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,12 +20,15 @@ public class KgBuildController {
     private final KgBuildAgent agent;
     private final KaggleImporter kaggleImporter;
     private final MOOCCubeImporter moocImporter;
+    private final LlmPrerequisiteGenerator llmPrereqGen;
 
     public KgBuildController(KgBuildAgent agent, KaggleImporter kaggleImporter,
-                              MOOCCubeImporter moocImporter) {
+                              MOOCCubeImporter moocImporter,
+                              LlmPrerequisiteGenerator llmPrereqGen) {
         this.agent = agent;
         this.kaggleImporter = kaggleImporter;
         this.moocImporter = moocImporter;
+        this.llmPrereqGen = llmPrereqGen;
     }
 
     @PostMapping("/sources/sync")
@@ -90,6 +94,28 @@ public class KgBuildController {
                 "message", result.message()
             ));
         } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Use LLM (DeepSeek) to identify missing prerequisite relationships.
+     * Processes concepts that have 0 REQUIRES edges, batch by batch.
+     *
+     * @param limit max concepts to process (default 0 = unlimited, ~100 recommended per run)
+     */
+    @PostMapping("/generate-prerequisites")
+    public ResponseEntity<Map<String, Object>> generatePrerequisites(
+            @RequestParam(defaultValue = "0") int limit) {
+        try {
+            LlmPrerequisiteGenerator.GenResult result = llmPrereqGen.generate(limit);
+            return ResponseEntity.ok(Map.of(
+                "conceptsChecked", result.conceptsChecked(),
+                "prereqsFound", result.prereqsFound(),
+                "message", result.message()
+            ));
+        } catch (Exception e) {
+            log.error("KgBuildController: LLM prerequisite generation failed: {}", e.getMessage());
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }

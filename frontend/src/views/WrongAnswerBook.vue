@@ -75,14 +75,14 @@
                 :class="['wb-action-btn', { active: !showAnswer[item.id] }]"
                 @click="toggleAnswer(item.id)"
               >
-                {{ showAnswer[item.id] === false ? '👁 显示答案' : '🙈 不看答案重做' }}
+                {{ showAnswer[item.id] === false ? '👁 显示答案' : '🙈 重做此题' }}
               </button>
               <button
-                v-if="showAnswer[item.id] === false && !redone[item.id]"
+                v-if="showAnswer[item.id] === false"
                 class="wb-action-btn primary"
                 @click="resetRedo(item.id)"
               >
-                🔄 重置
+                🔄 重新选择
               </button>
             </div>
           </div>
@@ -111,7 +111,7 @@ import request from '@/api/request'
 
 const wrongAnswers = ref([])
 const showAnswer = ref({})     // per-card answer visibility (default: show)
-const redone = ref({})         // per-card redo completed flag
+const redone = ref({})         // per-card redo completed flag (persisted to localStorage)
 const redoPick = ref({})       // per-card current redo selection
 const redoResult = ref({})     // per-card redo result
 
@@ -124,11 +124,27 @@ const getStudentId = () => {
   } catch { return 'anonymous' }
 }
 
+// Persist redone state to localStorage
+const redoneStorageKey = () => `wrongAnswerRedone_${getStudentId()}`
+
+const loadRedoneFromStorage = () => {
+  try {
+    const stored = localStorage.getItem(redoneStorageKey())
+    if (stored) redone.value = JSON.parse(stored)
+  } catch { redone.value = {} }
+}
+
+const saveRedoneToStorage = () => {
+  localStorage.setItem(redoneStorageKey(), JSON.stringify(redone.value))
+}
+
 const loadWrongAnswers = async () => {
   try {
     const res = await request.get('/quiz/wrong-answers/' + getStudentId())
     const list = (res.data?.data || []).slice(0, 50)
     wrongAnswers.value = list
+    // Restore persisted redone state
+    loadRedoneFromStorage()
     // Default: show answers
     list.forEach(item => { showAnswer.value[item.id] = true })
   } catch { wrongAnswers.value = [] }
@@ -139,19 +155,29 @@ const toggleAnswer = (id) => {
 }
 
 const handleOptionClick = (item, opt) => {
-  // Only allow clicking in redo mode (answer hidden)
   if (showAnswer.value[item.id] !== false) return
   const letter = optLetter(opt)
   if (!letter) return
   redoPick.value = { ...redoPick.value, [item.id]: letter }
-  const correct = letter.toUpperCase() === (item.correctAnswer || '').trim().toUpperCase()
+
+  const correctAnswer = (item.correctAnswer || '').trim()
+  // Match by letter (A/B/C/D) — works for multiple choice
+  const letterMatch = letter.toUpperCase() === correctAnswer.toUpperCase()
+  // Match by content — for 判断题 where correctAnswer is "正确"/"对" etc.
+  const content = stripLetter(opt).trim()
+  const contentMatch = content && correctAnswer &&
+    (content === correctAnswer || content.includes(correctAnswer) || correctAnswer.includes(content))
+
+  const correct = letterMatch || contentMatch
   redoResult.value = { ...redoResult.value, [item.id]: correct ? 'correct' : 'incorrect' }
   if (correct) {
     redone.value = { ...redone.value, [item.id]: true }
+    saveRedoneToStorage()
   }
 }
 
 const resetRedo = (id) => {
+  // Clear current pick/result but keep redone badge permanently
   redoPick.value = { ...redoPick.value, [id]: null }
   redoResult.value = { ...redoResult.value, [id]: null }
 }

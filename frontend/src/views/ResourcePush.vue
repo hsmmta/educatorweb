@@ -197,13 +197,10 @@
     <transition name="panel-slide">
       <div v-if="panelMode" class="bottom-panel">
         <div class="panel-header">
-          <h3>{{ panelMode === 'search' ? '📐 学习路径 & 推荐资源' : '📋 推送历史' }}</h3>
+          <h3>📐 学习路径 & 推荐资源</h3>
           <el-button :icon="Close" text @click="closePanel" />
         </div>
         <div class="panel-body">
-
-          <!-- 模式 1: 搜索结果 -->
-          <template v-if="panelMode === 'search'">
             <div v-if="searchLoading" class="loading-area">
               <el-skeleton :rows="4" animated />
             </div>
@@ -251,8 +248,28 @@
                   <div class="sr-section-head">
                     <span class="sr-section-icon">🎯</span>
                     <h4>推荐资源</h4>
+                    <span v-if="searchResult.topicRecommendations?.length" style="font-size:11px;color:#909399;margin-left:8px">
+                      基于你的六维画像 · 针对「{{ searchText }}」
+                    </span>
                   </div>
-                  <div v-if="searchResult.allRecommendations?.length" class="rec-list">
+                  <!-- Topic-specific recommendations (from profile) -->
+                  <div v-if="searchResult.topicRecommendations?.length" class="rec-list">
+                    <div
+                      v-for="(item, ri) in searchResult.topicRecommendations"
+                      :key="'t-'+ri"
+                      class="rec-item"
+                      @click="goLearn(item, searchText)"
+                    >
+                      <span class="rec-type-icon">{{ iconForType(item.resourceType) }}</span>
+                      <div class="rec-info">
+                        <strong>{{ item.title }}</strong>
+                        <span class="rec-meta">{{ item.reason || item.resourceType }}</span>
+                      </div>
+                      <el-button size="small" type="primary" round @click.stop="goLearn(item, searchText)">生成</el-button>
+                    </div>
+                  </div>
+                  <!-- Fallback: generic recommendations -->
+                  <div v-else-if="searchResult.allRecommendations?.length" class="rec-list">
                     <div
                       v-for="(item, ri) in searchResult.allRecommendations"
                       :key="ri"
@@ -276,61 +293,57 @@
               <p class="empty-title">未找到相关内容</p>
               <p class="empty-desc">尝试搜索其他知识点关键词</p>
             </div>
-          </template>
-
-          <!-- 模式 2: 推送历史 -->
-          <template v-if="panelMode === 'history'">
-            <div class="history-timeline">
-              <div class="history-list-actions" v-if="pushHistory.length">
-                <el-button size="small" type="danger" text @click="clearHistory">🗑 清空全部历史</el-button>
-              </div>
-              <div v-if="!pushHistory.length" class="empty-state">
-                <span class="empty-icon-wrap">📋</span>
-                <p class="empty-title">暂无推送记录</p>
-                <p class="empty-desc">系统推送的资源将按日期归档在这里</p>
-              </div>
-
-              <div v-for="dateGroup in groupedHistory" :key="dateGroup.date" class="history-date-group">
-                <div class="history-date-header">
-                  <div class="hdh-left">
-                    <span class="hdh-dot"></span>
-                    <span class="date-label">{{ dateGroup.date }}</span>
-                  </div>
-                  <span class="date-count">{{ dateGroup.topics.length }} 个话题</span>
-                </div>
-                <div class="history-topic-cards">
-                  <div v-for="(topic, ti) in dateGroup.topics" :key="ti" :class="['topic-card', { weakness: topic.isWeakness }]">
-                    <div class="topic-card-left" :class="{ weak: topic.isWeakness }"></div>
-                    <div class="topic-card-body">
-                      <div class="topic-card-header">
-                        <strong>{{ topic.topic }}</strong>
-                        <span class="topic-card-time">{{ topic.time }}</span>
-                      </div>
-                      <div class="topic-card-meta">
-                        <span class="topic-trigger">{{ topic.triggerLabel }}</span>
-                        <span v-if="topic.isWeakness" class="topic-weak-badge">薄弱环节</span>
-                      </div>
-                      <div class="push-resource-tags">
-                        <span
-                          v-for="(res, ri) in topic.resources" :key="ri"
-                          class="res-tag"
-                          :data-type="res.resourceType"
-                          @click="goLearn(res, topic.topic)"
-                        >
-                          <span class="res-tag-icon">{{ iconForType(res.resourceType) }}</span>
-                          {{ res.resourceTypeLabel || res.resourceType }}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </template>
 
         </div>
       </div>
     </transition>
+
+    <!-- ========== 推送历史弹窗（独立，不挤掉搜索面板） ========== -->
+    <el-dialog v-model="showHistory" title="📋 推送历史" width="680px" :close-on-click-modal="false">
+      <div class="history-list-actions" v-if="pushHistory.length">
+        <el-button size="small" type="danger" text @click="clearHistory">🗑 清空全部历史</el-button>
+      </div>
+      <div v-if="!pushHistory.length" class="empty-state">
+        <span class="empty-icon-wrap">📋</span>
+        <p class="empty-title">暂无推送记录</p>
+        <p class="empty-desc">系统推送的资源将按日期归档在这里</p>
+      </div>
+      <div v-for="dateGroup in groupedHistory" :key="dateGroup.date" class="history-date-group">
+        <div class="history-date-header">
+          <div class="hdh-left">
+            <span class="hdh-dot"></span>
+            <span class="date-label">{{ dateGroup.date }}</span>
+          </div>
+          <span class="date-count">{{ dateGroup.topics.length }} 个话题</span>
+        </div>
+        <div class="history-topic-cards">
+          <div v-for="(topic, ti) in dateGroup.topics" :key="ti" :class="['topic-card', { weakness: topic.isWeakness }]">
+            <div class="topic-card-left" :class="{ weak: topic.isWeakness }"></div>
+            <div class="topic-card-body">
+              <div class="topic-card-header">
+                <strong>{{ topic.topic }}</strong>
+                <span class="topic-card-time">{{ topic.time }}</span>
+              </div>
+              <div class="topic-card-meta">
+                <span class="topic-trigger">{{ topic.triggerLabel }}</span>
+                <span v-if="topic.isWeakness" class="topic-weak-badge">薄弱环节</span>
+              </div>
+              <div class="push-resource-tags">
+                <span
+                  v-for="(res, ri) in topic.resources" :key="ri"
+                  class="res-tag"
+                  :data-type="res.resourceType"
+                  @click="goLearn(res, topic.topic)"
+                >
+                  <span class="res-tag-icon">{{ iconForType(res.resourceType) }}</span>
+                  {{ res.resourceTypeLabel || res.resourceType }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -494,14 +507,18 @@ const groupedHistory = computed(() => {
 
 function goLearn(res, topic) {
   if (res.preGeneratedId) {
-    // Navigate to pre-generated resource content
     window.location.href = '/resource/' + res.preGeneratedId
-  } else {
-    // Fallback: go to generation page if no pre-generated content
-    const t = topic || searchText.value
-    const title = res.title || res.resourceTypeLabel || res.resourceType || ''
-    window.location.href = '/learning?topic=' + encodeURIComponent(t + ' - ' + title)
+    return
   }
+  // Jump to chat with topic locked, mode set to the resource type.
+  // Maps resource types to chat modes: DOC→doc, QUIZ→quiz, VIDEO→video, etc.
+  // This matches the quiz generation pattern: topic locked, supports re-generation.
+  const t = topic || searchText.value
+  const resType = (res.resourceType || '').toLowerCase()
+  // Chat modes: chat, doc, ppt, quiz, mindmap, code, html, video
+  const validModes = ['doc', 'ppt', 'quiz', 'mindmap', 'code', 'html', 'video']
+  const mode = validModes.includes(resType) ? resType : 'doc'
+  window.location.href = '/chat?topic=' + encodeURIComponent(t) + '&mode=' + mode
 }
 
 // ---------- knowledge point browse ----------
@@ -555,16 +572,17 @@ async function handleSearch() {
 }
 
 // ---------- panel ----------
+const showHistory = ref(false)
+
 function openPanel(mode) {
   if (mode === 'history') {
-    panelMode.value = 'history'
+    showHistory.value = true
     loadPushHistory()
   }
 }
 
 function closePanel() {
   panelMode.value = null
-  selectedHistoryId.value = null
 }
 
 // ---------- data loading ----------
@@ -606,8 +624,7 @@ async function clearHistory() {
     await clearPushHistoryApi(getStudentId())
     pushHistory.value = []
     latestPush.value = null
-    selectedHistoryId.value = null
-    panelMode.value = null
+    showHistory.value = false
     ElMessage.success('推送历史已清空')
   } catch (e) {
     ElMessage.error('清空失败: ' + (e.response?.data?.message || e.message))
@@ -617,11 +634,13 @@ async function clearHistory() {
 // ---------- SSE push-refresh handler ----------
 const refreshHandler = () => { loadLatestPush() }
 
-onMounted(() => {
-  loadLatestPush()
-  loadContext()
-  loadKnowledgePoints()
-  loadSavedPath()
+onMounted(async () => {
+  await Promise.all([loadLatestPush(), loadContext(), loadKnowledgePoints(), loadSavedPath()])
+  // Auto-restore search panel if a saved path exists
+  if (savedPath.value?.targetKnowledgePoint) {
+    searchText.value = savedPath.value.targetKnowledgePoint
+    await handleSearch()
+  }
   window.addEventListener('push-refresh', refreshHandler)
 })
 

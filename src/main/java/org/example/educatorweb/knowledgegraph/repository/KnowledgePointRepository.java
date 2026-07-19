@@ -62,4 +62,15 @@ public interface KnowledgePointRepository extends Neo4jRepository<KnowledgePoint
 
     /** Lightweight knowledge point summary for the browse list. */
     record KnowledgePointSummary(String id, String name, String category, Integer difficulty) {}
+
+    /**
+     * Top N nodes by total relationship count (degree-based priority).
+     * Used for graph seeding — ensures we sample from the densest part of the KG.
+     */
+    @Query("MATCH (kp:KnowledgePoint) " +
+           "OPTIONAL MATCH (kp)-[r]-(:KnowledgePoint) " +
+           "RETURN kp.id AS id, kp.name AS name, kp.category AS category, kp.difficulty AS difficulty, count(r) AS degree " +
+           "ORDER BY degree DESC " +
+           "LIMIT $limit")
+    List<KnowledgePointSummary> findTopByDegree(@Param("limit") int limit);
 }
