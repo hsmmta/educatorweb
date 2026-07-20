@@ -37,7 +37,7 @@ class ReviewAgentTest {
         reviewKeywordsConfig = new ReviewKeywordsConfig();
         // Use a real ModelRegistry backed by a mock ModelProvider
         // (avoid Mockito inline-mock issue with concrete class on JDK 25)
-        var registry = new ModelRegistry(provider, provider);
+        var registry = new ModelRegistry(provider, provider, java.util.Map.of("deepseek", provider));
         reviewAgent = new ReviewAgent(registry, reviewKeywordsConfig);
     }
 
