@@ -107,9 +107,7 @@ public class TopicDetector {
         }
     }
 
-    // ---------------------------------------------------------------
     // Private helpers
-    // ---------------------------------------------------------------
 
     @Transactional
     private void cacheOldTopic(String userId, LastMessageState prev,

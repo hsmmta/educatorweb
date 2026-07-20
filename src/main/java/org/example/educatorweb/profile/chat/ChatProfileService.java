@@ -194,8 +194,6 @@ public class ChatProfileService {
         }
     }
 
-    // ========== 查询方法 ==========
-
     @Transactional(readOnly = true)
     public List<ChatMessage> getSessionMessages(String sessionId) {
         return messageRepo.findBySessionIdOrderBySequenceAsc(sessionId);
@@ -205,8 +203,6 @@ public class ChatProfileService {
     public Optional<ChatSession> getLatestSession(String studentId, String sessionType) {
         return sessionRepo.findFirstByStudentIdAndSessionTypeOrderByCreatedAtDesc(studentId, sessionType);
     }
-
-    // ========== 私有方法 ==========
 
     private String buildConversationHistory(List<ChatMessage> messages) {
         StringBuilder sb = new StringBuilder();
@@ -301,8 +297,6 @@ public class ChatProfileService {
         if (d == null) return "-";
         return String.format("%.0f%%", d * 100);
     }
-
-    // ========== 中→英映射（前端中文标签 → DB CHECK 约束允许的枚举值） ==========
 
     /** 认知风格：DB CHECK 仅允许 visual / auditory */
     private static final Map<String, String> COGNITIVE_STYLE_MAP = new LinkedHashMap<>();

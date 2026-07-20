@@ -18,15 +18,13 @@ import java.util.stream.Collectors;
 /**
  * Imports knowledge points from the MOOCCube dataset (Tsinghua University).
  *
- * <p>MOOCCube provides:
- * <ul>
- *   <li>entities/concept.json — 114K+ concepts with id, name, en, explanation</li>
- *   <li>entities/course.json — 706 courses with id, name, about</li>
- *   <li>relations/course-concept.json — tab-separated course_id → concept_id</li>
- *   <li>relations/prerequisite-dependency.json — tab-separated A → B (A depends on B)</li>
- *   <li>relations/concept-field.json — concept → field hierarchy</li>
- *   <li>relations/parent-son.json — parent-child concept relationships</li>
- * </ul>
+ * MOOCCube provides:
+ * entities/concept.json — 114K+ concepts with id, name, en, explanation
+ * entities/course.json — 706 courses with id, name, about
+ * relations/course-concept.json — tab-separated course_id → concept_id
+ * relations/prerequisite-dependency.json — tab-separated A → B (A depends on B)
+ * relations/concept-field.json — concept → field hierarchy
+ * relations/parent-son.json — parent-child concept relationships
  */
 @Component
 public class MOOCCubeImporter {
@@ -128,8 +126,6 @@ public class MOOCCubeImporter {
             String.format("MOOCCube: %d concepts, %d edges, %d courses from %s",
                 nodeCount, edgeCount, courseCount, dirPath));
     }
-
-    // ─── Loaders ──────────────────────────────────────────────
 
     private List<ConceptRecord> loadConcepts(Path path) throws IOException {
         List<ConceptRecord> result = new ArrayList<>();
@@ -279,8 +275,6 @@ public class MOOCCubeImporter {
         return map;
     }
 
-    // ─── AI completion ────────────────────────────────────────
-
     private void aiCompleteFields(List<ConceptRecord> records) {
         List<ConceptRecord> needsCompletion = records.stream()
             .filter(r -> r.category.equals("概念") || r.description.isBlank())
@@ -338,8 +332,6 @@ public class MOOCCubeImporter {
             log.warn("MOOCCube: AI batch failed: {}", e.getMessage());
         }
     }
-
-    // ─── Neo4j writes ─────────────────────────────────────────
 
     private int writeConcepts(List<ConceptRecord> records) {
         int count = 0;
@@ -438,16 +430,12 @@ public class MOOCCubeImporter {
         return count;
     }
 
-    // ─── Helpers ──────────────────────────────────────────────
-
     private long countLines(Path path) throws IOException {
         if (!Files.exists(path)) return 0;
         try (var lines = Files.lines(path)) {
             return lines.count();
         }
     }
-
-    // ─── Internal records ─────────────────────────────────────
 
     static class ConceptRecord {
         String id, name, category, description;

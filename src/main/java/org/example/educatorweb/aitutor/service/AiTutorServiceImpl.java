@@ -207,9 +207,7 @@ public class AiTutorServiceImpl implements AiTutorService {
             });
     }
 
-    // ---------------------------------------------------------------
     // Private helpers
-    // ---------------------------------------------------------------
 
     private List<DocumentSnippet> retrieveKnowledge(String studentId, String question) {
         try {
@@ -293,9 +291,7 @@ public class AiTutorServiceImpl implements AiTutorService {
         }
     }
 
-    // ---------------------------------------------------------------
     // Additional retrieval sources (KG + Web)
-    // ---------------------------------------------------------------
 
     private KnowledgeContext queryKnowledgeGraph(String question) {
         try {
@@ -324,9 +320,7 @@ public class AiTutorServiceImpl implements AiTutorService {
         }
     }
 
-    // ---------------------------------------------------------------
     // Prompt building
-    // ---------------------------------------------------------------
 
     private String buildPrompt(String question,
                                List<DocumentSnippet> ragSnippets,

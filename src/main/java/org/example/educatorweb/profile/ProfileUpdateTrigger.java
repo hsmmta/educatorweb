@@ -13,13 +13,11 @@ import java.time.temporal.ChronoUnit;
  * 画像更新触发器。
  * 追踪学生累计对话轮数，满足条件时触发画像分析更新。
  *
- * <p>触发条件（任一满足即触发）：
- * <ul>
- *   <li>累计对话轮数 >= 7</li>
- *   <li>距离上次画像更新超过 3 天</li>
- * </ul>
+ * 触发条件（任一满足即触发）：
+ * 累计对话轮数 >= 7
+ * 距离上次画像更新超过 3 天
  *
- * <p>触发后重置轮数计数器，更新 lastProfileUpdateAt 时间戳。
+ * 触发后重置轮数计数器，更新 lastProfileUpdateAt 时间戳。
  */
 @Service
 public class ProfileUpdateTrigger {

@@ -19,15 +19,13 @@ import java.util.stream.Collectors;
  * Imports knowledge points from external datasets (Kaggle ML Course KG, etc.)
  * into the Neo4j knowledge graph.
  *
- * <p>Workflow:
- * <ol>
- *   <li>Read node/edge CSV files from a directory</li>
- *   <li>Clean IDs (English slugs) and names</li>
- *   <li>Dedupe against existing Neo4j nodes (name similarity ≥0.8 → skip)</li>
- *   <li>AI-complete missing fields (category, difficulty, description) in batches</li>
- *   <li>Write nodes and edges to Neo4j</li>
- *   <li>Call existing linkCoursesToKps + linkKpsToResources in KgBuildAgent</li>
- * </ol>
+ * Workflow:
+ * Read node/edge CSV files from a directory
+ * Clean IDs (English slugs) and names
+ * Dedupe against existing Neo4j nodes (name similarity ≥0.8 → skip)
+ * AI-complete missing fields (category, difficulty, description) in batches
+ * Write nodes and edges to Neo4j
+ * Call existing linkCoursesToKps + linkKpsToResources in KgBuildAgent
  */
 @Component
 public class KaggleImporter {
@@ -114,8 +112,6 @@ public class KaggleImporter {
             String.format("Imported %d nodes, %d edges from %s", nodeCount, edgeCount, dirPath));
     }
 
-    // ─── CSV parsing ──────────────────────────────────────────
-
     private List<Map<String, String>> readCsv(Path path) throws IOException {
         if (!Files.exists(path)) {
             log.warn("KaggleImporter: file not found: {}", path);
@@ -138,8 +134,6 @@ public class KaggleImporter {
         }
         return rows;
     }
-
-    // ─── Normalization ────────────────────────────────────────
 
     private KpRecord normalize(Map<String, String> raw) {
         String id = raw.getOrDefault("node_id",
@@ -171,8 +165,6 @@ public class KaggleImporter {
         return new KpRecord(id, name, category, difficulty, desc, prerequisites, related);
     }
 
-    // ─── Deduplication ────────────────────────────────────────
-
     private double similarity(String a, String b) {
         if (a == null || b == null) return 0;
         if (a.equalsIgnoreCase(b)) return 1.0;
@@ -197,8 +189,6 @@ public class KaggleImporter {
         }
         return set;
     }
-
-    // ─── AI completion ────────────────────────────────────────
 
     private void aiCompleteFields(List<KpRecord> records) {
         // Batch records needing completion
@@ -270,8 +260,6 @@ public class KaggleImporter {
         }
     }
 
-    // ─── Neo4j writes ─────────────────────────────────────────
-
     private int writeNodes(List<KpRecord> records) {
         int count = 0;
         try (Session s = writer.newSession()) {
@@ -321,8 +309,6 @@ public class KaggleImporter {
         log.info("KaggleImporter: wrote {} edges", count);
         return count;
     }
-
-    // ─── Internal record ──────────────────────────────────────
 
     static class KpRecord {
         String id, name, category, description, prerequisites, related;

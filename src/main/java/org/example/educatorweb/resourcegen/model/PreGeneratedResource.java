@@ -8,10 +8,10 @@ import java.util.UUID;
  * Persisted generated resource — actual content (not just metadata).
  * Produced by the multi-agent generation pipeline during push or path planning.
  *
- * <p>File layout on disk:
- * <pre>{@code
+ * File layout on disk:
+ * <pre>
  *   generated-resources/{userId}/{pushType}/{topic}/{resourceType}/{filename}
- * }</pre>
+ * </pre>
  * where pushType is one of {@code topic-push} or {@code path-push}.
  */
 @Entity

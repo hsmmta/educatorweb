@@ -26,8 +26,8 @@ import java.util.concurrent.Executors;
  * Triggers async pre-generation of actual resource content via the
  * multi-agent pipeline, then persists results to DB + organized filesystem.
  *
- * <p>Folder layout:
- * <pre>{@code
+ * Folder layout:
+ * <pre>
  *   generated-resources/{userId}/
  *     topic-push/          ← TOPIC_PUSH
  *       {topic}/
@@ -36,7 +36,7 @@ import java.util.concurrent.Executors;
  *         MINDMAP/→ {topic}思维导图.md
  *     path-push/           ← PATH_PUSH
  *       ...
- * }</pre>
+ * </pre>
  */
 @Service
 public class ResourcePreGenerateService {

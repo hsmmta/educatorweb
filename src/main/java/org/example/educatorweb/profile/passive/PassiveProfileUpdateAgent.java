@@ -15,12 +15,10 @@ import java.util.*;
 /**
  * Passive profile update agent (Agent 1).
  *
- * <p>Unlike the active {@code ProfileExtractionAgent}, this agent:
- * <ul>
- *   <li>Receives the current profile (with confidence) plus a single conversation slice</li>
- *   <li>Returns feature values + a "judgment" (match/conflict/new/insufficient)</li>
- *   <li>Confidence adjustment is deterministic (Java-side formula), not LLM-assigned</li>
- * </ul>
+ * Unlike the active {@code ProfileExtractionAgent}, this agent:
+ * Receives the current profile (with confidence) plus a single conversation slice
+ * Returns feature values + a "judgment" (match/conflict/new/insufficient)
+ * Confidence adjustment is deterministic (Java-side formula), not LLM-assigned
  */
 @Component
 public class PassiveProfileUpdateAgent {

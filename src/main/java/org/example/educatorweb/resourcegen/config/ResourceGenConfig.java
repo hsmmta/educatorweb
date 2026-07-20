@@ -179,7 +179,7 @@ public class ResourceGenConfig {
 
     /**
      * RestClient.Builder with reasonable timeouts for LLM calls.
-     * <p>
+     * 
      * Forces HTTP/1.1 because Java's HttpClient (HTTP/2 by default) can hang
      * on certain server/CDN configurations (observed with api.deepseek.com).
      * curl (HTTP/1.1) works reliably against the same endpoint.

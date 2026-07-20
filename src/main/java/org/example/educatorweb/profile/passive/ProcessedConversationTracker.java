@@ -12,7 +12,7 @@ import java.util.List;
  * Tracks which conversations have been processed for profile updates
  * using a Redis timestamp cursor. Each student gets an independent cursor.
  *
- * <p>Key pattern: {@code profile:cursor:{studentId}} → ISO-8601 timestamp.
+ * Key pattern: {@code profile:cursor:{studentId}} → ISO-8601 timestamp.
  * Any conversation with a message timestamp > cursor is considered unprocessed.
  */
 @Component

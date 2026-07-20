@@ -62,9 +62,7 @@ public class PushPriorityCalculator {
         return sorted;
     }
 
-    // ---------------------------------------------------------------
     // Private helpers
-    // ---------------------------------------------------------------
 
     private Map<String, BigDecimal> buildProficiencyMap(String studentId) {
         List<StudentKnowledgeProficiency> details = kpProficiencyRepo.findByStudentId(studentId);

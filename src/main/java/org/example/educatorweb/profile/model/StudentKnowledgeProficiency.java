@@ -37,7 +37,6 @@ public class StudentKnowledgeProficiency {
     // 无参构造方法（JPA 必需）
     public StudentKnowledgeProficiency() {}
 
-    // ====== getter / setter ======
     public String getStudentId() { return studentId; }
     public void setStudentId(String studentId) { this.studentId = studentId; }
 

@@ -60,7 +60,7 @@ public class ProfileController {
     /**
      * AI 画像分析接口。
      *
-     * <p>触发 LangChain4j 智能体分析学生在 Chroma 中的自然对话记录，
+     * 触发 LangChain4j 智能体分析学生在 Chroma 中的自然对话记录，
      * 自动推断各画像维度的值，并更新到 MySQL。
      *
      * <pre>
@@ -87,7 +87,7 @@ public class ProfileController {
     /**
      * 画像概览与学习评估摘要。
      *
-     * <p>返回前端个人中心所需的完整数据：六维画像取值与置信度、学习统计、
+     * 返回前端个人中心所需的完整数据：六维画像取值与置信度、学习统计、
      * 综合评分、强弱项分析、学习建议。
      *
      * <pre>

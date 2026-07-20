@@ -31,7 +31,7 @@ public class ConversationController {
      * List all conversations for a user, grouped by conversationId.
      * Returns title (first question, truncated) and last message timestamp.
      *
-     * <p>The blocking Chroma call is offloaded to a bounded-elastic scheduler
+     * The blocking Chroma call is offloaded to a bounded-elastic scheduler
      * so it never runs on the Netty event loop.
      */
     @GetMapping("/conversations")

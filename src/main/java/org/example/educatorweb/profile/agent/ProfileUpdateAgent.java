@@ -8,7 +8,7 @@ import dev.langchain4j.service.V;
  * LangChain4j AI service agent that analyzes student conversations
  * to infer and update learner profile dimensions.
  *
- * <p>Returns a JSON string that is parsed into {@link org.example.educatorweb.profile.model.ProfileAnalysisResult}.
+ * Returns a JSON string that is parsed into {@link org.example.educatorweb.profile.model.ProfileAnalysisResult}.
  */
 public interface ProfileUpdateAgent {
 

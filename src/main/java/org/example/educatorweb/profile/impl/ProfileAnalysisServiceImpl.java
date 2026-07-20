@@ -98,9 +98,7 @@ public class ProfileAnalysisServiceImpl implements ProfileAnalysisService {
         return result;
     }
 
-    // ---------------------------------------------------------------
     // Helpers — data fetching
-    // ---------------------------------------------------------------
 
     private StudentProfile fetchOrCreateProfile(String studentId) {
         StudentProfile profile = profileService.getProfile(studentId);
@@ -142,9 +140,7 @@ public class ProfileAnalysisServiceImpl implements ProfileAnalysisService {
         }
     }
 
-    // ---------------------------------------------------------------
     // Helpers — serialization / formatting
-    // ---------------------------------------------------------------
 
     /** Build a safe serialization-friendly map of profile fields. */
     private Map<String, Object> safeProfileMap(StudentProfile p) {
@@ -202,9 +198,7 @@ public class ProfileAnalysisServiceImpl implements ProfileAnalysisService {
         }
     }
 
-    // ---------------------------------------------------------------
     // Helpers — parsing & applying results
-    // ---------------------------------------------------------------
 
     private ProfileAnalysisResult parseAgentResponse(String response) {
         try {

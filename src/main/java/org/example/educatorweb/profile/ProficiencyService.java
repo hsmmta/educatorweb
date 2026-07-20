@@ -21,16 +21,12 @@ import java.util.List;
  * 管理知识点粒度的 rawProficiency（原始正确率）、effectiveProficiency（艾宾浩斯衰减后）
  * 和 confidence（置信度）。
  *
- * <h3>三维评估模型</h3>
- * <ul>
- *   <li><b>rawProficiency</b> = correctQuestions / totalQuestions — 存储在 DB，每次答题后更新</li>
- *   <li><b>effectiveProficiency</b> = rawProficiency × retention — 反映遗忘后的当前真实水平</li>
- *   <li><b>confidence</b> = 1 - e^(-k × totalQuestions) — 基于答题数量的可信度，不受时间影响</li>
- * </ul>
+ *rawProficiency = correctQuestions / totalQuestions — 存储在 DB，每次答题后更新
+ *effectiveProficiency = rawProficiency × retention — 反映遗忘后的当前真实水平
+ *confidence = 1 - e^(-k × totalQuestions) — 基于答题数量的可信度，不受时间影响
  *
- * <h3>艾宾浩斯遗忘衰减</h3>
  * retention = e^(-daysSinceLastStudy / halfLife)
- * <p>halfLife 根据原始掌握度分级设定，符合"掌握越牢固遗忘越慢"的记忆规律：
+ * halfLife 根据原始掌握度分级设定，符合"掌握越牢固遗忘越慢"的记忆规律：
  * <pre>
  *   rawProficiency ≥ 0.8  → halfLife = 30天
  *   0.6 ≤ raw < 0.8       → halfLife = 21天
@@ -56,8 +52,6 @@ public class ProficiencyService {
         this.proficiencyRepo = proficiencyRepo;
         this.profileService = profileService;
     }
-
-    // ======================== 写入：答题更新 ========================
 
     /**
      * 根据单次答题结果更新知识点掌握度。
@@ -126,8 +120,6 @@ public class ProficiencyService {
             prof.getLastStudyTime());
     }
 
-    // ======================== 读取：含遗忘衰减 ========================
-
     /**
      * 获取学生在指定知识点上的有效掌握度（含遗忘衰减）。
      * 从未答过题返回 proficiency=0, confidence=0。
@@ -165,8 +157,6 @@ public class ProficiencyService {
             totalQuestions, correctQuestions, lastStudyTime, daysSinceStudy);
     }
 
-    // ======================== 静态公式 ========================
-
     /**
      * 计算置信度。不存数据库，每次基于答题总数实时计算。
      * confidence(n) = 1 - e^(-k × n)，k = 0.4
@@ -184,9 +174,9 @@ public class ProficiencyService {
     /**
      * 应用艾宾浩斯遗忘衰减，计算有效掌握度。
      *
-     * <p>effectiveProficiency = rawProficiency × e^(-daysSince / halfLife)
+     * effectiveProficiency = rawProficiency × e^(-daysSince / halfLife)
      *
-     * <p>halfLife 分级：
+     * halfLife 分级：
      * <pre>
      *   raw ≥ 0.8  → 30天（牢固，慢遗忘）
      *   raw ≥ 0.6  → 21天
@@ -222,8 +212,6 @@ public class ProficiencyService {
         return 3.0;
     }
 
-    // ======================== 内部方法 ========================
-
     private void syncToProfile(String studentId, StudentKnowledgeProficiency prof) {
         try {
             StudentProfile profile = profileService.getProfile(studentId);
@@ -251,8 +239,6 @@ public class ProficiencyService {
             log.warn("ProficiencyService: failed to sync to profile: {}", e.getMessage());
         }
     }
-
-    // ======================== 数据类型 ========================
 
     /** 单次答题结果 */
     public record AnswerResult(int questionIndex, boolean correct, String relatedConcept) {}

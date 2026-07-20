@@ -20,17 +20,14 @@ import java.util.Map;
 /**
  * Thin wrapper around Chroma's REST API for conversation storage.
  *
- * <p>Uses Spring {@link RestClient} — no extra dependency needed.
+ * Uses Spring {@link RestClient} — no extra dependency needed.
  * Chroma base URL is configured via {@code chroma.base-url} in application.yml,
  * defaulting to {@code http://localhost:8000}.
  *
- * <h3>API reference</h3>
- * <ul>
- *   <li>GET  /api/v2/tenants/.../collections/{name}  — collection info</li>
- *   <li>POST /api/v2/tenants/.../collections           — create collection</li>
- *   <li>POST /api/v2/tenants/.../collections/{id}/add  — insert records</li>
- *   <li>POST /api/v2/tenants/.../collections/{id}/query — semantic search</li>
- * </ul>
+ * GET  /api/v2/tenants/.../collections/{name}  — collection info
+ * POST /api/v2/tenants/.../collections           — create collection
+ * POST /api/v2/tenants/.../collections/{id}/add  — insert records
+ * POST /api/v2/tenants/.../collections/{id}/query — semantic search
  */
 public class ChromaClient {
 
@@ -59,9 +56,7 @@ public class ChromaClient {
             .build();
     }
 
-    // ---------------------------------------------------------------
     // Public API
-    // ---------------------------------------------------------------
 
     /**
      * Store a message record (question or answer) in Chroma.
@@ -136,7 +131,7 @@ public class ChromaClient {
      * List distinct conversations for a user, grouped by conversationId,
      * sorted by last-activity timestamp (most recent first).
      *
-     * <p>Uses Chroma's POST .../collections/{name}/get with a metadata
+     * Uses Chroma's POST .../collections/{name}/get with a metadata
      * filter on {@code userId}. Each returned entry is a map containing
      * {@code conversationId}, {@code title} (first user question, truncated)
      * and {@code timestamp} (latest message time in the conversation).
@@ -326,9 +321,7 @@ public class ChromaClient {
         return 1;
     }
 
-    // ---------------------------------------------------------------
     // Internals
-    // ---------------------------------------------------------------
 
     private String ensureCollection() {
         if (unavailable) return null;

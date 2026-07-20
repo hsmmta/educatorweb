@@ -357,8 +357,6 @@ public class LearningPathService {
         );
     }
 
-    // ─── Dynamic path adjustment ──────────────────────────────
-
     /** Cached last target per student for re-planning on profile update. */
     private final Map<String, String> lastTarget = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -386,8 +384,6 @@ public class LearningPathService {
             }
         }
     }
-
-    // ─── Reinforcement units for weak nodes ────────────────────
 
     /**
      * Insert reinforcement sub-nodes before weak prerequisite nodes.

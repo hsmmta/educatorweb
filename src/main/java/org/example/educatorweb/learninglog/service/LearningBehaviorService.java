@@ -24,7 +24,7 @@ import java.util.Optional;
 /**
  * Records learning behavior events and updates knowledge proficiency accordingly.
  *
- * <p>QUIZ_ANSWER → directly updates correct/total counts and recalculates proficiency.
+ * QUIZ_ANSWER → directly updates correct/total counts and recalculates proficiency.
  * RESOURCE_VIEW → updates lastStudyTime; ≥3 views on a concept nudges proficiency by +0.02.
  * CHAT_INTERACTION → updates lastStudyTime; ≥5 mentions nudges proficiency by +0.01.
  * KNOWLEDGE_BROWSE → log-only, no proficiency change.
@@ -54,8 +54,6 @@ public class LearningBehaviorService {
         this.profileRepo = profileRepo;
         this.eventPublisher = eventPublisher;
     }
-
-    // ─── Public API ───────────────────────────────────────────
 
     @Transactional
     public void logResourceView(String userId, String concept, String resourceType, Long resourceId, String title) {
@@ -135,8 +133,6 @@ public class LearningBehaviorService {
         // Log only — no proficiency change
     }
 
-    // ─── Helpers ──────────────────────────────────────────────
-
     private StudentKnowledgeProficiency getOrCreateProficiency(String userId, String concept) {
         StudentKnowledgeProficiencyId id = new StudentKnowledgeProficiencyId(userId, concept);
         Optional<StudentKnowledgeProficiency> opt = proficiencyRepo.findById(id);
@@ -171,8 +167,6 @@ public class LearningBehaviorService {
             proficiencyRepo.save(kp);
         });
     }
-
-    // ─── Bidirectional feedback: behavior → profile ───────────
 
     /**
      * After a quiz submission, check if the student's proficiency has crossed

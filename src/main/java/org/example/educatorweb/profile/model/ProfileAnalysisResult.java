@@ -11,7 +11,7 @@ import java.util.Map;
  * Structured result produced by the {@link org.example.educatorweb.profile.agent.ProfileUpdateAgent}
  * after analyzing student conversations.
  *
- * <p>Mirrors the JSON schema expected from the LLM agent.
+ * Mirrors the JSON schema expected from the LLM agent.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record ProfileAnalysisResult(

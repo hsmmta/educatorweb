@@ -15,7 +15,7 @@ import java.util.*;
 /**
  * Orchestrates passive profile updates triggered after AI tutoring chat.
  *
- * <p>Runs asynchronously so chat response latency is unaffected.
+ * Runs asynchronously so chat response latency is unaffected.
  * Flow: check threshold → fetch unprocessed conversations → slice →
  * analyze each slice via Agent 1 → apply confidence adjustments →
  * persist → update Redis cursor.
@@ -52,7 +52,7 @@ public class PassiveProfileUpdateService {
     /**
      * Check if the student has accumulated enough unprocessed conversations,
      * and if so, trigger a full passive profile update cycle.
-     * <p>Called asynchronously from {@code AiTutorServiceImpl.chat()}.
+     * Called asynchronously from {@code AiTutorServiceImpl.chat()}.
      */
     @Async("profileUpdateExecutor")
     public void checkAndTrigger(String studentId) {
@@ -177,7 +177,6 @@ public class PassiveProfileUpdateService {
         }
 
         // ---- Step 2: Fallback validation (ensure enums match CHECK constraints) ----
-
 
         if (p.getKnowledgeBaseLevel() == null || !VALID_KNOWLEDGE.contains(p.getKnowledgeBaseLevel()))
             p.setKnowledgeBaseLevel("beginner");

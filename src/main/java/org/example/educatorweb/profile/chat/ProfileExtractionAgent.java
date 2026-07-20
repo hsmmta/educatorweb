@@ -259,8 +259,6 @@ public class ProfileExtractionAgent {
         return BigDecimal.ZERO;
     }
 
-    // ============ 内部类型定义 ============
-
     public record DimensionDef(String key, String label, String icon, String description) {}
 
     public record DimensionValue(

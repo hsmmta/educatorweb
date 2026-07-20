@@ -24,7 +24,6 @@ public class PptxBuilder {
     private static final int W = 960;   // 13.333" × 72
     private static final int H = 540;   // 7.5" × 72
 
-    // ── Color palette ──
     private static final Color CLR_PRIMARY   = new Color(0x1E3A8A);  // deep navy
     private static final Color CLR_ACCENT    = new Color(0x3B82F6);  // bright blue
     private static final Color CLR_GOLD      = new Color(0xF59E0B);  // amber gold
@@ -44,8 +43,6 @@ public class PptxBuilder {
         new Color(0xF59E0B),  // amber
         new Color(0xEF4444),  // red
     };
-
-    // ── Public API ──
 
     public byte[] buildPresentation(String topicTitle, List<SlideData> slides) {
         try (XMLSlideShow ppt = new XMLSlideShow()) {

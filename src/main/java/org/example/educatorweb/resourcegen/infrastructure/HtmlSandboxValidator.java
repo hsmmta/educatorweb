@@ -23,9 +23,8 @@ public final class HtmlSandboxValidator {
         }
     }
 
-    // --------------------------------------------------------------------
     // Detect external resource / script patterns
-    // --------------------------------------------------------------------
+
     private static final Pattern EXTERNAL_SCRIPT = Pattern.compile(
         "<script\\s[^>]*\\bsrc\\s*=\\s*[\"']https?://", Pattern.CASE_INSENSITIVE);
     private static final Pattern EXTERNAL_LINK = Pattern.compile(
@@ -35,15 +34,13 @@ public final class HtmlSandboxValidator {
     private static final Pattern EXTERNAL_IFRAME = Pattern.compile(
         "<iframe\\s[^>]*\\bsrc\\s*=\\s*[\"']https?://", Pattern.CASE_INSENSITIVE);
 
-    // --------------------------------------------------------------------
     // Inline event handler patterns (onXxx= attribute)
-    // --------------------------------------------------------------------
+
     private static final Pattern INLINE_EVENT_HANDLER = Pattern.compile(
         "\\bon\\w+\\s*=", Pattern.CASE_INSENSITIVE);
 
-    // --------------------------------------------------------------------
     // XSS-like patterns
-    // --------------------------------------------------------------------
+
     private static final Pattern JAVASCRIPT_URI = Pattern.compile(
         "javascript\\s*:", Pattern.CASE_INSENSITIVE);
     private static final Pattern EVAL_CALL = Pattern.compile(

@@ -14,20 +14,16 @@ import java.util.*;
  * 学习报告服务。
  * 综合分析学生的知识点掌握度数据（含艾宾浩斯遗忘衰减），生成评估报告。
  *
- * <p>报告包含：
- * <ul>
- *   <li>总体统计（总答题数、平均有效掌握度、综合评分）</li>
- *   <li>强弱项分析（掌握度排序，标注薄弱/优秀知识点）</li>
- *   <li>学习建议（基于薄弱点的个性化复习/练习推荐）</li>
- *   <li>自然语言学习总结</li>
- * </ul>
+ * 报告包含：
+ * 总体统计（总答题数、平均有效掌握度、综合评分）
+ * 强弱项分析（掌握度排序，标注薄弱/优秀知识点）
+ * 学习建议（基于薄弱点的个性化复习/练习推荐）
+ * 自然语言学习总结
  *
- * <p>评分依据（三维评估模型）：
- * <ol>
- *   <li><b>原始正确率</b>：correctQuestions / totalQuestions</li>
- *   <li><b>艾宾浩斯衰减</b>：effectiveProficiency = rawProficiency × e^(-daysSince/halfLife)</li>
- *   <li><b>置信度</b>：1 - e^(-0.4 × totalQuestions)，仅基于答题数，不受时间影响</li>
- * </ol>
+ * 评分依据（三维评估模型）：
+ *原始正确率：correctQuestions / totalQuestions
+ *艾宾浩斯衰减：effectiveProficiency = rawProficiency × e^(-daysSince/halfLife)
+ *置信度：1 - e^(-0.4 × totalQuestions)，仅基于答题数，不受时间影响
  * 综合评分 = avgEffectiveProficiency × 0.6 + avgConfidence × 0.4
  */
 @Service
@@ -161,8 +157,6 @@ public class LearningReportService {
         return result;
     }
 
-    // ======================== 私有计算方法 ========================
-
     private OverallStats computeOverallStats(List<ProficiencyService.ProficiencyResult> results) {
         int totalQ = results.stream().mapToInt(ProficiencyService.ProficiencyResult::totalQuestions).sum();
         int correctQ = results.stream().mapToInt(ProficiencyService.ProficiencyResult::correctQuestions).sum();
@@ -282,8 +276,6 @@ public class LearningReportService {
     private String fmtPct(double v) {
         return String.format("%.0f%%", v * 100);
     }
-
-    // ======================== 数据类型 ========================
 
     public record OverallStats(
         int totalKnowledgePoints,

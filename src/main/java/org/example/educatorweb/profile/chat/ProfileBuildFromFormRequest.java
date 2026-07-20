@@ -31,8 +31,6 @@ public class ProfileBuildFromFormRequest {
     /** 专业/年级（可选自由文本） */
     private String majorAndGrade;
 
-    // ========= getters & setters =========
-
     public String getStudentId() { return studentId; }
     public void setStudentId(String studentId) { this.studentId = studentId; }
 
