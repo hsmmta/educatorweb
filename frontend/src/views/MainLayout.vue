@@ -5,7 +5,7 @@
       <div class="nav-left">
         <router-link to="/home" class="logo">
           <span class="logo-icon">✦</span>
-          <span class="logo-text">智学派</span>
+          <span class="logo-text">智引未来</span>
         </router-link>
       </div>
       <div class="nav-right">
@@ -30,6 +30,9 @@
               </el-dropdown-item>
               <el-dropdown-item command="push">
                 <el-icon><Position /></el-icon>资源推送
+              </el-dropdown-item>
+              <el-dropdown-item command="knowledge-graph">
+                <el-icon><Connection /></el-icon>知识图谱
               </el-dropdown-item>
               <el-dropdown-item divided command="profile">
                 <el-icon><User /></el-icon>个人中心
@@ -57,7 +60,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElNotification } from 'element-plus'
-import { ArrowDown, User, UserFilled, SwitchButton, ChatDotRound, FolderOpened, Position, Bell } from '@element-plus/icons-vue'
+import { ArrowDown, User, UserFilled, SwitchButton, ChatDotRound, FolderOpened, Position, Bell, Connection } from '@element-plus/icons-vue'
 import VoiceAssistant from '@/components/VoiceAssistant.vue'
 import { subscribePushApi } from '@/api/index.js'
 
@@ -78,8 +81,25 @@ function connectSSE(studentId) {
     es.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
+        if (data.type === 'REPORT_UPDATED') {
+          window.dispatchEvent(new CustomEvent('report-updated'))
+          return
+        }
+        if (data.type === 'PROFICIENCY_MILESTONE') {
+          ElNotification({
+            title: '🎉 掌握度达标',
+            message: '「' + data.concept + '」掌握度已达 ' + data.proficiency + '%' + (data.nextNode ? '，建议继续学习：' + data.nextNode : ''),
+            type: 'success',
+            duration: 8000,
+            onClick() {
+              if (data.nextNode) {
+                window.location.href = '/chat?topic=' + encodeURIComponent(data.nextNode) + '&mode=quiz'
+              }
+            }
+          })
+          return
+        }
         if (data.triggerType === 'PATH_UPDATED') {
-          // Path recalculated due to profile change — show gentle notification
           ElNotification({
             title: '学习路径已更新',
             message: `你的画像发生了变化，学习路径已自动调整（剩余 ${data.resourceCount} 个节点）`,
@@ -87,7 +107,7 @@ function connectSSE(studentId) {
             duration: 5000,
             onClick: goToPush
           })
-        } else {
+        } else if (data.triggerType) {
           pushNotificationCount.value++
           ElNotification({
             title: '资源推送',
@@ -154,6 +174,8 @@ const handleCommand = (cmd) => {
     router.push('/thinktank')
   } else if (cmd === 'push') {
     router.push('/push')
+  } else if (cmd === 'knowledge-graph') {
+    router.push('/knowledge-graph')
   } else if (cmd === 'profile') {
     router.push('/profile')
   }

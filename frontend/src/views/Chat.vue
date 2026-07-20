@@ -19,7 +19,7 @@
       <div class="chat-messages" ref="msgList">
         <div v-if="messages.length === 0" class="chat-empty">
           <div class="empty-mark"><span class="empty-glyph">✦</span></div>
-          <h2 class="empty-title">智学派 AI 助手</h2>
+          <h2 class="empty-title">智引未来 AI 助手</h2>
           <p class="empty-sub">选择一个模式，输入你的问题或知识点，开启你的学习之旅</p>
           <div class="empty-suggestions">
             <button class="suggest-chip" @click="activeMode='chat'; inputText='什么是梯度下降？它有哪些实现方法？'">
@@ -159,7 +159,8 @@
                             'option-selected': msg.selectedOption[qi] === optionLetter(opt),
                             'option-correct': msg.selectedOption[qi] === optionLetter(opt) && msg.optionResult[qi] === 'correct',
                             'option-incorrect': msg.selectedOption[qi] === optionLetter(opt) && msg.optionResult[qi] === 'incorrect',
-                            'option-reveal-correct': msg.optionResult[qi] === 'incorrect' && isCorrectAnswer(q, opt)
+                            'option-reveal-correct': msg.optionResult[qi] === 'incorrect' && isCorrectAnswer(q, opt),
+                            'option-locked': msg.optionResult[qi] !== undefined
                           }
                         ]"
                         @click="selectQuizOption(msg, qi, opt)"
@@ -195,6 +196,12 @@
                       <div v-if="q.explanation" class="quiz-explain"><strong>解析：</strong>{{ q.explanation }}</div>
                     </div>
                   </div>
+                <!-- Assessment loading bar -->
+                <transition name="assess-fade">
+                  <div v-if="assessing" class="assess-bar">
+                    <span class="assess-spin">🧠</span> 正在评估你的答题表现...
+                  </div>
+                </transition>
                 </div>
                 <pre v-else class="raw-fallback">{{ msg.rawContent }}</pre>
               </div>
@@ -224,8 +231,8 @@
       <div class="mode-bar">
         <div
           v-for="m in modes" :key="m.key"
-          :class="['mode-item', { active: activeMode === m.key }]"
-          @click="switchMode(m.key)"
+          :class="['mode-item', { active: activeMode === m.key, locked: topicLocked }]"
+          @click="!topicLocked && switchMode(m.key)"
         >
           <span class="mode-icon">{{ m.icon }}</span>
           <span class="mode-label">{{ m.label }}</span>
@@ -234,7 +241,23 @@
 
       <!-- Input area -->
       <div class="input-area">
+        <div v-if="topicLocked" class="locked-topic">
+          <div class="locked-topic-row">
+            <el-tag type="warning" size="large">🔒 {{ lockedTopicName }}</el-tag>
+            <span class="locked-hint">主题已锁定，来自学习路径节点</span>
+          </div>
+          <div class="locked-topic-actions">
+            <el-button size="small" type="primary" :icon="Promotion" :loading="loading"
+              @click="sendResourceGenerate(lockedTopicName)">
+              再来一组练习
+            </el-button>
+            <el-button size="small" text @click="topicLocked = false; lockedTopicName = ''; inputText = ''">
+              解除锁定
+            </el-button>
+          </div>
+        </div>
         <el-input
+          v-else
           v-model="inputText"
           :placeholder="currentMode.placeholder"
           type="textarea"
@@ -242,7 +265,8 @@
           @keyup.enter.ctrl="sendMessage"
           :disabled="loading"
         />
-        <div class="input-footer">
+        <div class="input-footer" v-if="!topicLocked">
+          <el-checkbox v-model="webSearchEnabled" size="small">联网搜索</el-checkbox>
           <el-tag size="small" type="info">Ctrl + Enter 发送</el-tag>
           <el-button type="primary" :icon="Promotion" :loading="loading" @click="sendMessage" :disabled="!inputText.trim()">
             发送
@@ -255,6 +279,7 @@
 
 <script setup>
 import { ref, computed, nextTick, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Promotion, Loading, DocumentCopy, RefreshRight, Download, VideoPlay } from '@element-plus/icons-vue'
 import request from '@/api/request'
@@ -267,21 +292,23 @@ import ChatSidebar from '@/components/ChatSidebar.vue'
 // ---- Init libraries (ported from Learning.vue) ----
 mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' })
 
-// Register marked extension for LaTeX math
+// Register marked extension for LaTeX math (supports $...$, $$...$$, \(...\), \[...\])
 marked.use({
   extensions: [{
     name: 'math',
     level: 'inline',
-    start(src) { return src.indexOf('$') },
+    start(src) { return Math.min(idx(src, '$'), idx(src, '\\['), idx(src, '\\(')) },
     tokenizer(src) {
-      const displayMatch = /^\$\$([\s\S]*?)\$\$/.exec(src)
-      if (displayMatch) {
-        return { type: 'math', raw: displayMatch[0], text: displayMatch[1].trim(), display: true }
-      }
-      const inlineMatch = /^\$([^\n$]+)\$/.exec(src)
-      if (inlineMatch) {
-        return { type: 'math', raw: inlineMatch[0], text: inlineMatch[1].trim(), display: false }
-      }
+      // Display math: $$...$$ or \[...\]
+      const dm1 = /^\$\$([\s\S]*?)\$\$/.exec(src)
+      if (dm1) return { type: 'math', raw: dm1[0], text: dm1[1].trim(), display: true }
+      const dm2 = /^\\\[([\s\S]*?)\\\]/.exec(src)
+      if (dm2) return { type: 'math', raw: dm2[0], text: dm2[1].trim(), display: true }
+      // Inline math: $...$ or \(...\)
+      const im1 = /^\$([^\n$]+)\$/.exec(src)
+      if (im1) return { type: 'math', raw: im1[0], text: im1[1].trim(), display: false }
+      const im2 = /^\\\(([^\n]+?)\\\)/.exec(src)
+      if (im2) return { type: 'math', raw: im2[0], text: im2[1].trim(), display: false }
     },
     renderer(token) {
       try {
@@ -295,6 +322,8 @@ marked.use({
   }]
 })
 
+function idx(s, sub) { const i = s.indexOf(sub); return i < 0 ? Infinity : i }
+
 // ---- Mode config ----
 const modes = [
   { key: 'chat', icon: '💬', label: '问答', placeholder: '输入你的问题，AI 将从私人智库中检索答案...' },
@@ -303,15 +332,21 @@ const modes = [
   { key: 'quiz', icon: '📝', label: '题库', placeholder: '输入知识点，如：线性回归推导' },
   { key: 'mindmap', icon: '🧩', label: '导图', placeholder: '输入知识点，如：机器学习知识体系' },
   { key: 'code', icon: '💻', label: '代码', placeholder: '输入知识点，如：使用 Python 实现 K-means' },
-  { key: 'html', icon: '🌐', label: '课件', placeholder: '输入知识点，如：概率论基础' }
+  { key: 'html', icon: '🌐', label: '课件', placeholder: '输入知识点，如：概率论基础' },
+  { key: 'video', icon: '🎬', label: '视频', placeholder: '输入知识点，如：梯度下降算法（白板讲解视频，生成约需数分钟）' }
 ]
+const route = useRoute()
 const activeMode = ref('chat')
+const topicLocked = ref(false)  // true when entered from path node (URL params)
+const lockedTopicName = ref('')  // original topic name from URL, used for proficiency tracking
+const webSearchEnabled = ref(false)  // user-toggleable web search
 const currentMode = computed(() => modes.find(m => m.key === activeMode.value) || modes[0])
 const switchMode = (key) => { activeMode.value = key }
 
 // ---- State ----
 const inputText = ref('')
 const loading = ref(false)
+const assessing = ref(false)  // true while quiz answer is being evaluated
 const loadingText = ref('思考中...')
 const messages = ref([])
 const currentConversationId = ref(null)
@@ -389,7 +424,13 @@ const selectConversation = async (conv) => {
 // deleteConversation: the Task-1 backend has NO delete endpoint yet, so this is
 // front-end only — drop it from the local list and reset if it was active.
 // TODO(backend): add DELETE /api/tutor/conversations/{id} and call it here.
-const deleteConversation = (conv) => {
+const deleteConversation = async (conv) => {
+  // Call backend to persist deletion
+  try {
+    await request.delete(`/tutor/conversations/${conv.conversationId}`, {
+      params: { studentId: getStudentId() }
+    })
+  } catch { /* backend may not be reachable; still remove locally */ }
   conversations.value = conversations.value.filter(c => c.conversationId !== conv.conversationId)
   if (currentConversationId.value === conv.conversationId) {
     newConversation()
@@ -448,7 +489,8 @@ const sendChatMessage = async (text) => {
       body: JSON.stringify({
         studentId: getStudentId(),
         question: text,
-        conversationId: currentConversationId.value
+        conversationId: currentConversationId.value,
+        webSearch: webSearchEnabled.value
       }),
       signal: controller.signal
     })
@@ -461,6 +503,7 @@ const sendChatMessage = async (text) => {
     const decoder = new TextDecoder()
     let buffer = ''
     let fullAnswer = ''
+    let streamDone = false
 
     while (true) {
       const { done, value } = await reader.read()
@@ -471,29 +514,40 @@ const sendChatMessage = async (text) => {
       buffer = lines.pop() || ''
 
       for (const line of lines) {
+        if (streamDone) continue  // skip trailing data: JSON after event:done
+
         if (line.startsWith('event:done')) {
-          // Stream complete — set loading false now
+          streamDone = true
+          // Stream complete — do final markdown render
+          const msg = messages.value.find(m => m.id === assistantMsgId)
+          if (msg) {
+            msg.content = safeMarkdown(fullAnswer)
+          }
           loading.value = false
         } else if (line.startsWith('data:')) {
           try {
             const tokenText = line.substring(5).trim()
+            // Skip JSON payloads (conversationId), keep only real tokens
+            if (tokenText.startsWith('{')) continue
             fullAnswer += tokenText
 
             const msg = messages.value.find(m => m.id === assistantMsgId)
             if (msg) {
-              // Only re-render markdown on the final answer, not every token
-              // (avoids flicker and performance issues with rapid re-renders)
-              msg.content = fullAnswer
+              // Raw text during streaming; rendered on event:done
+              msg.content = '<pre style="white-space:pre-wrap;font-family:inherit;margin:0;">' +
+                escapeHtml(fullAnswer) + '</pre>'
             }
           } catch { /* ignore parse errors */ }
         }
       }
     }
 
-    // Final markdown render of the complete answer
-    const msg = messages.value.find(m => m.id === assistantMsgId)
-    if (msg) {
-      msg.content = safeMarkdown(fullAnswer)
+    // Fallback: if stream ended without event:done, render markdown now
+    if (!streamDone && fullAnswer) {
+      const msg = messages.value.find(m => m.id === assistantMsgId)
+      if (msg) {
+        msg.content = safeMarkdown(fullAnswer)
+      }
     }
     loading.value = false
 
@@ -683,7 +737,71 @@ const handleSseEvent = (evt, progressId, text) => {
 // ---- Helpers (ported from Learning.vue) ----
 const safeMarkdown = (text) => {
   if (!text) return ''
-  try { return marked.parse(text) } catch { return text }
+  try {
+    let md = text
+
+    // Phase 0: Fix tables — AI output often needs cleanup for GFM compliance.
+    // Step 0a: Convert || to newline (concatenated table row separator)
+    md = md.replace(/\|\|/g, '|\n|')
+    // Step 0b: Remove blank lines between header and separator rows
+    md = md.replace(/(\|[^\n]+\|)\n\n(\|[ :\-]{3,}\|)/g, '$1\n$2')
+    // Step 0c: Split rows joined by | | — but NOT inside separator row cells.
+    //   lookahead: second pipe + optional spaces + content char (not dash/pipe)
+    md = md.replace(/\|\s+\|(?=\s*[^\s\-|])/g, '|\n|')
+
+    // Table start: insert newline when inline table follows punctuation
+    //   e.g. "方向）|优化算法|..." or "分为：|类型|特点|..."
+    md = md.replace(/([。！？）】」.!?）、：，])(\|)/g, '$1\n$2')
+
+    // Phase 1: Insert blank lines before block-level elements.
+    //   The AI writes markdown without blank lines between blocks,
+    //   e.g. "。---###标题" all on one line.
+
+    // --- as horizontal rule: NOT inside table separators (exclude | and - neighbors)
+    md = md.replace(/([^\n\-|])(---)([^\n\-|])/g, '$1\n\n$2\n\n$3')
+    md = md.replace(/([^\n\-|])(---)(\s*\n|$)/g, '$1\n\n$2$3')
+
+    // ### headers: insert newline before
+    md = md.replace(/([^\n#])(#{1,6}[^\n])/g,
+      (m, before, heading) => before + '\n\n' + heading)
+    md = md.replace(/([^\n])\n(#{1,6})/g, '$1\n\n$2')
+
+    // > blockquotes mid-text
+    md = md.replace(/([^\n>])(>[^\s>])/g, '$1\n\n$2')
+
+    // Phase 2: Ensure space after markers (###text → ### text, etc.)
+    md = md.replace(/^(#{1,6})([^\s#])/gm, '$1 $2')
+    md = md.replace(/^(\d+\.)([^\s])/gm, '$1 $2')
+    // Split inline numbered list items (2.text3.text → separate lines)
+    md = md.replace(/([^\n\d])(\d+\.)([一-鿿])/g, '$1\n$2 $3')
+    md = md.replace(/^(>)([^\s>])/gm, '$1 $2')
+
+    // Phase 3: Break heading at first sentence-end so it doesn't consume the
+    //   whole paragraph (heading ends at first 。！？)
+    md = md.replace(/^(#{1,6}\s[^。！？\n]+[。！？])([^\n]+)/gm, '$1\n\n$2')
+
+    // Phase 4: Normalize LaTeX delimiters — convert \[...\] → $$...$$ and \(...\) → $...$
+    md = md.replace(/\\\[/g, '\n\n$$')
+    md = md.replace(/\\\]/g, '$$\n\n')
+    md = md.replace(/\\\(/g, '$')
+    md = md.replace(/\\\)/g, '$')
+
+    // Phase 5: Parse
+    return marked.parse(md)
+  } catch (e) {
+    console.error('[DEBUG] safeMarkdown ERROR:', e.message || e)
+    return text
+  }
+}
+
+const escapeHtml = (text) => {
+  if (!text) return ''
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
 }
 
 const copyText = (html) => {
@@ -727,6 +845,8 @@ const isCorrectAnswer = (q, optText) => {
 }
 
 const selectQuizOption = (msg, qIndex, optText) => {
+  // Lock answer after first selection — no changing
+  if (msg.optionResult[qIndex] !== undefined) return
   const q = msg.quizData?.questions?.[qIndex]
   if (!q || q.type === 'SHORT_ANSWER' || q.type === 'FILL_BLANK') return
   const letter = optionLetter(optText)
@@ -751,20 +871,39 @@ const selectQuizOption = (msg, qIndex, optText) => {
 }
 
 const submitQuizAnswer = async (msg, qIndex, q, correct) => {
+  assessing.value = true
   try {
-    const knowledgePoint = msg.title || ''
+    const primaryConcept = lockedTopicName.value || msg.title || ''
     await request.post('/quiz/submit', {
       studentId: getStudentId(),
-      knowledgePoint: knowledgePoint,
+      knowledgePoint: primaryConcept,
       results: [{
         questionIndex: qIndex,
         correct: correct,
-        relatedConcept: q.relatedConcept || knowledgePoint
+        relatedConcept: q.relatedConcept || primaryConcept
       }]
     })
+    // Save wrong answer to collection
+    if (!correct) {
+      try {
+        const userLetter = msg.selectedOption[qIndex] || ''
+        await request.post('/quiz/wrong-answer', {
+          studentId: getStudentId(),
+          question: q.question,
+          options: q.options || [],
+          userAnswer: userLetter,
+          correctAnswer: q.answer || '',
+          knowledgePoint: primaryConcept,
+          quizTitle: msg.title || ''
+        })
+      } catch (e) {
+        console.warn('Wrong answer save failed:', e.message)
+      }
+    }
   } catch (e) {
-    // Silently fail — quiz submission is non-blocking
     console.warn('Quiz submit failed:', e.message)
+  } finally {
+    assessing.value = false
   }
 }
 
@@ -871,10 +1010,27 @@ const downloadResource = (msg) => {
 
 const regenerate = (msg) => {
   if (loading.value) return
-  if (msg.question) {
+  // Find the question: from msg.question or from the preceding user message
+  let question = msg.question
+  if (!question) {
+    const idx = messages.value.findIndex(m => m.id === msg.id)
+    if (idx > 0) {
+      const prev = messages.value[idx - 1]
+      if (prev.role === 'user') question = prev.content
+    }
+  }
+  if (!question) return
+
+  if (msg.renderType) {
+    // Resource message: keep original mode, re-generate resource
+    const modeKey = msg.renderType.toLowerCase()
+    if (modes.some(m => m.key === modeKey)) activeMode.value = modeKey
+    sendResourceGenerate(question)
+  } else {
+    // Chat message: push new user message, then send chat
     activeMode.value = 'chat'
-    inputText.value = msg.question
-    sendMessage()
+    messages.value.push({ id: nextMsgId(), role: 'user', type: 'user', content: question })
+    sendChatMessage(question)
   }
 }
 
@@ -883,12 +1039,29 @@ const scrollToBottom = async () => {
   if (msgList.value) msgList.value.scrollTop = msgList.value.scrollHeight
 }
 
-onMounted(loadConversations)
+onMounted(async () => {
+  await loadConversations()
+
+  // Auto-trigger resource generation if topic/mode passed via URL
+  const urlTopic = route.query.topic
+  const urlMode = route.query.mode
+  if (urlTopic) {
+    await nextTick()
+    inputText.value = urlTopic
+    if (urlMode && modes.some(m => m.key === urlMode)) {
+      activeMode.value = urlMode
+    }
+    topicLocked.value = true  // lock topic from path node
+    lockedTopicName.value = urlTopic  // store for proficiency tracking
+    await nextTick()
+    await sendResourceGenerate(urlTopic)
+  }
+})
 </script>
 
 <style scoped>
 /* ═══════════════════════════════════════════════
-   智学派 AI 辅导 — 精致化视觉（保持紫色主题）
+   智引未来 AI 辅导 — 精致化视觉（保持紫色主题）
    ═══════════════════════════════════════════════ */
 .chat-layout {
   --brand-1: #667eea;
@@ -1082,16 +1255,6 @@ onMounted(loadConversations)
 
 /* DOC markdown */
 .doc-render { font-size: 14px; line-height: 1.85; color: #2c3142; }
-.markdown-body :deep(h1), .markdown-body :deep(h2), .markdown-body :deep(h3) { margin: 18px 0 9px; color: var(--ink); }
-.markdown-body :deep(p) { margin: 8px 0; }
-.markdown-body :deep(pre) { background: #f6f8fa; padding: 13px; border-radius: 10px; overflow: auto; }
-.markdown-body :deep(code) { background: #f0f2f5; padding: 2px 6px; border-radius: 5px; font-size: 13px; }
-.markdown-body :deep(pre code) { background: none; padding: 0; }
-.markdown-body :deep(table) { border-collapse: collapse; margin: 12px 0; }
-.markdown-body :deep(th), .markdown-body :deep(td) { border: 1px solid #dcdfe6; padding: 6px 12px; }
-.markdown-body :deep(ul), .markdown-body :deep(ol) { padding-left: 24px; }
-.markdown-body :deep(.katex-display) { margin: 16px 0; overflow-x: auto; overflow-y: hidden; }
-.markdown-body :deep(.katex) { font-size: 1.1em; }
 
 /* QUIZ */
 .quiz-toolbar { margin-bottom: 12px; text-align: right; }
@@ -1116,6 +1279,7 @@ onMounted(loadConversations)
 .option-marker { font-weight: 700; font-size: 14px; min-width: 20px; color: var(--brand-1); text-align: center; flex-shrink: 0; }
 .option-correct .option-marker { color: #67c23a; }
 .option-incorrect .option-marker { color: #f56c6c; }
+.quiz-option-item.option-locked { pointer-events: none; cursor: default; }
 .option-text { flex: 1; }
 .quiz-answer { margin: 12px 0 0 30px; padding: 12px; background: #f0f9eb; border-radius: 10px; font-size: 13px; }
 .quiz-answer-row { color: #529b2e; margin-bottom: 6px; }
@@ -1174,8 +1338,16 @@ onMounted(loadConversations)
   box-shadow: 0 8px 20px rgba(102,126,234,0.36);
 }
 .mode-icon { font-size: 16px; }
+.mode-item.locked { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
 
 /* ---- Input area ---- */
+.locked-topic {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 8px 12px; margin-bottom: 4px;
+}
+.locked-topic-row { display: flex; align-items: center; gap: 12px; }
+.locked-topic-actions { display: flex; gap: 8px; align-items: center; }
+.locked-hint { font-size: 12px; color: #909399; }
 .input-area {
   position: relative; z-index: 1;
   margin: 8px clamp(16px, 6vw, 80px) 20px;
@@ -1211,4 +1383,50 @@ onMounted(loadConversations)
   .chat-messages { padding: 20px 14px; }
   .input-area { margin: 8px 14px 16px; }
 }
+
+.assess-bar {
+  display: flex; align-items: center; gap: 8px; justify-content: center;
+  padding: 10px 16px; margin-top: 10px; border-radius: 12px;
+  background: linear-gradient(135deg, rgba(102,126,234,0.08), rgba(118,75,162,0.05));
+  font-size: 13px; color: #667eea; font-weight: 500;
+}
+.assess-spin {
+  display: inline-block; font-size: 18px;
+  animation: assess-pulse 1.2s ease-in-out infinite;
+}
+@keyframes assess-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.6; }
+  50% { transform: scale(1.15); opacity: 1; }
+}
+.assess-fade-enter-active { transition: opacity 0.3s; }
+.assess-fade-leave-active { transition: opacity 0.5s; }
+.assess-fade-enter-from, .assess-fade-leave-to { opacity: 0; }
+</style>
+
+<!-- Non-scoped markdown styles — must be unscoped so v-html content gets styled -->
+<style>
+.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6 {
+  margin: 18px 0 9px; color: #1a1a2e; font-weight: 700; line-height: 1.4;
+}
+.markdown-body h1 { font-size: 1.6em; border-bottom: 2px solid #e8e8e8; padding-bottom: 8px; }
+.markdown-body h2 { font-size: 1.4em; border-bottom: 1px solid #f0f0f0; padding-bottom: 6px; }
+.markdown-body h3 { font-size: 1.2em; }
+.markdown-body h4 { font-size: 1.1em; }
+.markdown-body p { margin: 8px 0; line-height: 1.85; }
+.markdown-body pre { background: #f6f8fa; padding: 13px; border-radius: 10px; overflow: auto; }
+.markdown-body code { background: #f0f2f5; padding: 2px 6px; border-radius: 5px; font-size: 13px; }
+.markdown-body pre code { background: none; padding: 0; }
+.markdown-body blockquote {
+  border-left: 4px solid #667eea; padding: 8px 16px; margin: 12px 0;
+  color: #5b6270; background: rgba(102,126,234,0.04); border-radius: 0 8px 8px 0;
+}
+.markdown-body hr { border: none; border-top: 2px solid #e8e8e8; margin: 20px 0; }
+.markdown-body table { border-collapse: collapse; margin: 12px 0; width: 100%; }
+.markdown-body th, .markdown-body td { border: 1px solid #dcdfe6; padding: 8px 12px; text-align: left; }
+.markdown-body th { background: #f5f7fa; font-weight: 600; }
+.markdown-body ul, .markdown-body ol { padding-left: 24px; margin: 8px 0; }
+.markdown-body li { margin: 4px 0; line-height: 1.7; }
+.markdown-body .katex-display { margin: 16px 0; overflow-x: auto; overflow-y: hidden; }
+.markdown-body .katex { font-size: 1.1em; }
+.markdown-body img { max-width: 100%; }
 </style>

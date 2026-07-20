@@ -57,6 +57,12 @@ public class StudentProfile {
     @Column(name = "goal_orientation_confidence", precision = 3, scale = 2, nullable = false)
     private BigDecimal goalOrientationConfidence;
 
+    @Column(name = "learning_path_json", columnDefinition = "TEXT")
+    private String learningPathJson;
+
+    public String getLearningPathJson() { return learningPathJson; }
+    public void setLearningPathJson(String learningPathJson) { this.learningPathJson = learningPathJson; }
+
     /** 累计对话轮数，用于画像更新触发（达到阈值后重置为0） */
     @Column(name = "total_conversation_rounds", nullable = false)
     private int totalConversationRounds = 0;

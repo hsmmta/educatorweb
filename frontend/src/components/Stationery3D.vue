@@ -200,7 +200,7 @@ function createLaptop() {
   ctx.textBaseline = 'middle'
   ctx.shadowColor = 'rgba(255, 255, 255, 0.4)'
   ctx.shadowBlur = 12
-  ctx.fillText('智学派', canvas.width / 2, canvas.height / 2)
+  ctx.fillText('智引未来', canvas.width / 2, canvas.height / 2)
 
   ctx.shadowBlur = 0
   ctx.strokeStyle = '#4f9cf5'

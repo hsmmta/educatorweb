@@ -82,7 +82,7 @@ public class ResourceRecommendService {
                 "基于你的" + (cognitive != null ? cognitive : pref) + "风格推荐", 9));
         }
         if ("视觉型".equals(cognitive)) {
-            resources.add(new RecommendedResource("知识结构思维导图", "MINDMAP",
+            resources.add(new RecommendedResource("知识结构交互课件", "HTML",
                 "匹配你的视觉型学习风格", 9));
         }
         resources.add(new RecommendedResource("综合练习题集", "QUIZ",
@@ -191,13 +191,13 @@ public class ResourceRecommendService {
         StudentProfile profile = profileService.getProfile(studentId);
 
         // Compute resource-type priority weights from six-dimension profile
-        // Default: DOC=9, QUIZ=8, MINDMAP=7
-        int docWeight = 9, quizWeight = 8, mindmapWeight = 7, videoWeight = 0, codeWeight = 0;
+        // Default: DOC=9, QUIZ=8, HTML=7
+        int docWeight = 9, quizWeight = 8, htmlWeight = 7, videoWeight = 0, codeWeight = 0;
 
         if (profile != null) {
             // D2 认知风格
             String cognitive = profile.getCognitiveStyleType();
-            if (isPref(cognitive, "视觉型", "visual")) { mindmapWeight += 3; videoWeight += 2; }
+            if (isPref(cognitive, "视觉型", "visual")) { htmlWeight += 3; videoWeight += 2; }
             else if (isPref(cognitive, "分析型", "analytical")) { docWeight += 3; }
             else if (isPref(cognitive, "实践型", "practical")) { codeWeight += 3; }
 
@@ -205,7 +205,7 @@ public class ResourceRecommendService {
             String pref = profile.getContentPreferenceType();
             if (isPref(pref, "视频优先", "video")) videoWeight += 3;
             else if (isPref(pref, "文档优先", "document")) docWeight += 3;
-            else if (isPref(pref, "混合学习", "mixed", "interactive")) { quizWeight += 2; mindmapWeight += 2; }
+            else if (isPref(pref, "混合学习", "mixed", "interactive")) { quizWeight += 2; htmlWeight += 2; }
 
             // D6 目标导向
             String goal = profile.getGoalOrientationType();
@@ -220,8 +220,8 @@ public class ResourceRecommendService {
             "基于你的六维学习画像推荐", docWeight), docWeight);
         addIfPositive(resources, new RecommendedResource(topicLabel + " 巩固练习", "QUIZ",
             "巩固知识点的针对性练习", quizWeight), quizWeight);
-        addIfPositive(resources, new RecommendedResource(topicLabel + " 思维导图", "MINDMAP",
-            "梳理" + topicLabel + "的知识框架", mindmapWeight), mindmapWeight);
+        addIfPositive(resources, new RecommendedResource(topicLabel + " 交互课件", "HTML",
+            "交互式学习" + topicLabel + "的核心内容", htmlWeight), htmlWeight);
         addIfPositive(resources, new RecommendedResource(topicLabel + " 视频讲解", "VIDEO",
             "匹配你的视觉学习偏好", videoWeight), videoWeight);
         addIfPositive(resources, new RecommendedResource(topicLabel + " 实战代码", "CODE",

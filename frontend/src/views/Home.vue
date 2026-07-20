@@ -14,7 +14,7 @@
       </div>
 
       <!-- Site title -->
-      <h1 class="site-name">智学派</h1>
+      <h1 class="site-name">智引未来</h1>
 
       <!-- Tagline -->
       <p class="tagline">你的专属 AI 学习助手 — 私人智库 · 智能辅导 · 资源生成</p>

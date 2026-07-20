@@ -266,6 +266,35 @@ public class ChromaClient {
             .toList();
     }
 
+    /**
+     * Delete all records for a given conversation.
+     * Uses Chroma's POST /delete endpoint with a metadata filter.
+     */
+    public boolean deleteByConversationId(String conversationId, String userId) {
+        String collId = ensureCollection();
+        if (collId == null) return false;
+        try {
+            Map<String, Object> body = Map.of(
+                "where", Map.of(
+                    "$and", List.of(
+                        Map.of("userId", userId),
+                        Map.of("conversationId", conversationId)
+                    )
+                )
+            );
+            restClient.post()
+                .uri(CHROMA_COLLECTIONS + "/" + collId + "/delete")
+                .body(body)
+                .retrieve()
+                .toBodilessEntity();
+            log.info("ChromaClient: deleted conversation {} for user {}", conversationId, userId);
+            return true;
+        } catch (Exception e) {
+            log.warn("ChromaClient: delete failed for conv={}: {}", conversationId, e.getMessage());
+            return false;
+        }
+    }
+
     /** Parsed Chroma {@code /get} response: flat metadata + document lists. */
     private record ChromaGetResult(List<Map<String, Object>> metadatas, List<String> documents) {}
 

@@ -10,7 +10,9 @@ public record ChatRequest(
     String studentId,
     String question,
     /** Optional: pass an existing conversationId to continue a multi-turn conversation */
-    String conversationId
+    String conversationId,
+    /** Optional: enable web search for this request */
+    Boolean webSearch
 ) {
     public ChatRequest {
         if (studentId == null || studentId.isBlank()) {

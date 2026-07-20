@@ -2,7 +2,11 @@ package org.example.educatorweb.learningpath;
 
 import org.example.educatorweb.dto.ResponseResult;
 import org.example.educatorweb.learningpath.model.LearningPath;
+import org.example.educatorweb.learningpath.model.PathNode;
 import org.example.educatorweb.learningpath.model.RecommendedResource;
+import org.example.educatorweb.profile.ProfileService;
+import org.example.educatorweb.profile.ProficiencyService;
+import org.example.educatorweb.profile.ProficiencyService.ProficiencyResult;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -18,11 +22,79 @@ public class LearningPathController {
 
     private final LearningPathService pathService;
     private final ResourceRecommendService recommendService;
+    private final ProfileService profileService;
+    private final ProficiencyService proficiencyService;
 
     public LearningPathController(LearningPathService pathService,
-                                  ResourceRecommendService recommendService) {
+                                  ResourceRecommendService recommendService,
+                                  ProfileService profileService,
+                                  ProficiencyService proficiencyService) {
         this.pathService = pathService;
         this.recommendService = recommendService;
+        this.profileService = profileService;
+        this.proficiencyService = proficiencyService;
+    }
+
+    /**
+     * Get the saved learning path for a student.
+     * GET /api/push/path/{studentId}/saved
+     */
+    @GetMapping("/path/{studentId}/saved")
+    public ResponseResult<Map<String, Object>> getSavedPath(
+            @PathVariable String studentId) {
+        String json = profileService.getSavedLearningPathJson(studentId);
+        if (json == null || json.isEmpty()) {
+            return ResponseResult.success(Map.of("exists", false));
+        }
+        try {
+            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            mapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
+            LearningPath path = mapper.readValue(json, LearningPath.class);
+
+            // Enrich each node with real-time proficiency AND recompute statuses
+            if (path.getNodes() != null) {
+                java.util.List<ProficiencyResult> allProfs = proficiencyService.getAllProficiencies(studentId);
+                boolean foundCurrent = false;
+                for (var node : path.getNodes()) {
+                    String nodeName = node.getKnowledgePointName();
+                    if (nodeName == null) nodeName = "";
+                    double bestProficiency = 0.0;
+                    for (ProficiencyResult pr : allProfs) {
+                        String c = pr.concept();
+                        if (c == null) continue;
+                        if (c.equals(nodeName)
+                            || c.contains(nodeName)
+                            || nodeName.contains(c)) {
+                            if (pr.effectiveProficiency() > bestProficiency) {
+                                bestProficiency = pr.effectiveProficiency();
+                            }
+                        }
+                    }
+                    node.setProficiency(bestProficiency);
+
+                    // Recompute status: ≥60% proficiency → COMPLETED (confidence is informative only)
+                    if (bestProficiency >= 0.6) {
+                        node.setStatus(PathNode.PathNodeStatus.COMPLETED);
+                    } else if (!foundCurrent) {
+                        node.setStatus(PathNode.PathNodeStatus.CURRENT);
+                        foundCurrent = true;
+                    } else {
+                        node.setStatus(PathNode.PathNodeStatus.PENDING);
+                    }
+                }
+                if (!foundCurrent && !path.getNodes().isEmpty()) {
+                    path.getNodes().get(0).setStatus(PathNode.PathNodeStatus.CURRENT);
+                }
+
+                // Update completed count
+                path.setCompletedNodes((int) path.getNodes().stream()
+                    .filter(n -> n.getStatus() == PathNode.PathNodeStatus.COMPLETED).count());
+            }
+
+            return ResponseResult.success(Map.of("exists", true, "path", path));
+        } catch (Exception e) {
+            return ResponseResult.success(Map.of("exists", false, "error", "parse failed: " + e.getMessage()));
+        }
     }
 
     /**
@@ -48,8 +120,17 @@ public class LearningPathController {
         ResourceRecommendService.RecommendationResult result =
             recommendService.getDailyRecommendations(studentId, target);
 
+        // When a target topic is provided, generate topic-specific resources
+        // based on the student's personal profile (六维画像).
+        List<org.example.educatorweb.learningpath.model.RecommendedResource> topicResources = List.of();
+        if (target != null && !target.isBlank()) {
+            topicResources = recommendService.recommendByTopic(studentId, target,
+                "用户搜索: " + target);
+        }
+
         return ResponseResult.success(Map.of(
             "allRecommendations", (Object) result.allRecommendations(),
+            "topicRecommendations", (Object) topicResources,
             "profileBased", (Object) result.profileBased(),
             "progressBased", (Object) result.progressBased(),
             "weaknessBased", (Object) result.weaknessBased(),

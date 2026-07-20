@@ -32,6 +32,24 @@ public class LearningLogController {
         return ResponseResult.success("ok");
     }
 
+    /** POST /api/log/duration — record resource view duration (HTML) */
+    @PostMapping("/duration")
+    public ResponseResult<String> logDuration(@RequestBody Map<String, Object> body) {
+        String studentId = (String) body.get("studentId");
+        String concept = (String) body.get("concept");
+        Object durObj = body.get("durationSeconds");
+        int durationSeconds = durObj instanceof Number n ? n.intValue() : 0;
+
+        if (studentId == null || concept == null) {
+            return ResponseResult.error("studentId and concept are required");
+        }
+        service.logResourceView(studentId, concept, "HTML",
+            body.get("resourceId") instanceof Number n ? n.longValue() : 0L,
+            concept + " 交互课件 · " + durationSeconds + "秒");
+        log.info("LearningLog: duration user={} concept={} seconds={}", studentId, concept, durationSeconds);
+        return ResponseResult.success("ok");
+    }
+
     /** POST /api/quiz/submit — submit quiz answers and get corrected results */
     @PostMapping("/quiz/submit")
     public ResponseResult<Map<String, Object>> submitQuiz(@RequestBody Map<String, Object> body) {

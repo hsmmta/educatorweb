@@ -99,8 +99,8 @@ model-routing:
       base-url: https://openrouter.ai/api
       api-key: ${OPENROUTER_API_KEY:}
     xunfei:
-      enabled: false
-      base-url: https://spark-api-open.xf-yun.com
+      enabled: true
+      base-url: https://spark-api-open.xf-yun.com/x2
       api-key: ${XUNFEI_API_KEY:}
       api-secret: ${XUNFEI_API_SECRET:}
       app-id: ${XUNFEI_APP_ID:}
@@ -112,6 +112,12 @@ model-routing:
       enabled: false
       base-url: https://api-inference.huggingface.co
       api-key: ${HUGGINGFACE_API_KEY:}
+
+resourcegen:
+  whiteboard:
+    python-path: python
+    bridge-script: scripts/whiteboard-bridge.py
+    root: dev-docs/whiteboard-main
 
 logging:
   level:

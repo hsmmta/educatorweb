@@ -3,7 +3,9 @@ package org.example.educatorweb.profile;
 import org.example.educatorweb.profile.model.StudentKnowledgeProficiency;
 import org.example.educatorweb.profile.model.StudentKnowledgeProficiencyId;
 import org.example.educatorweb.profile.model.StudentProfile;
+import org.example.educatorweb.profile.model.ProficiencySnapshot;
 import org.example.educatorweb.profile.repository.StudentKnowledgeProficiencyRepository;
+import org.example.educatorweb.profile.repository.ProficiencySnapshotRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -12,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -50,11 +53,14 @@ public class ProficiencyService {
 
     private final StudentKnowledgeProficiencyRepository proficiencyRepo;
     private final ProfileService profileService;
+    private final ProficiencySnapshotRepository snapshotRepo;
 
     public ProficiencyService(StudentKnowledgeProficiencyRepository proficiencyRepo,
-                              ProfileService profileService) {
+                              ProfileService profileService,
+                              ProficiencySnapshotRepository snapshotRepo) {
         this.proficiencyRepo = proficiencyRepo;
         this.profileService = profileService;
+        this.snapshotRepo = snapshotRepo;
     }
 
     // ======================== 写入：答题更新 ========================
@@ -115,6 +121,26 @@ public class ProficiencyService {
 
         double raw = rawProficiency.doubleValue();
         double effective = effectiveProficiency(raw, prof.getLastStudyTime());
+
+        // Save daily proficiency snapshot for trend tracking
+        try {
+            LocalDate today = LocalDate.now();
+            final BigDecimal snapRaw = rawProficiency;
+            final double snapEffective = effective;
+            snapshotRepo.findByStudentIdAndConceptAndSnapshotDate(studentId, concept, today)
+                .ifPresentOrElse(
+                    existing -> {
+                        existing.setProficiency(snapRaw);
+                        existing.setEffectiveProficiency(BigDecimal.valueOf(snapEffective));
+                        snapshotRepo.save(existing);
+                    },
+                    () -> snapshotRepo.save(new ProficiencySnapshot(
+                        studentId, concept, snapRaw,
+                        BigDecimal.valueOf(snapEffective), today))
+                );
+        } catch (Exception e) {
+            log.debug("ProficiencyService: snapshot save skipped: {}", e.getMessage());
+        }
         double conf = confidence(prof.getTotalQuestions());
 
         log.info("ProficiencyService: student={}, concept={}, raw={:.4f}, effective={:.4f}, confidence={:.4f}, total={}, correct={}",
@@ -224,32 +250,43 @@ public class ProficiencyService {
 
     // ======================== 内部方法 ========================
 
-    private void syncToProfile(String studentId, StudentKnowledgeProficiency prof) {
-        try {
-            StudentProfile profile = profileService.getProfile(studentId);
-            if (profile != null) {
-                List<StudentKnowledgeProficiency> details = profile.getKnowledgeDetails();
-                if (details == null) {
-                    details = new ArrayList<>();
-                    profile.setKnowledgeDetails(details);
-                }
-                boolean found = false;
-                for (int i = 0; i < details.size(); i++) {
-                    if (details.get(i).getConcept().equals(prof.getConcept())) {
-                        details.set(i, prof);
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    prof.setStudentProfile(profile);
-                    details.add(prof);
-                }
-                profileService.updateProfile(studentId, profile);
+    /**
+     * Backfill today's snapshot for all existing proficiency records.
+     * Call once on first deploy to seed the snapshot table.
+     */
+    @Transactional
+    public void backfillSnapshots(String studentId) {
+        LocalDate today = LocalDate.now();
+        List<StudentKnowledgeProficiency> all = proficiencyRepo.findByStudentId(studentId);
+        int count = 0;
+        for (StudentKnowledgeProficiency kp : all) {
+            if (snapshotRepo.findByStudentIdAndConceptAndSnapshotDate(
+                    studentId, kp.getConcept(), today).isEmpty()) {
+                double raw = kp.getProficiency() != null
+                    ? kp.getProficiency().doubleValue() : 0.0;
+                double effective = effectiveProficiency(raw, kp.getLastStudyTime());
+                snapshotRepo.save(new ProficiencySnapshot(
+                    studentId, kp.getConcept(),
+                    kp.getProficiency() != null ? kp.getProficiency() : BigDecimal.ZERO,
+                    BigDecimal.valueOf(effective), today));
+                count++;
             }
-        } catch (Exception e) {
-            log.warn("ProficiencyService: failed to sync to profile: {}", e.getMessage());
         }
+        log.info("ProficiencyService: backfilled {} snapshots for student={}", count, studentId);
+    }
+
+    /**
+     * Sync proficiency to profile's knowledgeDetails collection (best-effort).
+     * Does NOT call profileService.updateProfile() — that causes cascade conflicts
+     * under concurrent access. Proficiency data is queried independently by the
+     * report/learning-path services from student_knowledge_proficiency table.
+     */
+    private void syncToProfile(String studentId, StudentKnowledgeProficiency prof) {
+        // No-op: profile knowledgeDetails is a lazily-loaded collection that's only
+        // used for display. The authoritative proficiency source is the
+        // student_knowledge_proficiency table queried by ProficiencyService.
+        // Saving the profile here causes Hibernate NonUniqueObjectException
+        // under concurrent access and MySQL lock timeouts.
     }
 
     // ======================== 数据类型 ========================

@@ -64,7 +64,7 @@ public class ResourcePreGenerateService {
      * into PushResult JSON before generation completes).
      */
     public List<PreGeneratedResource> createRecords(String userId, String topic, String pushType) {
-        List<ResourceType> types = List.of(ResourceType.DOC, ResourceType.QUIZ, ResourceType.MINDMAP);
+        List<ResourceType> types = List.of(ResourceType.DOC, ResourceType.QUIZ, ResourceType.HTML);
         List<PreGeneratedResource> records = new ArrayList<>();
         for (ResourceType rt : types) {
             PreGeneratedResource rec = new PreGeneratedResource(
@@ -109,9 +109,9 @@ public class ResourcePreGenerateService {
                 long start = System.currentTimeMillis();
                 while (!sub.isDisposed()) {
                     Thread.sleep(200);
-                    if (System.currentTimeMillis() - start > 120_000) {
+                    if (System.currentTimeMillis() - start > 180_000) {
                         sub.dispose();
-                        throw new RuntimeException("Generation timed out after 2 min");
+                        throw new RuntimeException("Generation timed out after 3 min");
                     }
                 }
 
@@ -168,9 +168,9 @@ public class ResourcePreGenerateService {
                 long start = System.currentTimeMillis();
                 while (!sub.isDisposed()) {
                     Thread.sleep(200);
-                    if (System.currentTimeMillis() - start > 120_000) {
+                    if (System.currentTimeMillis() - start > 180_000) {
                         sub.dispose();
-                        throw new RuntimeException("Generation timed out after 2 min");
+                        throw new RuntimeException("Generation timed out after 3 min");
                     }
                 }
 

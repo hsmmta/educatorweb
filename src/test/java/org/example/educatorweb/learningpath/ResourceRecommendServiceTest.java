@@ -53,11 +53,11 @@ class ResourceRecommendServiceTest {
         List<RecommendedResource> resources =
             resourceRecommendService.recommendByTopic("student-1", "支持向量机", "some context");
 
-        // Base three (DOC, QUIZ, MINDMAP) plus the VIDEO recommendation for the "video" preference
+        // Base three (DOC, QUIZ, HTML) plus the VIDEO recommendation for the "video" preference
         assertThat(resources).hasSizeGreaterThanOrEqualTo(4);
         assertThat(resources)
             .extracting(RecommendedResource::getResourceType)
-            .contains("DOC", "QUIZ", "MINDMAP", "VIDEO");
+            .contains("DOC", "QUIZ", "HTML", "VIDEO");
         assertThat(resources)
             .anyMatch(r -> "VIDEO".equals(r.getResourceType()));
     }
@@ -105,11 +105,11 @@ class ResourceRecommendServiceTest {
         List<RecommendedResource> resources =
             resourceRecommendService.recommendByTopic("student-1", "支持向量机", "ctx");
 
-        // Only the base three should be present: DOC, QUIZ, MINDMAP — no VIDEO/CODE additions
+        // Only the base three should be present: DOC, QUIZ, HTML — no VIDEO/CODE additions
         assertThat(resources).hasSize(3);
         assertThat(resources)
             .extracting(RecommendedResource::getResourceType)
-            .containsExactlyInAnyOrder("DOC", "QUIZ", "MINDMAP");
+            .containsExactlyInAnyOrder("DOC", "QUIZ", "HTML");
         assertThat(resources)
             .noneMatch(r -> "VIDEO".equals(r.getResourceType())
                 || "CODE".equals(r.getResourceType()));

@@ -4,6 +4,7 @@ import org.example.educatorweb.aitutor.config.ChromaClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -55,6 +56,20 @@ public class ConversationController {
             log.debug("ConversationController: messages for conv={} student={}", conversationId, studentId);
             List<Map<String, Object>> messages = chromaClient.getConversationMessages(conversationId, studentId);
             return ResponseEntity.ok(messages);
+        }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /**
+     * Delete a conversation and all its messages.
+     */
+    @DeleteMapping("/conversations/{conversationId}")
+    public Mono<ResponseEntity<Map<String, Object>>> deleteConversation(
+            @PathVariable String conversationId,
+            @RequestParam("studentId") String studentId) {
+        return Mono.fromCallable(() -> {
+            log.info("ConversationController: delete conv={} student={}", conversationId, studentId);
+            boolean ok = chromaClient.deleteByConversationId(conversationId, studentId);
+            return ResponseEntity.ok(Map.of("deleted", (Object) ok));
         }).subscribeOn(Schedulers.boundedElastic());
     }
 }

@@ -101,9 +101,10 @@ public class AiTutorServiceImpl implements AiTutorService {
         // 2. KG — query the local knowledge graph (Neo4j) for structural context
         KnowledgeContext kgContext = queryKnowledgeGraph(question);
 
-        // 3. Web — fallback internet search when private think-tank is sparse
+        // 3. Web — fallback internet search (respect user toggle)
+        boolean webEnabled = request.webSearch() == null || request.webSearch();
         List<SearchResult> webResults = List.of();
-        if (ragSnippets.size() < WEB_FALLBACK_THRESHOLD) {
+        if (webEnabled && ragSnippets.size() < WEB_FALLBACK_THRESHOLD) {
             webResults = searchWeb(question);
         }
 
@@ -159,8 +160,9 @@ public class AiTutorServiceImpl implements AiTutorService {
         // Retrieval (same as blocking path)
         List<DocumentSnippet> ragSnippets = retrieveKnowledge(studentId, question);
         KnowledgeContext kgContext = queryKnowledgeGraph(question);
+        boolean webEnabled = request.webSearch() == null || request.webSearch();
         List<SearchResult> webResults = List.of();
-        if (ragSnippets.size() < WEB_FALLBACK_THRESHOLD) {
+        if (webEnabled && ragSnippets.size() < WEB_FALLBACK_THRESHOLD) {
             webResults = searchWeb(question);
         }
         List<Map<String, Object>> historyRecords = retrieveHistory(question, studentId);
@@ -339,15 +341,15 @@ public class AiTutorServiceImpl implements AiTutorService {
         sb.append("""
             你是一个专业的 AI 助教，负责帮助学生学习知识、解答疑问。
 
-            【检索优先级说明】每次提问按以下三级检索，优先使用私有智库：
+            【检索优先级说明】每次提问按以下级别检索：
             1. 私人智库（学生上传的资料）— 最高优先级，最相关
             2. 知识图谱（课程结构化知识）— 提供前置/后继/关联知识点
-            3. 互联网搜索（实时补充）— 仅在私有资料不足时启用
+            ${webResults.isEmpty() ? "" : "3. 互联网搜索 — 实时补充资料"}
 
             回答要求：
             - 优先基于私人智库资料回答，引用出处
             - 其次参考知识图谱的结构化知识
-            - 最后参考互联网搜索结果
+            - ${webResults.isEmpty() ? "不要提及互联网搜索功能。" : "最后参考互联网搜索结果。"}
             - 诚实说明信息来源级别
             - 使用清晰易懂的语言，适合学生的学习水平
             - 适当举例说明抽象概念

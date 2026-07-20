@@ -1,6 +1,7 @@
 package org.example.educatorweb.profile.chat;
 
 import org.example.educatorweb.profile.ProfileService;
+import org.example.educatorweb.profile.ProfileValueNormalizer;
 import org.example.educatorweb.profile.chat.ProfileExtractionAgent.DimensionDef;
 import org.example.educatorweb.profile.chat.ProfileExtractionAgent.DimensionValue;
 import org.example.educatorweb.profile.chat.ProfileExtractionAgent.ProfileExtractionResult;
@@ -302,79 +303,27 @@ public class ChatProfileService {
         return String.format("%.0f%%", d * 100);
     }
 
-    // ========== 中→英映射（前端中文标签 → DB CHECK 约束允许的枚举值） ==========
-
-    /** 认知风格：DB CHECK 仅允许 visual / auditory */
-    private static final Map<String, String> COGNITIVE_STYLE_MAP = new LinkedHashMap<>();
-    static {
-        COGNITIVE_STYLE_MAP.put("视觉型", "visual");
-        COGNITIVE_STYLE_MAP.put("言语型", "auditory");
-        COGNITIVE_STYLE_MAP.put("直觉型", "visual");   // 最接近：喜欢看图表/框架
-        COGNITIVE_STYLE_MAP.put("分析型", "auditory"); // 最接近：喜欢逐步推导/讲解
-        COGNITIVE_STYLE_MAP.put("不确定", "visual");
-    }
-
-    /** 学习节奏：DB CHECK 仅允许 slow / normal / fast */
-    private static final Map<String, String> LEARNING_PACE_MAP = new LinkedHashMap<>();
-    static {
-        LEARNING_PACE_MAP.put("稳扎稳打型", "slow");
-        LEARNING_PACE_MAP.put("快速推进型", "fast");
-        LEARNING_PACE_MAP.put("跳跃型", "fast");
-        LEARNING_PACE_MAP.put("不确定", "normal");
-    }
-
-    /** 学习目标：DB CHECK 仅允许 exam / research / career / interest */
-    private static final Map<String, String> GOAL_MAP = new LinkedHashMap<>();
-    static {
-        GOAL_MAP.put("求职准备", "career");
-        GOAL_MAP.put("学术深造", "research");
-        GOAL_MAP.put("兴趣探索", "interest");
-        GOAL_MAP.put("考证通关", "exam");
-        GOAL_MAP.put("课程考试", "exam");
-        GOAL_MAP.put("不确定", "interest");
-    }
-
-    /** 内容偏好类型：DB CHECK 仅允许 text / video / audio / interactive / graph / ppt */
-    private static final Set<String> VALID_CONTENT_TYPES = Set.of(
-        "text", "video", "audio", "interactive", "graph", "ppt"
-    );
-
-    /** LLM 知识水平输出 → DB 枚举（beginner / intermediate / advanced / master） */
-    private static String normalizeKnowledgeLevel(String llmOutput) {
-        if (llmOutput == null || llmOutput.isBlank()) return "beginner";
-        String s = llmOutput.trim();
-        if (s.contains("入门") || s.contains("薄弱") || s.contains("beginner")) return "beginner";
-        if (s.contains("一般") || s.contains("intermediate")) return "intermediate";
-        if (s.contains("熟练") || s.contains("advanced")) return "advanced";
-        if (s.contains("优秀") || s.contains("master") || s.contains("专家")) return "master";
-        return "beginner"; // 安全默认值
-    }
+    // ========== 值规范化（English → Chinese，无 DB CHECK 约束） ==========
 
     /**
-     * 创建新画像，默认值严格匹配 DB schema 的 DEFAULT。
+     * 创建新画像，使用中文默认值。
      */
     private StudentProfile createEmptyProfile(String studentId) {
         StudentProfile p = new StudentProfile();
         p.setStudentId(studentId);
-        p.setKnowledgeBaseLevel("beginner");
+        p.setKnowledgeBaseLevel("一般");
         p.setKnowledgeBaseConfidence(new BigDecimal("0.50"));
-        p.setCognitiveStyleType("visual");
+        p.setCognitiveStyleType("分析型");
         p.setCognitiveStyleConfidence(new BigDecimal("0.50"));
         p.setErrorPatternTags(new ArrayList<>());
         p.setErrorPatternConfidence(new BigDecimal("0.00"));
-        p.setLearningPaceType("normal");
+        p.setLearningPaceType("稳扎稳打型");
         p.setLearningPaceConfidence(new BigDecimal("0.50"));
-        p.setContentPreferenceType("text");
+        p.setContentPreferenceType("混合学习");
         p.setContentPreferenceRatio(new LinkedHashMap<>());
-        p.setGoalOrientationType("exam");
+        p.setGoalOrientationType("兴趣探索");
         p.setGoalOrientationConfidence(new BigDecimal("0.50"));
         return p;
-    }
-
-    /** 将前端中文值映射为 DB 枚举；未匹配时返回安全默认值 */
-    private String toDbEnum(String chineseValue, Map<String, String> map, String defaultVal) {
-        if (chineseValue == null || chineseValue.isBlank()) return defaultVal;
-        return map.getOrDefault(chineseValue.trim(), defaultVal);
     }
 
     /**
@@ -390,62 +339,43 @@ public class ChatProfileService {
 
         Set<String> completedDims = new HashSet<>();
 
-        // 1. 直接映射结构化字段（单选/多选）—— 中文 → DB 英文枚举
-        // 学习风格 → cognitiveStyleType（DB 仅 visual/auditory）
+        // 1. 直接映射结构化字段（表单中文值直接存库）
         if (isValidAnswer(form.getLearningStyle())) {
-            profile.setCognitiveStyleType(toDbEnum(form.getLearningStyle(), COGNITIVE_STYLE_MAP, "visual"));
+            profile.setCognitiveStyleType(ProfileValueNormalizer.normalizeCognitiveStyle(form.getLearningStyle()));
             profile.setCognitiveStyleConfidence(new BigDecimal("0.85"));
             completedDims.add("cognitive");
         }
 
-        // 学习节奏 → learningPaceType（DB 仅 slow/normal/fast）
         if (isValidAnswer(form.getLearningPace())) {
-            profile.setLearningPaceType(toDbEnum(form.getLearningPace(), LEARNING_PACE_MAP, "normal"));
+            profile.setLearningPaceType(ProfileValueNormalizer.normalizeLearningPace(form.getLearningPace()));
             profile.setLearningPaceConfidence(new BigDecimal("0.85"));
             completedDims.add("pace");
         }
 
-        // 学习目标 → goalOrientationType（DB 仅 exam/research/career/interest）
         if (isValidAnswer(form.getLearningGoal())) {
-            profile.setGoalOrientationType(toDbEnum(form.getLearningGoal(), GOAL_MAP, "exam"));
+            profile.setGoalOrientationType(ProfileValueNormalizer.normalizeGoalOrientation(form.getLearningGoal()));
             profile.setGoalOrientationConfidence(new BigDecimal("0.90"));
             completedDims.add("goal");
         }
 
-        // 偏好资源类型 → contentPreferenceType + contentPreferenceRatio（ratio key 必须匹配 DB enum）
+        // 偏好资源类型 → contentPreferenceType + contentPreferenceRatio
         if (form.getPreferredResourceTypes() != null && !form.getPreferredResourceTypes().isEmpty()) {
             Map<String, Double> ratio = new LinkedHashMap<>();
             double perType = 1.0 / form.getPreferredResourceTypes().size();
 
             for (String rt : form.getPreferredResourceTypes()) {
-                String mapped = mapResourceTypeToDbEnum(rt);
+                String mapped = ProfileValueNormalizer.normalizeContentPreference(rt);
                 ratio.put(mapped, Math.round(perType * 100.0) / 100.0);
             }
 
-            // 归一化
             double total = ratio.values().stream().mapToDouble(Double::doubleValue).sum();
             if (total > 0) {
                 ratio.replaceAll((k, v) -> Math.round(v / total * 100.0) / 100.0);
             }
 
             profile.setContentPreferenceRatio(ratio);
-            // 推断主要偏好类型（仅使用 DB 允许的枚举值）
             String primaryType = form.getPreferredResourceTypes().get(0);
-            String prefType;
-            if (primaryType.contains("视频")) {
-                prefType = "video";
-            } else if (primaryType.contains("PPT")) {
-                prefType = "ppt";
-            } else if (primaryType.contains("代码")) {
-                prefType = "interactive";
-            } else if (primaryType.contains("文档")) {
-                prefType = "text";
-            } else if (primaryType.contains("题库")) {
-                prefType = "interactive";
-            } else {
-                prefType = "text";
-            }
-            profile.setContentPreferenceType(prefType);
+            profile.setContentPreferenceType(ProfileValueNormalizer.normalizeContentPreference(primaryType));
             completedDims.add("preference");
         }
 
@@ -462,7 +392,7 @@ public class ChatProfileService {
                 // 只对 knowledge 和 error 维度使用 LLM 分析结果
                 DimensionValue kv = result.dimensions().get("knowledge");
                 if (kv != null && kv.value() != null && !kv.value().isBlank()) {
-                    profile.setKnowledgeBaseLevel(normalizeKnowledgeLevel(kv.value()));
+                    profile.setKnowledgeBaseLevel(ProfileValueNormalizer.normalizeKnowledgeBase(kv.value()));
                     profile.setKnowledgeBaseConfidence(kv.confidence());
                     if (kv.confidence().compareTo(new BigDecimal("0.50")) >= 0) {
                         completedDims.add("knowledge");
@@ -480,7 +410,7 @@ public class ChatProfileService {
                 log.warn("buildFromForm: LLM analysis failed for text fields, using defaults: {}", e.getMessage());
                 // LLM 失败时用简单规则推断
                 if (hasStrengths) {
-                    profile.setKnowledgeBaseLevel("intermediate");
+                    profile.setKnowledgeBaseLevel("中等");
                     profile.setKnowledgeBaseConfidence(new BigDecimal("0.50"));
                     completedDims.add("knowledge");
                 }
@@ -489,12 +419,12 @@ public class ChatProfileService {
 
         // 3. 如果没有 strength/weakness 信息，用简单规则
         if (!completedDims.contains("knowledge") && hasStrengths) {
-            profile.setKnowledgeBaseLevel("intermediate");
+            profile.setKnowledgeBaseLevel("中等");
             profile.setKnowledgeBaseConfidence(new BigDecimal("0.40"));
             completedDims.add("knowledge");
         }
         if (!completedDims.contains("error") && hasWeaknesses) {
-            profile.setErrorPatternTags(List.of("needs_diagnosis"));
+            profile.setErrorPatternTags(List.of("待诊断"));
             profile.setErrorPatternConfidence(new BigDecimal("0.30"));
             completedDims.add("error");
         }
@@ -518,17 +448,6 @@ public class ChatProfileService {
             && !trimmed.equals("无");
     }
 
-    /** 将前端资源类型映射为 DB content_preference_ratio 的 key（须匹配 CHECK 约束枚举） */
-    private String mapResourceTypeToDbEnum(String rt) {
-        if (rt == null) return "text";
-        return switch (rt) {
-            case "教学视频" -> "video";
-            case "PPT课件"   -> "ppt";
-            case "代码案例"   -> "interactive";
-            case "练习题库"   -> "interactive";
-            default          -> "text";  // 课程文档 → text
-        };
-    }
 
     private String buildFormAnalysisInput(ProfileBuildFromFormRequest form) {
         StringBuilder sb = new StringBuilder();
@@ -585,61 +504,34 @@ public class ChatProfileService {
     public record ChatResponse(String systemMessage, boolean isComplete, Set<String> completedDimensions) {}
 
     /**
-     * 确保所有字符串字段的值都在 DB CHECK 约束允许的枚举范围内。
-     * LLM 可能输出中文或其他非标准值，调用此方法归一化。
+     * 归一化画像字段：将 LLM 可能输出的英文值转为中文。
+     * DB 无 CHECK 约束，varchar(32) 接受任意值。
      */
     private void sanitizeProfileForDb(StudentProfile p) {
-        // knowledge_base_level: 仅 beginner / intermediate / advanced / master
-        p.setKnowledgeBaseLevel(normalizeKnowledgeLevel(p.getKnowledgeBaseLevel()));
+        p.setKnowledgeBaseLevel(ProfileValueNormalizer.normalizeKnowledgeBase(p.getKnowledgeBaseLevel()));
+        p.setCognitiveStyleType(ProfileValueNormalizer.normalizeCognitiveStyle(p.getCognitiveStyleType()));
+        p.setErrorPatternTags(ProfileValueNormalizer.normalizeErrorTags(p.getErrorPatternTags()));
+        p.setLearningPaceType(ProfileValueNormalizer.normalizeLearningPace(p.getLearningPaceType()));
+        p.setContentPreferenceType(ProfileValueNormalizer.normalizeContentPreference(p.getContentPreferenceType()));
+        p.setGoalOrientationType(ProfileValueNormalizer.normalizeGoalOrientation(p.getGoalOrientationType()));
 
-        // cognitive_style_type: 仅 visual / auditory
-        if (p.getCognitiveStyleType() == null || p.getCognitiveStyleType().isBlank()
-            || (!p.getCognitiveStyleType().equals("visual") && !p.getCognitiveStyleType().equals("auditory"))) {
-            p.setCognitiveStyleType("visual");
-        }
-
-        // learning_pace_type: 仅 slow / normal / fast
-        String pace = p.getLearningPaceType();
-        if (pace == null || pace.isBlank()
-            || (!pace.equals("slow") && !pace.equals("normal") && !pace.equals("fast"))) {
-            p.setLearningPaceType("normal");
-        }
-
-        // goal_orientation_type: 仅 exam / research / career / interest
-        String goal = p.getGoalOrientationType();
-        if (goal == null || goal.isBlank()
-            || (!goal.equals("exam") && !goal.equals("research")
-                && !goal.equals("career") && !goal.equals("interest"))) {
-            p.setGoalOrientationType("exam");
-        }
-
-        // content_preference_type: 仅 text / video / audio / interactive / graph / ppt
-        String cp = p.getContentPreferenceType();
-        if (cp == null || cp.isBlank() || !VALID_CONTENT_TYPES.contains(cp)) {
-            p.setContentPreferenceType("text");
-        }
-
-        // content_preference_ratio: 确保所有 key 均为合法内容类型
-        Map<String, Double> ratio = p.getContentPreferenceRatio();
-        if (ratio != null && !ratio.isEmpty()) {
-            Map<String, Double> cleaned = new LinkedHashMap<>();
-            for (var entry : ratio.entrySet()) {
-                if (VALID_CONTENT_TYPES.contains(entry.getKey())) {
-                    cleaned.put(entry.getKey(), entry.getValue());
-                }
-            }
-            if (cleaned.isEmpty()) {
-                cleaned.put("text", 1.0);
-            }
-            p.setContentPreferenceRatio(cleaned);
-        }
-
-        // confidence: 确保在 [0, 1] 范围内（chk_confidence_range）
+        // confidence: 确保在 [0, 1] 范围内
         p.setKnowledgeBaseConfidence(clampConfidence(p.getKnowledgeBaseConfidence()));
         p.setCognitiveStyleConfidence(clampConfidence(p.getCognitiveStyleConfidence()));
         p.setErrorPatternConfidence(clampConfidence(p.getErrorPatternConfidence()));
         p.setLearningPaceConfidence(clampConfidence(p.getLearningPaceConfidence()));
         p.setGoalOrientationConfidence(clampConfidence(p.getGoalOrientationConfidence()));
+
+        // content_preference_ratio: key 也通过规范化
+        Map<String, Double> ratio = p.getContentPreferenceRatio();
+        if (ratio != null && !ratio.isEmpty()) {
+            Map<String, Double> cleaned = new LinkedHashMap<>();
+            for (var entry : ratio.entrySet()) {
+                String normalizedKey = ProfileValueNormalizer.normalizeContentPreference(entry.getKey());
+                cleaned.put(normalizedKey, entry.getValue());
+            }
+            p.setContentPreferenceRatio(cleaned);
+        }
     }
 
     private BigDecimal clampConfidence(BigDecimal bd) {

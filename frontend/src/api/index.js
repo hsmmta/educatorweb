@@ -166,6 +166,6 @@ export const logBrowseApi = (data) =>
 
 /** 提交测验答案 */
 export const submitQuizApi = (data) =>
-  request.post('/quiz/submit', data)
+  request.post('/log/quiz/submit', data)
 
 export default request

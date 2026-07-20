@@ -14,6 +14,7 @@ public class PathNode {
     private String category;
     private int order;
     private PathNodeStatus status;     // PENDING / CURRENT / COMPLETED
+    private double proficiency;         // current proficiency value (0.0 ~ 1.0)
     private String estimatedDuration;   // e.g. "2-3天"
     private List<RecommendedResource> recommendedResources;
 
@@ -44,6 +45,8 @@ public class PathNode {
     public void setOrder(int order) { this.order = order; }
     public PathNodeStatus getStatus() { return status; }
     public void setStatus(PathNodeStatus status) { this.status = status; }
+    public double getProficiency() { return proficiency; }
+    public void setProficiency(double proficiency) { this.proficiency = proficiency; }
     public String getEstimatedDuration() { return estimatedDuration; }
     public void setEstimatedDuration(String estimatedDuration) { this.estimatedDuration = estimatedDuration; }
     public List<RecommendedResource> getRecommendedResources() { return recommendedResources; }

@@ -19,7 +19,9 @@ const routes = [
       { path: 'resource/:id', component: () => import('../views/ResourceView.vue') },
       { path: 'profile',   component: () => import('../views/Profile.vue') },
       { path: 'profile/edit', component: () => import('../views/EditProfile.vue') },
-      { path: 'profile/chat', component: () => import('../views/ProfileChat.vue') }
+      { path: 'profile/chat', component: () => import('../views/ProfileChat.vue') },
+      { path: 'knowledge-graph', component: () => import('../views/KnowledgeGraph.vue') },
+      { path: 'wrong-answers', component: () => import('../views/WrongAnswerBook.vue') }
     ]
   }
 ]

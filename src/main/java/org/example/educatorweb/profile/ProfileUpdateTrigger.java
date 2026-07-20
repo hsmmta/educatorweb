@@ -5,6 +5,7 @@ import org.example.educatorweb.profile.model.StudentProfile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -48,6 +49,7 @@ public class ProfileUpdateTrigger {
      * @param studentId 学生ID
      * @return true 如果触发了画像更新
      */
+    @Transactional
     public boolean onInteraction(String studentId) {
         StudentProfile profile = profileService.getProfile(studentId);
         if (profile == null) {
