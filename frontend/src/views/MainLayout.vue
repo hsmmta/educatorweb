@@ -5,7 +5,7 @@
       <div class="nav-left">
         <router-link to="/home" class="logo">
           <span class="logo-icon">✦</span>
-          <span class="logo-text">智学派</span>
+          <span class="logo-text">智引未来</span>
         </router-link>
       </div>
       <div class="nav-right">

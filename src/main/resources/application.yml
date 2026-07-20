@@ -99,8 +99,8 @@ model-routing:
       base-url: https://openrouter.ai/api
       api-key: ${OPENROUTER_API_KEY:}
     xunfei:
-      enabled: false
-      base-url: https://spark-api-open.xf-yun.com
+      enabled: true
+      base-url: https://spark-api-open.xf-yun.com/x2
       api-key: ${XUNFEI_API_KEY:}
       api-secret: ${XUNFEI_API_SECRET:}
       app-id: ${XUNFEI_APP_ID:}

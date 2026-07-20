@@ -63,7 +63,12 @@ public class ResourceGenConfig {
             default -> deepSeekProvider;
         };
 
-        return new ModelRegistry(textProvider, visualProvider);
+        return new ModelRegistry(textProvider, visualProvider,
+            java.util.Map.of(
+                "deepseek", deepSeekProvider,
+                "xunfei", xunfeiProvider,
+                "openai", openAiProvider
+            ));
     }
 
     // ---- VideoProvider bean ----
@@ -149,7 +154,9 @@ public class ResourceGenConfig {
     @Bean
     public XunfeiProvider xunfeiProvider(ModelRoutingProperties props) {
         var cfg = props.providers().get("xunfei");
-        return new XunfeiProvider(cfg.enabled(), cfg.appId(), cfg.apiKey(), cfg.apiSecret());
+        String apiKey = resolveEnvKey(cfg.apiKey(), "XUNFEI_API_KEY");
+        String apiSecret = resolveEnvKey(cfg.apiSecret(), "XUNFEI_API_SECRET");
+        return new XunfeiProvider(apiKey, apiSecret, cfg.baseUrl(), "spark-x", cfg.enabled());
     }
 
     // ---- Orchestrator ----

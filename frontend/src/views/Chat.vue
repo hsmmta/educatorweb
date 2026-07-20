@@ -19,7 +19,7 @@
       <div class="chat-messages" ref="msgList">
         <div v-if="messages.length === 0" class="chat-empty">
           <div class="empty-mark"><span class="empty-glyph">✦</span></div>
-          <h2 class="empty-title">智学派 AI 助手</h2>
+          <h2 class="empty-title">智引未来 AI 助手</h2>
           <p class="empty-sub">选择一个模式，输入你的问题或知识点，开启你的学习之旅</p>
           <div class="empty-suggestions">
             <button class="suggest-chip" @click="activeMode='chat'; inputText='什么是梯度下降？它有哪些实现方法？'">
@@ -266,6 +266,7 @@
           :disabled="loading"
         />
         <div class="input-footer" v-if="!topicLocked">
+          <el-checkbox v-model="webSearchEnabled" size="small">联网搜索</el-checkbox>
           <el-tag size="small" type="info">Ctrl + Enter 发送</el-tag>
           <el-button type="primary" :icon="Promotion" :loading="loading" @click="sendMessage" :disabled="!inputText.trim()">
             发送
@@ -291,21 +292,23 @@ import ChatSidebar from '@/components/ChatSidebar.vue'
 // ---- Init libraries (ported from Learning.vue) ----
 mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' })
 
-// Register marked extension for LaTeX math
+// Register marked extension for LaTeX math (supports $...$, $$...$$, \(...\), \[...\])
 marked.use({
   extensions: [{
     name: 'math',
     level: 'inline',
-    start(src) { return src.indexOf('$') },
+    start(src) { return Math.min(idx(src, '$'), idx(src, '\\['), idx(src, '\\(')) },
     tokenizer(src) {
-      const displayMatch = /^\$\$([\s\S]*?)\$\$/.exec(src)
-      if (displayMatch) {
-        return { type: 'math', raw: displayMatch[0], text: displayMatch[1].trim(), display: true }
-      }
-      const inlineMatch = /^\$([^\n$]+)\$/.exec(src)
-      if (inlineMatch) {
-        return { type: 'math', raw: inlineMatch[0], text: inlineMatch[1].trim(), display: false }
-      }
+      // Display math: $$...$$ or \[...\]
+      const dm1 = /^\$\$([\s\S]*?)\$\$/.exec(src)
+      if (dm1) return { type: 'math', raw: dm1[0], text: dm1[1].trim(), display: true }
+      const dm2 = /^\\\[([\s\S]*?)\\\]/.exec(src)
+      if (dm2) return { type: 'math', raw: dm2[0], text: dm2[1].trim(), display: true }
+      // Inline math: $...$ or \(...\)
+      const im1 = /^\$([^\n$]+)\$/.exec(src)
+      if (im1) return { type: 'math', raw: im1[0], text: im1[1].trim(), display: false }
+      const im2 = /^\\\(([^\n]+?)\\\)/.exec(src)
+      if (im2) return { type: 'math', raw: im2[0], text: im2[1].trim(), display: false }
     },
     renderer(token) {
       try {
@@ -318,6 +321,8 @@ marked.use({
     }
   }]
 })
+
+function idx(s, sub) { const i = s.indexOf(sub); return i < 0 ? Infinity : i }
 
 // ---- Mode config ----
 const modes = [
@@ -334,6 +339,7 @@ const route = useRoute()
 const activeMode = ref('chat')
 const topicLocked = ref(false)  // true when entered from path node (URL params)
 const lockedTopicName = ref('')  // original topic name from URL, used for proficiency tracking
+const webSearchEnabled = ref(false)  // user-toggleable web search
 const currentMode = computed(() => modes.find(m => m.key === activeMode.value) || modes[0])
 const switchMode = (key) => { activeMode.value = key }
 
@@ -483,7 +489,8 @@ const sendChatMessage = async (text) => {
       body: JSON.stringify({
         studentId: getStudentId(),
         question: text,
-        conversationId: currentConversationId.value
+        conversationId: currentConversationId.value,
+        webSearch: webSearchEnabled.value
       }),
       signal: controller.signal
     })
@@ -733,10 +740,14 @@ const safeMarkdown = (text) => {
   try {
     let md = text
 
-    // Phase 0: Fix inline tables — AI concatenates rows with || or | | as row separators.
-    //   "|col1|col2||------|------||data1|data2|" → proper multi-line table
-    //   Also handles "|sep| |data|" (pipe-space-pipe row boundaries)
-    md = md.replace(/\|\s*\|(?=[^|\s])/g, '|\n|')
+    // Phase 0: Fix tables — AI output often needs cleanup for GFM compliance.
+    // Step 0a: Convert || to newline (concatenated table row separator)
+    md = md.replace(/\|\|/g, '|\n|')
+    // Step 0b: Remove blank lines between header and separator rows
+    md = md.replace(/(\|[^\n]+\|)\n\n(\|[ :\-]{3,}\|)/g, '$1\n$2')
+    // Step 0c: Split rows joined by | | — but NOT inside separator row cells.
+    //   lookahead: second pipe + optional spaces + content char (not dash/pipe)
+    md = md.replace(/\|\s+\|(?=\s*[^\s\-|])/g, '|\n|')
 
     // Table start: insert newline when inline table follows punctuation
     //   e.g. "方向）|优化算法|..." or "分为：|类型|特点|..."
@@ -769,7 +780,13 @@ const safeMarkdown = (text) => {
     //   whole paragraph (heading ends at first 。！？)
     md = md.replace(/^(#{1,6}\s[^。！？\n]+[。！？])([^\n]+)/gm, '$1\n\n$2')
 
-    // Phase 4: Parse
+    // Phase 4: Normalize LaTeX delimiters — convert \[...\] → $$...$$ and \(...\) → $...$
+    md = md.replace(/\\\[/g, '\n\n$$')
+    md = md.replace(/\\\]/g, '$$\n\n')
+    md = md.replace(/\\\(/g, '$')
+    md = md.replace(/\\\)/g, '$')
+
+    // Phase 5: Parse
     return marked.parse(md)
   } catch (e) {
     console.error('[DEBUG] safeMarkdown ERROR:', e.message || e)
@@ -993,10 +1010,27 @@ const downloadResource = (msg) => {
 
 const regenerate = (msg) => {
   if (loading.value) return
-  if (msg.question) {
+  // Find the question: from msg.question or from the preceding user message
+  let question = msg.question
+  if (!question) {
+    const idx = messages.value.findIndex(m => m.id === msg.id)
+    if (idx > 0) {
+      const prev = messages.value[idx - 1]
+      if (prev.role === 'user') question = prev.content
+    }
+  }
+  if (!question) return
+
+  if (msg.renderType) {
+    // Resource message: keep original mode, re-generate resource
+    const modeKey = msg.renderType.toLowerCase()
+    if (modes.some(m => m.key === modeKey)) activeMode.value = modeKey
+    sendResourceGenerate(question)
+  } else {
+    // Chat message: push new user message, then send chat
     activeMode.value = 'chat'
-    inputText.value = msg.question
-    sendMessage()
+    messages.value.push({ id: nextMsgId(), role: 'user', type: 'user', content: question })
+    sendChatMessage(question)
   }
 }
 
@@ -1027,7 +1061,7 @@ onMounted(async () => {
 
 <style scoped>
 /* ═══════════════════════════════════════════════
-   智学派 AI 辅导 — 精致化视觉（保持紫色主题）
+   智引未来 AI 辅导 — 精致化视觉（保持紫色主题）
    ═══════════════════════════════════════════════ */
 .chat-layout {
   --brand-1: #667eea;

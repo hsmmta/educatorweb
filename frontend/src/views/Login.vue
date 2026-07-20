@@ -12,7 +12,7 @@
       <el-card class="auth-card">
       <div class="auth-header">
         <div class="logo-icon">✦</div>
-        <h2>智学派</h2>
+        <h2>智引未来</h2>
         <p>登录你的账号，继续学习之旅</p>
       </div>
 
